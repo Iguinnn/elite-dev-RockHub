@@ -232,6 +232,25 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Qualquer variante de .env fica de fora — exceto o exemplo, que é versionado
+# de propósito para documentar as chaves necessárias.
+.env.*
+!.env.example
+
+# Certificados e chaves
+*.pem
+*.key
+
 # Build front
 .next/
 .vercel
+out/
+.turbo/
+.swc/
+*.tsbuildinfo
+
+# Lixo do sistema operacional
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini

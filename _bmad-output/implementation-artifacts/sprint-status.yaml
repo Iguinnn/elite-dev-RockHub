@@ -1,0 +1,110 @@
+# generated: 2026-08-10
+# last_updated: 2026-08-10 (story 1.1 criada)
+# project: elite-dev-RockHub
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic ainda não começou
+#   - in-progress: Epic em andamento
+#   - done: Todas as stories do epic concluídas
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: automático quando a primeira story é criada (via create-story)
+#   - in-progress → done: manual, quando todas as stories chegam a 'done'
+#
+# Story Status:
+#   - backlog: story só existe no epics.md
+#   - ready-for-dev: arquivo da story criado na pasta de implementação
+#   - in-progress: em implementação
+#   - review: pronta para code review
+#   - done: concluída
+#
+# Retrospective Status:
+#   - optional: pode ser feita, não é obrigatória
+#   - done: retrospectiva realizada
+#
+# Action Item Status:
+#   - open: assumido numa retrospectiva, ainda não tratado
+#   - in-progress: em andamento
+#   - done: concluído
+#
+# WORKFLOW NOTES:
+# ===============
+# - O epic vira 'in-progress' automaticamente quando a primeira story dele é criada
+# - Stories podem correr em paralelo se houver capacidade
+# - Neste projeto: uma branch por epic, um commit por story, code review ao fim de cada epic
+# - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
+
+generated: 2026-08-10
+last_updated: 2026-08-10
+project: elite-dev-RockHub
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ---------- Epic 1: Fundação, acesso e primeiro deploy ----------
+  epic-1: in-progress
+  1-1-esqueleto-do-backend-que-responde: review
+  1-2-esqueleto-do-frontend-com-a-identidade-aplicada: backlog
+  1-3-modelo-de-usuario-e-primeira-migracao: backlog
+  1-4-entrar-com-e-mail-e-senha: backlog
+  1-5-cadastro-de-cliente: backlog
+  1-6-cada-papel-so-acessa-o-que-lhe-cabe: backlog
+  1-7-dados-semeados-para-avaliacao: backlog
+  1-8-backend-e-banco-no-ar-na-railway: backlog
+  1-9-frontend-no-ar-na-vercel: backlog
+  epic-1-retrospective: optional
+
+  # ---------- Epic 2: Publicação de eventos pelo organizador ----------
+  epic-2: backlog
+  2-1-cliente-da-ticketmaster-com-a-chave-protegida: backlog
+  2-2-buscar-a-atracao-no-catalogo: backlog
+  2-3-modelo-de-evento-e-setor: backlog
+  2-4-publicar-um-evento-com-seus-setores: backlog
+  2-5-escalar-quem-valida-na-porta: backlog
+  2-6-ver-e-gerenciar-meus-eventos: backlog
+  epic-2-retrospective: optional
+
+  # ---------- Epic 3: Descoberta e compra ----------
+  epic-3: backlog
+  3-1-ver-a-programacao: backlog
+  3-2-buscar-e-filtrar-a-programacao: backlog
+  3-3-chamada-principal-na-programacao: backlog
+  3-4-ver-o-evento-e-seus-setores: backlog
+  3-5-modelo-de-reserva: backlog
+  3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: backlog
+  3-7-reserva-abandonada-devolve-o-estoque: backlog
+  3-8-pagar-com-aprovacao-e-com-recusa: backlog
+  3-9-receber-ingressos-com-codigo-nao-forjavel: backlog
+  epic-3-retrospective: optional
+
+  # ---------- Epic 4: Meus ingressos e compartilhamento ----------
+  epic-4: backlog
+  4-1-ver-meus-ingressos: backlog
+  4-2-ver-o-canhoto-com-o-qr: backlog
+  4-3-compartilhar-o-ingresso-por-link: backlog
+  4-4-revogar-o-link-compartilhado: backlog
+  epic-4-retrospective: optional
+
+  # ---------- Epic 5: Portaria ----------
+  epic-5: backlog
+  5-1-ver-onde-eu-trabalho-hoje: backlog
+  5-2-validar-o-ingresso-sem-deixar-passar-duas-vezes: backlog
+  5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: backlog
+  5-4-ver-o-resultado-a-tres-metros: backlog
+  5-5-ler-o-qr-pela-camera: backlog
+  5-6-acompanhar-as-entradas-do-turno: backlog
+  epic-5-retrospective: optional
+
+  # ---------- Epic 6: Avaliação sem atrito ----------
+  epic-6: backlog
+  6-1-readme-da-raiz-com-o-historico-de-decisoes: backlog
+  6-2-conferir-o-passo-a-passo-numa-maquina-limpa: backlog
+  6-3-documentar-o-uso-de-ia: backlog
+  6-4-roteiro-de-avaliacao-de-ponta-a-ponta: backlog
+  epic-6-retrospective: optional
