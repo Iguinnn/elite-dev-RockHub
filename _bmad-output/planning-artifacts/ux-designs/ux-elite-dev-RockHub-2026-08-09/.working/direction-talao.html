@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direção 1 — Talão</title>
+<style>
+/* ============================================================
+   DIREÇÃO 1 — "TALÃO"
+   Registro: impresso, bilheteria, programa de teatro.
+   papel   #F4F1EA   tinta   #16130F   vermelhão #C8452F
+   grafite #6B6355   linha   #D8D2C4
+   Sem cards. A listagem é um programa impresso: filas separadas
+   por fio, data na margem esquerda, código em monoespaçada.
+   ============================================================ */
+:root{
+  --papel:#F4F1EA; --tinta:#16130F; --verm:#C8452F;
+  --grafite:#6B6355; --linha:#D8D2C4; --papel2:#EAE5D8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2A2724;font:16px/1.5 Georgia,'Times New Roman',serif;color:var(--tinta);padding:28px 16px 60px}
+
+.nota{max-width:1080px;margin:0 auto 22px;color:#CFC8B8;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace}
+.nota b{color:#fff;font:600 13px/1.6 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.04em}
+
+.janela{max-width:1080px;margin:0 auto 34px;border-radius:8px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.barra{background:#DEDAD0;border-bottom:1px solid #C3BDAE;padding:9px 12px;display:flex;align-items:center;gap:7px}
+.bolinha{width:11px;height:11px;border-radius:50%;background:#C3BDAE}
+.url{margin-left:10px;font:11px/1 ui-monospace,Menlo,monospace;color:#7A7262}
+.tela{background:var(--papel)}
+
+/* --- cabeçalho ------------------------------------------- */
+.topo{display:flex;align-items:baseline;justify-content:space-between;
+  padding:22px 34px 16px;border-bottom:2px solid var(--tinta)}
+.marca{font:700 25px/1 Georgia,serif;letter-spacing:-.02em}
+.marca em{font-style:normal;color:var(--verm)}
+.menu{display:flex;gap:26px;font:12px/1 ui-monospace,Menlo,monospace;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--grafite)}
+.menu .on{color:var(--tinta);border-bottom:2px solid var(--verm);padding-bottom:3px}
+
+/* --- filtro ----------------------------------------------- */
+.filtro{display:flex;gap:8px;align-items:center;padding:14px 34px;
+  border-bottom:1px solid var(--linha);background:var(--papel2)}
+.busca{flex:1;border:1px solid var(--linha);background:var(--papel);
+  padding:9px 12px;font:14px/1 Georgia,serif;color:var(--tinta)}
+.chip{border:1px solid var(--linha);background:transparent;padding:8px 13px;
+  font:11px/1 ui-monospace,Menlo,monospace;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--grafite);cursor:default}
+.chip.on{background:var(--tinta);color:var(--papel);border-color:var(--tinta)}
+
+/* --- programa (a listagem) -------------------------------- */
+.rubrica{padding:20px 34px 8px;font:11px/1 ui-monospace,Menlo,monospace;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--grafite)}
+.fila{display:grid;grid-template-columns:112px 1fr 190px 148px;gap:22px;
+  align-items:baseline;padding:19px 34px;border-top:1px solid var(--linha)}
+.fila:hover{background:var(--papel2)}
+.data{font:12px/1.45 ui-monospace,Menlo,monospace;letter-spacing:.05em;color:var(--grafite);text-transform:uppercase}
+.data b{display:block;font:700 27px/1 Georgia,serif;color:var(--tinta);letter-spacing:-.02em}
+.nome{font:400 25px/1.18 Georgia,serif;letter-spacing:-.015em}
+.sub{margin-top:5px;font:13px/1.4 Georgia,serif;color:var(--grafite);font-style:italic}
+.local{font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--grafite)}
+.preco{text-align:right}
+.preco b{font:700 19px/1 Georgia,serif}
+.preco span{display:block;margin-top:4px;font:10px/1 ui-monospace,Menlo,monospace;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--grafite)}
+.esgotado .nome,.esgotado .data b{color:#A49B89}
+.esgotado{background:repeating-linear-gradient(-45deg,transparent,transparent 9px,rgba(0,0,0,.022) 9px,rgba(0,0,0,.022) 18px)}
+.selo{display:inline-block;border:1px solid var(--verm);color:var(--verm);
+  padding:4px 9px;font:10px/1 ui-monospace,Menlo,monospace;letter-spacing:.13em;text-transform:uppercase}
+
+/* --- ingresso (tela secundária) --------------------------- */
+.dupla{max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.cartela{background:var(--papel);border-radius:8px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.4)}
+.cartela h4{padding:13px 22px;border-bottom:2px solid var(--tinta);
+  font:11px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--grafite)}
+
+.canhoto{margin:22px;border:1px solid var(--tinta);display:grid;grid-template-columns:1fr 128px}
+.canhoto-esq{padding:20px}
+.canhoto-dir{border-left:2px dashed var(--tinta);padding:20px 14px;text-align:center;background:var(--papel2)}
+.qr{width:96px;height:96px;margin:0 auto;background:
+  repeating-conic-gradient(var(--tinta) 0 25%, transparent 0 50%) 0 0/13px 13px;
+  border:5px solid var(--tinta)}
+.cod{margin-top:10px;font:10px/1.5 ui-monospace,Menlo,monospace;color:var(--grafite);word-break:break-all}
+.linha-info{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--linha);
+  font:12px/1 ui-monospace,Menlo,monospace;color:var(--grafite);text-transform:uppercase;letter-spacing:.07em}
+.linha-info b{font:400 14px/1 Georgia,serif;color:var(--tinta);text-transform:none;letter-spacing:0}
+
+/* --- setores ---------------------------------------------- */
+.setor{display:flex;justify-content:space-between;align-items:center;
+  padding:15px 22px;border-top:1px solid var(--linha)}
+.setor:hover{background:var(--papel2)}
+.setor-n{font:400 18px/1.2 Georgia,serif}
+.setor-s{margin-top:3px;font:11px/1 ui-monospace,Menlo,monospace;color:var(--grafite);letter-spacing:.06em;text-transform:uppercase}
+.setor-p{text-align:right;font:700 17px/1 Georgia,serif}
+.qtd{display:flex;align-items:center;gap:11px;margin-top:7px;justify-content:flex-end}
+.qtd button{width:27px;height:27px;border:1px solid var(--tinta);background:transparent;
+  font:15px/1 Georgia,serif;color:var(--tinta);cursor:default}
+.qtd span{font:14px/1 ui-monospace,Menlo,monospace;min-width:16px;text-align:center}
+.acao{margin:22px;padding:14px;background:var(--tinta);color:var(--papel);text-align:center;
+  font:11px/1 ui-monospace,Menlo,monospace;letter-spacing:.17em;text-transform:uppercase}
+.vazio{padding:52px 22px;text-align:center;color:var(--grafite)}
+.vazio p{font:italic 16px/1.6 Georgia,serif;margin-top:9px}
+</style>
+</head>
+<body>
+
+<div class="nota">
+  <b>DIREÇÃO 1 — TALÃO.</b> Registro de impresso: programa de teatro e canhoto de bilheteria.
+  A listagem não tem card nenhum — é uma pauta com fio entre as filas e a data na margem, do jeito que
+  programação impressa sempre resolveu esse problema. Papel creme, tinta quase preta, um vermelhão só.
+  Serifada para os nomes, monoespaçada para tudo que é código, hora e etiqueta.
+</div>
+
+<div class="janela">
+  <div class="barra"><i class="bolinha"></i><i class="bolinha"></i><i class="bolinha"></i>
+    <span class="url">rockhub.com.br</span></div>
+  <div class="tela">
+    <div class="topo">
+      <div class="marca">Rock<em>Hub</em></div>
+      <nav class="menu"><a class="on">Início</a><a>Meus ingressos</a><a>Minha conta</a></nav>
+    </div>
+
+    <div class="filtro">
+      <input class="busca" value="Buscar artista, casa de show ou cidade">
+      <span class="chip on">Todos</span><span class="chip">Esta semana</span>
+      <span class="chip">São Paulo</span><span class="chip">Rio</span>
+    </div>
+
+    <div class="rubrica">Agosto de 2026 — 14 apresentações</div>
+
+    <div class="fila">
+      <div class="data">Sex<b>14</b>21h00</div>
+      <div><div class="nome">Baco Exu do Blues</div>
+           <div class="sub">turnê “Bluesman Vivo”</div></div>
+      <div class="local">Espaço Unimed<br>São Paulo · SP</div>
+      <div class="preco"><b>R$ 120,00</b><span>a partir de</span></div>
+    </div>
+
+    <div class="fila">
+      <div class="data">Sáb<b>15</b>22h30</div>
+      <div><div class="nome">Marina Sena</div>
+           <div class="sub">com participação de Duda Beat</div></div>
+      <div class="local">Qualistage<br>Rio de Janeiro · RJ</div>
+      <div class="preco"><b>R$ 90,00</b><span>a partir de</span></div>
+    </div>
+
+    <div class="fila esgotado">
+      <div class="data">Qua<b>19</b>20h00</div>
+      <div><div class="nome">Djavan</div>
+           <div class="sub">turnê “Vesúvio”</div></div>
+      <div class="local">Vibra São Paulo<br>São Paulo · SP</div>
+      <div class="preco"><span class="selo">Esgotado</span></div>
+    </div>
+
+    <div class="fila">
+      <div class="data">Sex<b>21</b>23h00</div>
+      <div><div class="nome">Fresno</div>
+           <div class="sub">20 anos — show único</div></div>
+      <div class="local">Audio Club<br>São Paulo · SP</div>
+      <div class="preco"><b>R$ 75,00</b><span>a partir de</span></div>
+    </div>
+
+    <div class="fila">
+      <div class="data">Dom<b>23</b>19h00</div>
+      <div><div class="nome">Céu</div>
+           <div class="sub">show de lançamento</div></div>
+      <div class="local">Sesc Pompeia<br>São Paulo · SP</div>
+      <div class="preco"><b>R$ 60,00</b><span>a partir de</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="dupla">
+  <div class="cartela">
+    <h4>Evento · escolha de setor</h4>
+    <div class="setor">
+      <div><div class="setor-n">Pista</div><div class="setor-s">312 de 800 disponíveis</div></div>
+      <div><div class="setor-p">R$ 120,00</div>
+        <div class="qtd"><button>−</button><span>2</span><button>+</button></div></div>
+    </div>
+    <div class="setor">
+      <div><div class="setor-n">Área VIP</div><div class="setor-s">41 de 200 disponíveis</div></div>
+      <div><div class="setor-p">R$ 260,00</div>
+        <div class="qtd"><button>−</button><span>0</span><button>+</button></div></div>
+    </div>
+    <div class="setor">
+      <div><div class="setor-n">Camarote</div><div class="setor-s">esgotado</div></div>
+      <div><div class="setor-p" style="color:#A49B89">R$ 420,00</div></div>
+    </div>
+    <div class="acao">Reservar · R$ 240,00</div>
+  </div>
+
+  <div class="cartela">
+    <h4>Meu ingresso</h4>
+    <div class="canhoto">
+      <div class="canhoto-esq">
+        <div style="font:400 22px/1.2 Georgia,serif">Baco Exu do Blues</div>
+        <div style="margin:12px 0 4px" class="linha-info">Data <b>14 ago 2026 · 21h00</b></div>
+        <div class="linha-info">Local <b>Espaço Unimed</b></div>
+        <div class="linha-info">Setor <b>Pista</b></div>
+        <div class="linha-info" style="border:0">Titular <b>Igor Duarte</b></div>
+      </div>
+      <div class="canhoto-dir">
+        <div class="qr"></div>
+        <div class="cod">A7F2<br>9C41<br>E0B8</div>
+      </div>
+    </div>
+    <div class="acao" style="background:transparent;color:var(--tinta);border:1px solid var(--tinta)">Compartilhar por link</div>
+  </div>
+</div>
+
+<div class="dupla" style="margin-top:26px">
+  <div class="cartela">
+    <h4>Estado vazio — meus ingressos</h4>
+    <div class="vazio">
+      <div style="font:11px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase">Nada por aqui</div>
+      <p>Você ainda não comprou nenhum ingresso.<br>Quando comprar, ele aparece aqui com o código de entrada.</p>
+    </div>
+  </div>
+  <div class="cartela">
+    <h4>Estado de erro — sem estoque</h4>
+    <div class="vazio">
+      <span class="selo">Esgotado enquanto você decidia</span>
+      <p>A Pista acabou de esgotar.<br>Ainda há 41 lugares na Área VIP.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

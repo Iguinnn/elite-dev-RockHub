@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direção 2 — Cartaz</title>
+<style>
+/* ============================================================
+   DIREÇÃO 2 — "CARTAZ"
+   Registro: parede de cartazes de show, luz de palco, noite.
+   breu    #0C0B0D   cal    #F2EFE9   âmbar  #F2A413
+   brasa   #D93B2B   fumaça #8A8377   vinco  #232126
+   Nada de card horizontal: cada evento é um painel VERTICAL,
+   proporção de cartaz, imagem sangrada e nome em condensada.
+   ============================================================ */
+:root{
+  --breu:#0C0B0D; --cal:#F2EFE9; --ambar:#F2A413;
+  --brasa:#D93B2B; --fumaca:#8A8377; --vinco:#232126;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;font:16px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;color:var(--cal);padding:28px 16px 60px}
+
+.nota{max-width:1120px;margin:0 auto 22px;color:#918A7E;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace}
+.nota b{color:var(--ambar);letter-spacing:.04em}
+
+.janela{max-width:1120px;margin:0 auto 34px;border-radius:9px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+.barra{background:#191819;border-bottom:1px solid #2C2A2C;padding:9px 12px;display:flex;align-items:center;gap:7px}
+.bolinha{width:11px;height:11px;border-radius:50%;background:#3A3739}
+.url{margin-left:10px;font:11px/1 ui-monospace,Menlo,monospace;color:#6D6668}
+.tela{background:var(--breu)}
+
+/* --- cabeçalho ------------------------------------------- */
+.topo{display:flex;align-items:center;justify-content:space-between;padding:20px 30px;
+  border-bottom:1px solid var(--vinco)}
+.marca{font:800 21px/1 -apple-system,'Segoe UI',sans-serif;letter-spacing:-.03em;
+  text-transform:uppercase}
+.marca em{font-style:normal;color:var(--ambar)}
+.menu{display:flex;gap:24px;font:600 12px/1 -apple-system,sans-serif;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--fumaca)}
+.menu .on{color:var(--cal)}
+.menu .on::after{content:'';display:block;height:2px;background:var(--ambar);margin-top:6px}
+
+/* --- filtro ----------------------------------------------- */
+.filtro{display:flex;gap:9px;padding:16px 30px;border-bottom:1px solid var(--vinco);align-items:center}
+.busca{flex:1;background:var(--vinco);border:1px solid #322F34;color:var(--cal);
+  padding:11px 14px;font:14px/1 -apple-system,sans-serif;border-radius:3px}
+.chip{border:1px solid #322F34;padding:9px 14px;font:600 11px/1 -apple-system,sans-serif;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fumaca);border-radius:3px}
+.chip.on{background:var(--ambar);color:var(--breu);border-color:var(--ambar)}
+
+/* --- parede de cartazes ----------------------------------- */
+.parede{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--vinco);
+  border-top:1px solid var(--vinco)}
+.cartaz{background:var(--breu);position:relative;padding-bottom:16px}
+.arte{aspect-ratio:3/4;position:relative;overflow:hidden}
+.arte::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(to top,var(--breu) 4%,rgba(12,11,13,.15) 55%,transparent)}
+.a1{background:radial-gradient(120% 90% at 25% 15%,#7A2E86,#2B1136 60%,#120A18)}
+.a2{background:radial-gradient(120% 90% at 70% 20%,#B4562B,#4A1D14 60%,#180A08)}
+.a3{background:radial-gradient(120% 90% at 40% 25%,#1F5E6B,#0E2A33 60%,#07171C)}
+.a4{background:radial-gradient(120% 90% at 60% 10%,#6B6A22,#2E2E0E 60%,#141405)}
+.selo-data{position:absolute;top:13px;left:13px;z-index:2;background:var(--ambar);color:var(--breu);
+  padding:6px 9px;font:800 11px/1.15 -apple-system,sans-serif;letter-spacing:.04em;text-align:center;
+  text-transform:uppercase}
+.selo-data b{display:block;font-size:19px;line-height:1}
+.nome{position:absolute;left:15px;right:15px;bottom:13px;z-index:2;
+  font:800 25px/.96 -apple-system,'Segoe UI',sans-serif;letter-spacing:-.035em;text-transform:uppercase}
+.pe{padding:12px 15px 0;display:flex;justify-content:space-between;align-items:flex-end;gap:8px}
+.onde{font:12px/1.4 -apple-system,sans-serif;color:var(--fumaca)}
+.valor{text-align:right;white-space:nowrap}
+.valor b{font:700 15px/1 -apple-system,sans-serif;color:var(--cal)}
+.valor span{display:block;margin-top:3px;font:600 9px/1 -apple-system,sans-serif;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--fumaca)}
+.cartaz.off .arte{filter:grayscale(1) brightness(.42)}
+.cartaz.off .nome{color:#6E6A66}
+.faixa-off{position:absolute;top:46%;left:0;right:0;z-index:3;background:var(--brasa);
+  color:var(--cal);text-align:center;padding:6px 0;
+  font:800 11px/1 -apple-system,sans-serif;letter-spacing:.22em;text-transform:uppercase}
+
+/* --- painéis secundários ---------------------------------- */
+.dupla{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.painel{background:var(--breu);border:1px solid var(--vinco);border-radius:9px;overflow:hidden}
+.painel h4{padding:13px 20px;border-bottom:1px solid var(--vinco);color:var(--fumaca);
+  font:600 11px/1 -apple-system,sans-serif;letter-spacing:.16em;text-transform:uppercase}
+
+.setor{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;
+  border-bottom:1px solid var(--vinco)}
+.setor-n{font:700 17px/1.2 -apple-system,sans-serif;letter-spacing:-.01em}
+.barrinha{margin-top:8px;width:150px;height:4px;background:var(--vinco);border-radius:2px;overflow:hidden}
+.barrinha i{display:block;height:100%;background:var(--ambar)}
+.setor-s{margin-top:6px;font:11px/1 -apple-system,sans-serif;color:var(--fumaca);
+  letter-spacing:.05em;text-transform:uppercase}
+.setor-p{text-align:right;font:700 17px/1 -apple-system,sans-serif}
+.qtd{display:flex;gap:9px;align-items:center;margin-top:8px;justify-content:flex-end}
+.qtd button{width:28px;height:28px;border:1px solid #322F34;background:var(--vinco);
+  color:var(--cal);font:16px/1 -apple-system,sans-serif;border-radius:3px}
+.qtd span{font:700 14px/1 -apple-system,sans-serif;min-width:16px;text-align:center}
+.cta{margin:20px;padding:15px;background:var(--ambar);color:var(--breu);text-align:center;border-radius:4px;
+  font:800 12px/1 -apple-system,sans-serif;letter-spacing:.13em;text-transform:uppercase}
+
+/* --- ingresso --------------------------------------------- */
+.ing{margin:20px;border:1px solid var(--vinco);border-radius:6px;overflow:hidden;background:#121013}
+.ing-topo{padding:18px 20px;border-bottom:1px dashed #38343A}
+.ing-nome{font:800 24px/1 -apple-system,sans-serif;letter-spacing:-.03em;text-transform:uppercase}
+.ing-sub{margin-top:7px;font:12px/1.5 -apple-system,sans-serif;color:var(--fumaca)}
+.ing-qr{padding:22px;text-align:center;background:var(--cal)}
+.qr{width:118px;height:118px;margin:0 auto;background:
+  repeating-conic-gradient(var(--breu) 0 25%, transparent 0 50%) 0 0/15px 15px;border:6px solid var(--breu)}
+.cod{margin-top:11px;font:11px/1 ui-monospace,Menlo,monospace;color:#5C564E;letter-spacing:.13em}
+.vazio{padding:50px 20px;text-align:center}
+.vazio .tit{font:800 13px/1 -apple-system,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--ambar)}
+.vazio p{margin-top:11px;font:14px/1.6 -apple-system,sans-serif;color:var(--fumaca)}
+</style>
+</head>
+<body>
+
+<div class="nota">
+  <b>DIREÇÃO 2 — CARTAZ.</b> Parede de cartazes de casa de show, vista à noite. Cada evento é um painel
+  <b>vertical</b> em proporção de cartaz, com a arte sangrando e o nome em caixa-alta condensada por cima —
+  o oposto da fileira de cards horizontais. Breu, cal e um âmbar de luz de palco; brasa só para o que dá errado.
+</div>
+
+<div class="janela">
+  <div class="barra"><i class="bolinha"></i><i class="bolinha"></i><i class="bolinha"></i>
+    <span class="url">rockhub.com.br</span></div>
+  <div class="tela">
+    <div class="topo">
+      <div class="marca">Rock<em>Hub</em></div>
+      <nav class="menu"><a class="on">Início</a><a>Meus ingressos</a><a>Minha conta</a></nav>
+    </div>
+
+    <div class="filtro">
+      <input class="busca" value="Buscar artista, casa de show ou cidade">
+      <span class="chip on">Todos</span><span class="chip">Esta semana</span><span class="chip">São Paulo</span>
+    </div>
+
+    <div class="parede">
+      <div class="cartaz">
+        <div class="arte a1">
+          <div class="selo-data">Sex<b>14</b>Ago</div>
+          <div class="nome">Baco Exu<br>do Blues</div>
+        </div>
+        <div class="pe"><div class="onde">Espaço Unimed<br>São Paulo</div>
+          <div class="valor"><b>R$ 120</b><span>a partir de</span></div></div>
+      </div>
+
+      <div class="cartaz">
+        <div class="arte a2">
+          <div class="selo-data">Sáb<b>15</b>Ago</div>
+          <div class="nome">Marina<br>Sena</div>
+        </div>
+        <div class="pe"><div class="onde">Qualistage<br>Rio de Janeiro</div>
+          <div class="valor"><b>R$ 90</b><span>a partir de</span></div></div>
+      </div>
+
+      <div class="cartaz off">
+        <div class="arte a3">
+          <div class="selo-data" style="background:#4A4649;color:#9B9598">Qua<b>19</b>Ago</div>
+          <div class="faixa-off">Esgotado</div>
+          <div class="nome">Djavan</div>
+        </div>
+        <div class="pe"><div class="onde">Vibra São Paulo<br>São Paulo</div>
+          <div class="valor"><b style="color:#6E6A66">—</b><span>sem ingressos</span></div></div>
+      </div>
+
+      <div class="cartaz">
+        <div class="arte a4">
+          <div class="selo-data">Sex<b>21</b>Ago</div>
+          <div class="nome">Fresno</div>
+        </div>
+        <div class="pe"><div class="onde">Audio Club<br>São Paulo</div>
+          <div class="valor"><b>R$ 75</b><span>a partir de</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dupla">
+  <div class="painel">
+    <h4>Evento · escolha de setor</h4>
+    <div class="setor">
+      <div><div class="setor-n">Pista</div><div class="barrinha"><i style="width:39%"></i></div>
+        <div class="setor-s">312 de 800 restantes</div></div>
+      <div><div class="setor-p">R$ 120</div>
+        <div class="qtd"><button>−</button><span>2</span><button>+</button></div></div>
+    </div>
+    <div class="setor">
+      <div><div class="setor-n">Área VIP</div><div class="barrinha"><i style="width:20%;background:var(--brasa)"></i></div>
+        <div class="setor-s">41 de 200 restantes</div></div>
+      <div><div class="setor-p">R$ 260</div>
+        <div class="qtd"><button>−</button><span>0</span><button>+</button></div></div>
+    </div>
+    <div class="setor" style="opacity:.45">
+      <div><div class="setor-n">Camarote</div><div class="barrinha"><i style="width:0"></i></div>
+        <div class="setor-s">esgotado</div></div>
+      <div><div class="setor-p">R$ 420</div></div>
+    </div>
+    <div class="cta">Reservar · R$ 240</div>
+  </div>
+
+  <div class="painel">
+    <h4>Meu ingresso</h4>
+    <div class="ing">
+      <div class="ing-topo">
+        <div class="ing-nome">Baco Exu<br>do Blues</div>
+        <div class="ing-sub">14 ago 2026 · 21h00 · Espaço Unimed<br>Pista · Igor Duarte</div>
+      </div>
+      <div class="ing-qr"><div class="qr"></div><div class="cod">A7F2 · 9C41 · E0B8</div></div>
+    </div>
+    <div class="cta" style="background:transparent;color:var(--ambar);border:1px solid var(--ambar)">Compartilhar por link</div>
+  </div>
+</div>
+
+<div class="dupla" style="margin-top:24px">
+  <div class="painel">
+    <h4>Estado vazio — meus ingressos</h4>
+    <div class="vazio"><div class="tit">Nada por aqui</div>
+      <p>Você ainda não comprou nenhum ingresso.<br>Quando comprar, ele aparece aqui com o código de entrada.</p></div>
+  </div>
+  <div class="painel">
+    <h4>Estado de erro — sem estoque</h4>
+    <div class="vazio"><div class="tit" style="color:var(--brasa)">Esgotou enquanto você decidia</div>
+      <p>A Pista acabou de esgotar.<br>Ainda há 41 lugares na Área VIP.</p></div>
+  </div>
+</div>
+
+</body>
+</html>

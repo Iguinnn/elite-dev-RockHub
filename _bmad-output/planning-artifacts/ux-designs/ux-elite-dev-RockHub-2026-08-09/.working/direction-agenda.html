@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Direção 3 — Agenda</title>
+<style>
+/* ============================================================
+   DIREÇÃO 3 — "AGENDA"
+   Registro: cartaz suíço, grade forte, tempo como eixo principal.
+   branco #FFFFFF  osso #F5F4F1  grafite #141414
+   laranja #FF4A17  cinza #8C8C88  régua #E2E1DC
+   O eixo da tela é a DATA, não o produto: trilho de datas à
+   esquerda, eventos daquele dia em filas largas à direita.
+   Traduz "ingresso é o direito de entrar num lugar, numa hora".
+   ============================================================ */
+:root{
+  --branco:#FFFFFF; --osso:#F5F4F1; --grafite:#141414;
+  --laranja:#FF4A17; --cinza:#8C8C88; --regua:#E2E1DC;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#4A4945;font:16px/1.5 -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
+  color:var(--grafite);padding:28px 16px 60px}
+
+.nota{max-width:1120px;margin:0 auto 22px;color:#D6D4CE;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace}
+.nota b{color:var(--laranja)}
+
+.janela{max-width:1120px;margin:0 auto 34px;border-radius:8px;overflow:hidden;box-shadow:0 18px 52px rgba(0,0,0,.4)}
+.barra{background:#E7E6E1;border-bottom:1px solid var(--regua);padding:9px 12px;display:flex;gap:7px;align-items:center}
+.bolinha{width:11px;height:11px;border-radius:50%;background:#CBC9C3}
+.url{margin-left:10px;font:11px/1 ui-monospace,Menlo,monospace;color:#8C8A84}
+.tela{background:var(--branco)}
+
+/* --- cabeçalho: régua preta ------------------------------- */
+.topo{background:var(--grafite);color:var(--branco);display:flex;align-items:center;
+  justify-content:space-between;padding:17px 30px}
+.marca{font:800 20px/1 -apple-system,sans-serif;letter-spacing:-.045em;text-transform:uppercase}
+.marca em{font-style:normal;color:var(--laranja)}
+.menu{display:flex;gap:2px}
+.menu a{padding:8px 15px;font:600 11px/1 -apple-system,sans-serif;letter-spacing:.1em;
+  text-transform:uppercase;color:#9C9A95}
+.menu .on{background:var(--laranja);color:var(--branco)}
+
+.filtro{display:flex;gap:0;border-bottom:1px solid var(--regua)}
+.busca{flex:1;border:0;border-right:1px solid var(--regua);padding:15px 30px;
+  font:15px/1 -apple-system,sans-serif;color:var(--grafite);background:var(--branco)}
+.chip{padding:15px 20px;border-right:1px solid var(--regua);font:600 11px/1 -apple-system,sans-serif;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--cinza)}
+.chip.on{background:var(--grafite);color:var(--branco)}
+
+/* --- corpo: trilho de datas + filas ----------------------- */
+.corpo{display:grid;grid-template-columns:128px 1fr}
+.trilho{background:var(--osso);border-right:1px solid var(--regua)}
+.mes{padding:15px 18px 9px;font:700 10px/1 -apple-system,sans-serif;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--cinza)}
+.dia{padding:13px 18px;border-top:1px solid var(--regua);cursor:default}
+.dia.on{background:var(--grafite);color:var(--branco)}
+.dia.on .dsem{color:#A5A39E}
+.dnum{font:700 25px/1 -apple-system,sans-serif;letter-spacing:-.045em}
+.dsem{margin-top:2px;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--cinza)}
+.dqtd{margin-top:7px;font:11px/1 -apple-system,sans-serif;color:var(--laranja)}
+
+.filas{padding:0}
+.cab-dia{display:flex;align-items:baseline;gap:13px;padding:17px 30px 13px}
+.cab-dia h3{font:800 27px/1 -apple-system,sans-serif;letter-spacing:-.045em}
+.cab-dia span{font:600 11px/1 -apple-system,sans-serif;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--cinza)}
+
+.fila{display:grid;grid-template-columns:74px 1fr 200px 132px;gap:20px;align-items:center;
+  padding:19px 30px;border-top:1px solid var(--regua)}
+.fila:hover{background:var(--osso)}
+.hora{font:700 16px/1 -apple-system,sans-serif;letter-spacing:-.02em}
+.hora span{display:block;margin-top:4px;font:600 9px/1 -apple-system,sans-serif;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--cinza)}
+.nome{font:700 22px/1.15 -apple-system,sans-serif;letter-spacing:-.032em}
+.sub{margin-top:5px;font:13px/1.4 -apple-system,sans-serif;color:var(--cinza)}
+.local{font:13px/1.45 -apple-system,sans-serif;color:var(--cinza)}
+.local b{display:block;color:var(--grafite);font-weight:600}
+.acao{text-align:right}
+.acao b{font:700 17px/1 -apple-system,sans-serif}
+.acao span{display:block;margin-top:4px;font:600 9px/1 -apple-system,sans-serif;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--cinza)}
+.fila.off{color:#AFADA8}
+.fila.off .nome{color:#AFADA8}
+.tag-off{display:inline-block;background:var(--grafite);color:var(--branco);padding:5px 9px;
+  font:700 9px/1 -apple-system,sans-serif;letter-spacing:.16em;text-transform:uppercase}
+
+/* --- painéis ---------------------------------------------- */
+.dupla{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.painel{background:var(--branco);border-radius:8px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.34)}
+.painel h4{background:var(--grafite);color:var(--branco);padding:12px 20px;
+  font:600 11px/1 -apple-system,sans-serif;letter-spacing:.16em;text-transform:uppercase}
+
+.setor{display:grid;grid-template-columns:1fr 118px;gap:16px;align-items:center;
+  padding:17px 20px;border-bottom:1px solid var(--regua)}
+.setor-n{font:700 18px/1 -apple-system,sans-serif;letter-spacing:-.025em}
+.medidor{margin-top:9px;height:6px;background:var(--osso);position:relative}
+.medidor i{position:absolute;inset:0 auto 0 0;background:var(--grafite)}
+.setor-s{margin-top:7px;font:12px/1 -apple-system,sans-serif;color:var(--cinza)}
+.setor-p{text-align:right;font:700 18px/1 -apple-system,sans-serif;letter-spacing:-.03em}
+.qtd{display:flex;gap:0;margin-top:9px;justify-content:flex-end;border:1px solid var(--grafite)}
+.qtd button{width:30px;height:28px;border:0;background:var(--branco);font:16px/1 -apple-system,sans-serif}
+.qtd span{width:34px;display:grid;place-items:center;font:700 14px/1 -apple-system,sans-serif;
+  border-left:1px solid var(--grafite);border-right:1px solid var(--grafite)}
+.cta{margin:20px;padding:16px;background:var(--laranja);color:var(--branco);text-align:center;
+  font:800 12px/1 -apple-system,sans-serif;letter-spacing:.14em;text-transform:uppercase}
+
+.ing{margin:20px;border:2px solid var(--grafite)}
+.ing-topo{padding:18px;border-bottom:2px solid var(--grafite)}
+.ing-nome{font:800 23px/1.05 -apple-system,sans-serif;letter-spacing:-.04em}
+.linha{display:grid;grid-template-columns:78px 1fr;gap:12px;padding:7px 0;
+  font:13px/1.35 -apple-system,sans-serif}
+.linha i{font-style:normal;font:600 9px/1.5 -apple-system,sans-serif;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--cinza)}
+.ing-qr{padding:20px;text-align:center;background:var(--osso)}
+.qr{width:112px;height:112px;margin:0 auto;background:
+  repeating-conic-gradient(var(--grafite) 0 25%,transparent 0 50%) 0 0/14px 14px;
+  border:6px solid var(--grafite);background-color:var(--branco)}
+.cod{margin-top:10px;font:11px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;color:var(--cinza)}
+.vazio{padding:52px 20px;text-align:center}
+.vazio .tit{font:800 12px/1 -apple-system,sans-serif;letter-spacing:.2em;text-transform:uppercase}
+.vazio p{margin-top:11px;font:14px/1.6 -apple-system,sans-serif;color:var(--cinza)}
+</style>
+</head>
+<body>
+
+<div class="nota">
+  <b>DIREÇÃO 3 — AGENDA.</b> Cartaz suíço: grade forte, preto e branco e uma laranja só. O eixo da tela
+  é o <b>tempo</b>, não o produto — trilho de datas fixo à esquerda, e os shows daquele dia em filas largas
+  à direita. É a tradução literal da sua frase: ingresso não é item de prateleira, é o direito de entrar
+  num lugar a uma hora.
+</div>
+
+<div class="janela">
+  <div class="barra"><i class="bolinha"></i><i class="bolinha"></i><i class="bolinha"></i>
+    <span class="url">rockhub.com.br</span></div>
+  <div class="tela">
+    <div class="topo">
+      <div class="marca">Rock<em>Hub</em></div>
+      <nav class="menu"><a class="on">Início</a><a>Meus ingressos</a><a>Minha conta</a></nav>
+    </div>
+
+    <div class="filtro">
+      <input class="busca" value="Buscar artista, casa de show ou cidade">
+      <span class="chip on">Todos</span><span class="chip">São Paulo</span><span class="chip">Rio</span>
+    </div>
+
+    <div class="corpo">
+      <aside class="trilho">
+        <div class="mes">Agosto 2026</div>
+        <div class="dia on"><div class="dnum">14</div><div class="dsem">Sexta</div><div class="dqtd">2 shows</div></div>
+        <div class="dia"><div class="dnum">15</div><div class="dsem">Sábado</div><div class="dqtd">3 shows</div></div>
+        <div class="dia"><div class="dnum">19</div><div class="dsem">Quarta</div><div class="dqtd">1 show</div></div>
+        <div class="dia"><div class="dnum">21</div><div class="dsem">Sexta</div><div class="dqtd">4 shows</div></div>
+        <div class="dia"><div class="dnum">23</div><div class="dsem">Domingo</div><div class="dqtd">2 shows</div></div>
+      </aside>
+
+      <div class="filas">
+        <div class="cab-dia"><h3>Sexta, 14 de agosto</h3><span>2 apresentações</span></div>
+
+        <div class="fila">
+          <div class="hora">21:00<span>Abertura 19h</span></div>
+          <div><div class="nome">Baco Exu do Blues</div><div class="sub">turnê “Bluesman Vivo”</div></div>
+          <div class="local"><b>Espaço Unimed</b>São Paulo · SP</div>
+          <div class="acao"><b>R$ 120</b><span>a partir de</span></div>
+        </div>
+
+        <div class="fila">
+          <div class="hora">23:00<span>Abertura 22h</span></div>
+          <div><div class="nome">Fresno</div><div class="sub">20 anos — show único</div></div>
+          <div class="local"><b>Audio Club</b>São Paulo · SP</div>
+          <div class="acao"><b>R$ 75</b><span>a partir de</span></div>
+        </div>
+
+        <div class="cab-dia" style="border-top:1px solid var(--regua)"><h3>Quarta, 19 de agosto</h3><span>1 apresentação</span></div>
+
+        <div class="fila off">
+          <div class="hora">20:00<span>Abertura 18h</span></div>
+          <div><div class="nome">Djavan</div><div class="sub">turnê “Vesúvio”</div></div>
+          <div class="local"><b>Vibra São Paulo</b>São Paulo · SP</div>
+          <div class="acao"><span class="tag-off">Esgotado</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dupla">
+  <div class="painel">
+    <h4>Evento · escolha de setor</h4>
+    <div class="setor">
+      <div><div class="setor-n">Pista</div><div class="medidor"><i style="width:39%"></i></div>
+        <div class="setor-s">312 de 800 disponíveis</div></div>
+      <div><div class="setor-p">R$ 120</div>
+        <div class="qtd"><button>−</button><span>2</span><button>+</button></div></div>
+    </div>
+    <div class="setor">
+      <div><div class="setor-n">Área VIP</div><div class="medidor"><i style="width:20%;background:var(--laranja)"></i></div>
+        <div class="setor-s">41 de 200 disponíveis</div></div>
+      <div><div class="setor-p">R$ 260</div>
+        <div class="qtd"><button>−</button><span>0</span><button>+</button></div></div>
+    </div>
+    <div class="setor" style="opacity:.4">
+      <div><div class="setor-n">Camarote</div><div class="medidor"><i style="width:100%"></i></div>
+        <div class="setor-s">esgotado</div></div>
+      <div><div class="setor-p">R$ 420</div></div>
+    </div>
+    <div class="cta">Reservar · R$ 240</div>
+  </div>
+
+  <div class="painel">
+    <h4>Meu ingresso</h4>
+    <div class="ing">
+      <div class="ing-topo">
+        <div class="ing-nome">Baco Exu do Blues</div>
+        <div style="margin-top:13px">
+          <div class="linha"><i>Quando</i><span>14 ago 2026, sexta · 21h00</span></div>
+          <div class="linha"><i>Onde</i><span>Espaço Unimed · São Paulo</span></div>
+          <div class="linha"><i>Setor</i><span>Pista</span></div>
+          <div class="linha"><i>Titular</i><span>Igor Duarte</span></div>
+        </div>
+      </div>
+      <div class="ing-qr"><div class="qr"></div><div class="cod">A7F2 9C41 E0B8</div></div>
+    </div>
+    <div class="cta" style="background:var(--branco);color:var(--grafite);border:2px solid var(--grafite);margin-top:0">Compartilhar por link</div>
+  </div>
+</div>
+
+<div class="dupla" style="margin-top:24px">
+  <div class="painel">
+    <h4>Estado vazio — meus ingressos</h4>
+    <div class="vazio"><div class="tit">Nada por aqui</div>
+      <p>Você ainda não comprou nenhum ingresso.<br>Quando comprar, ele aparece aqui com o código de entrada.</p></div>
+  </div>
+  <div class="painel">
+    <h4>Estado de erro — sem estoque</h4>
+    <div class="vazio"><div class="tit" style="color:var(--laranja)">Esgotou enquanto você decidia</div>
+      <p>A Pista acabou de esgotar.<br>Ainda há 41 lugares na Área VIP.</p></div>
+  </div>
+</div>
+
+</body>
+</html>

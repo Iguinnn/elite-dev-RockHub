@@ -216,3 +216,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+#Claude
+.claude/skills/
+_bmad/
+.claude/settings.local.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Env locais (Vite/Next)
+.env.local
+.env.*.local
+
+# Build front
+.next/
+.vercel
