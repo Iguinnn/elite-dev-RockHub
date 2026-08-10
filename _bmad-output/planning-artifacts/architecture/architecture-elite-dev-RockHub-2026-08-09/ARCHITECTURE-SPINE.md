@@ -275,6 +275,7 @@ frontend/
 | Camada de repositórios | A `Session` do SQLAlchemy já cumpre o papel; interpor repasse só adicionaria código neste tamanho de projeto |
 | Worker de expiração de reservas | Substituído por expiração preguiçosa (AD-4), que não exige processo rodando |
 | Teste automatizado de frontend | Não é exigido pelo desafio. As invariantes que valem ponto — estoque, assinatura do QR, validação idempotente — estão no backend, que tem `pytest`. **Deve constar no README** |
+| Cadastro de organizador pela interface | Só cliente cria a própria conta (Story 1.5). Organizador e portaria vêm do seed, que é como o próprio enunciado os pede. **Adiado, não descartado:** entra depois que o fluxo obrigatório estiver de pé, se sobrar prazo — NFR6. Portaria continua fora em qualquer cenário, por causa do AD-7. **Deve constar no README** |
 | Recuperação de senha, e-mail, nota fiscal, revenda | O enunciado dispensa explicitamente |
 
 ## A registrar no README

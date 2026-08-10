@@ -11,11 +11,12 @@ de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no cami
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
 camada.
 
-> **Estado atual:** em construção. Hoje estão de pé os dois esqueletos — o backend sobe, responde
-> `GET /saude` e publica a documentação automática; o frontend sobe com a identidade visual
-> aplicada, o cabeçalho e as páginas de estado vazio. As duas metades ainda não conversam: a
-> primeira chamada de verdade acontece no login. Banco, autenticação e telas entram nas stories
-> seguintes. A seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
+> **Estado atual:** em construção. O backend sobe com banco: PostgreSQL migrado por Alembic e a
+> tabela `usuario` já existe, com `papel` restrito a `ORGANIZADOR`/`CLIENTE`/`PORTARIA`. O frontend
+> sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. As duas metades
+> ainda não conversam: a primeira chamada de verdade acontece no login (Story 1.4), que também é
+> quando a tabela `usuario` ganha o primeiro consumidor. A seção
+> [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## Como executar
 
@@ -23,9 +24,16 @@ camada.
 
 - **[uv](https://docs.astral.sh/uv/)** para o backend. Ele mesmo baixa o Python 3.12 se a máquina
   não tiver
+- **Docker**, com o plugin Compose (`docker compose`, com espaço — é o Compose v2, embutido em
+  qualquer instalação atual), para o PostgreSQL 16
 - **Node ≥ 20.9** e **npm** para o frontend. O Next 16 não roda no Node 18
 
-PostgreSQL entra aqui quando o banco (Story 1.3) chegar.
+### Banco de dados
+
+```bash
+docker compose up -d      # Postgres 16 em localhost:5432, com o banco de teste já criado
+docker compose ps         # conferir que o serviço está saudável
+```
 
 ### Backend
 
@@ -35,6 +43,7 @@ cd backend
 cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
+uv run alembic upgrade head       # cria o schema (tabela usuario)
 uv run uvicorn app.main:app --reload
 ```
 
@@ -43,7 +52,8 @@ Sobe em <http://127.0.0.1:8000>. Para conferir que está no ar:
 - <http://127.0.0.1:8000/saude> → `{"status": "ok"}`
 - <http://127.0.0.1:8000/docs> → documentação automática do FastAPI
 
-Testes:
+Testes (exigem o Compose no ar a partir da Story 1.3 — os testes de banco migram
+`rockhub_teste` pelo próprio Alembic):
 
 ```bash
 cd backend
@@ -92,16 +102,18 @@ descrito acima.
 | Camada | Escolha |
 |---|---|
 | Backend | FastAPI 0.141 · Python 3.12 · Pydantic v2 |
-| Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic *(Story 1.3)* |
+| Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
 | Catálogo externo | Ticketmaster Discovery v2 *(Epic 2)* |
 | Deploy | Railway (API e banco) · Vercel (frontend) *(Stories 1.8 e 1.9)* |
 
 ```text
-backend/          # API FastAPI
-frontend/         # Next.js
-docs/             # enunciado do desafio e decisões técnicas em prosa
-_bmad-output/     # artefatos de planejamento: brainstorm, arquitetura, UX, epics e stories
+docker-compose.yml   # Postgres 16 local — infraestrutura do projeto inteiro, por isso na raiz
+docker/initdb/       # script que cria o banco de teste na primeira subida do Compose
+backend/             # API FastAPI
+frontend/            # Next.js
+docs/                # enunciado do desafio e decisões técnicas em prosa
+_bmad-output/        # artefatos de planejamento: brainstorm, arquitetura, UX, epics e stories
 ```
 
 `_bmad-output/` é versionado de propósito: o desafio pede que os artefatos de planejamento sejam
@@ -268,6 +280,76 @@ ali.
 **O que caiu:** JavaScript puro, que é mais rápido de escrever. Ele é mais rápido até a primeira vez
 que eu renomeio um campo no backend — aí eu descubro as telas quebradas uma a uma, abrindo cada
 uma, em vez de ler a lista que o compilador me dá de uma vez.
+
+### Postgres local por `docker-compose.yml` na raiz, não instalado na máquina
+
+**Decidi** subir o PostgreSQL 16 por Compose, num `docker-compose.yml` na raiz do repositório —
+não dentro de `backend/`, porque o banco é infraestrutura do projeto inteiro (a Story 1.7 semeia
+por ele, e o frontend em desenvolvimento depende do backend que depende dele).
+
+**Por quê:** quem avalia vai clonar o repositório numa máquina que eu nunca vi. Um comando que sobe
+o banco do zero, com volume nomeado e `healthcheck`, é um passo manual a menos para a avaliação
+travar antes de chegar no produto.
+
+**O que caiu:** Postgres instalado direto na máquina — obrigaria instalar, criar banco e usuário à
+mão, mais passos manuais e mais formas de a avaliação travar cedo. E o banco da Railway direto
+durante o desenvolvimento — zero setup local, mas passaria a depender de rede o tempo todo e todo
+mundo (inclusive eu, testando) escreveria no mesmo banco de produção.
+
+### SQLAlchemy síncrono, não `AsyncSession`
+
+**Decidi** usar a `Session` síncrona do SQLAlchemy 2, no estilo tipado (`Mapped` / `mapped_column`).
+
+**Por quê:** o núcleo deste desafio é concorrência — não vender o mesmo lugar duas vezes, não
+validar o mesmo ingresso duas vezes — e isso se resolve com `UPDATE` condicional dentro de uma
+transação. Esse código fica mais legível no síncrono. O volume de uma avaliação não cobra o preço
+de I/O assíncrono, e `AsyncSession` exigiria `await` disciplinado em toda consulta e em toda
+fixture de teste.
+
+**O que caiu:** `AsyncSession` — melhor sob carga alta de I/O, mas um `await` esquecido bloqueia o
+event loop de um jeito difícil de diagnosticar, e a disciplina que isso exige não se paga no
+tamanho deste projeto.
+
+### `papel` como `VARCHAR` + `CHECK`, não enum nativo do Postgres
+
+**Decidi** que a coluna `papel` é `VARCHAR(20)` com um `CheckConstraint` nomeado
+(`papel_valido`), listando os três valores (`ORGANIZADOR`, `CLIENTE`, `PORTARIA`), em vez do tipo
+enum nativo do Postgres.
+
+**Por quê:** o Alembic não cria nem derruba um tipo enum nativo sozinho no `downgrade()` — isso
+quebraria a garantia de que o banco pode ser reconstruído do zero (é literalmente um critério de
+aceite da Story 1.3). Alterar os valores permitidos depois também exigiria `ALTER TYPE` numa ordem
+específica, mais frágil que reescrever uma migração de `CHECK`.
+
+**O que caiu:** o enum nativo — mais idiomático no Postgres, mas o `downgrade` frágil e a evolução
+mais custosa pesaram mais que o ganho de idiomatismo.
+
+### Alembic desde a primeira tabela, nunca `create_all` — nem em teste
+
+**Decidi** que todo schema nasce por migração Alembic versionada, sem exceção — inclusive nos
+testes, que migram o banco de teste pelo Alembic em vez de criar as tabelas a partir dos modelos.
+
+**Por quê:** `create_all` seria mais rápido de montar, mas deixaria de verificar exatamente o que
+esta story entrega: a migração em si. Sem um `downgrade()` exercitado, uma migração pode estar
+quebrada por meses sem que ninguém perceba — e seria a Story 1.8 (deploy na Railway) a descobrir
+isso da pior forma possível, no meio de um deploy.
+
+**O que caiu:** `Base.metadata.create_all`, cogitado especificamente para os testes por ser mais
+rápido de escrever. Cai fora do projeto inteiro, não só desta story — é regra para as tabelas das
+Epics 2 a 5 também.
+
+### Testes de banco contra Postgres real, migrado pelo Alembic — não SQLite em memória
+
+**Decidi** que a suíte roda `alembic downgrade base` seguido de `upgrade head` contra um banco de
+teste real (`rockhub_teste`) antes de qualquer asserção, em vez de usar SQLite em memória.
+
+**Por quê:** SQLite não tem UUID nativo, não tem `TIMESTAMPTZ` e trata `CHECK` de outro jeito —
+passaria verde sem provar nada sobre o schema que a migração de verdade cria. O custo que eu aceitei
+foi que `uv run pytest` passa a exigir o Compose no ar, e isso está documentado no
+[README do backend](backend/README.md#testes).
+
+**O que caiu:** SQLite em memória — mais rápido e sem dependência externa, mas testando um banco
+que não é o de produção. `create_all` para os testes caiu pelo mesmo motivo da decisão anterior.
 
 ## O que não está pronto
 

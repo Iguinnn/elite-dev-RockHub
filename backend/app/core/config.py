@@ -32,11 +32,33 @@ class Settings(BaseSettings):
     # de fato se digita num painel de deploy: origens separadas por vírgula.
     cors_origens: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
+    database_url: str = "postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub"
+    database_url_teste: str = "postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub_teste"
+
     @field_validator("cors_origens", mode="before")
     @classmethod
     def _separar_por_virgula(cls, valor: object) -> object:
         if isinstance(valor, str):
             return [origem.strip() for origem in valor.split(",") if origem.strip()]
+        return valor
+
+    @field_validator("database_url", "database_url_teste", mode="before")
+    @classmethod
+    def _normalizar_esquema_postgres(cls, valor: object) -> object:
+        """Troca `postgres://`/`postgresql://` por `postgresql+psycopg://`.
+
+        A Railway injeta `DATABASE_URL` num dos dois primeiros esquemas, que o
+        SQLAlchemy resolve para o driver psycopg2 — não instalado aqui. Sem esta
+        normalização, o erro na Story 1.8 seria um `ModuleNotFoundError` que não
+        aponta para a URL como causa.
+        """
+        if isinstance(valor, str):
+            if valor.startswith("postgresql+psycopg://"):
+                return valor
+            if valor.startswith("postgresql://"):
+                return valor.replace("postgresql://", "postgresql+psycopg://", 1)
+            if valor.startswith("postgres://"):
+                return valor.replace("postgres://", "postgresql+psycopg://", 1)
         return valor
 
 

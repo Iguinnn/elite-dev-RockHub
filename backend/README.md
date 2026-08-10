@@ -6,8 +6,10 @@ projeto inteiro está no [README da raiz](../README.md).
 
 ## Pré-requisitos
 
-- **[uv](https://docs.astral.sh/uv/)** — é o único pré-requisito de verdade. Ele mesmo baixa o
-  Python 3.12 se a máquina não tiver, lendo o `.python-version` daqui.
+- **[uv](https://docs.astral.sh/uv/)** — ele mesmo baixa o Python 3.12 se a máquina não tiver,
+  lendo o `.python-version` daqui.
+- **Docker** com o plugin Compose (`docker compose`, com espaço — é o Compose v2, embutido em
+  qualquer instalação atual) — sobe o PostgreSQL 16 que o backend precisa desde a Story 1.3.
 
 Escolhi o `uv` em vez de `pip` + `requirements.txt` porque ele resolve três coisas de uma vez:
 instala o interpretador certo, cria a virtualenv e trava as versões num lockfile. Numa avaliação
@@ -17,13 +19,17 @@ menos é um jeito a menos de dar errado.
 ## Como rodar
 
 ```bash
+# da raiz do repositório
+docker compose up -d      # Postgres 16 em localhost:5432
+
 cd backend
 
 cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
+uv run alembic upgrade head               # cria o schema (tabela usuario)
 uv run uvicorn app.main:app --reload      # sobe em http://127.0.0.1:8000
-uv run pytest                             # roda os testes
+uv run pytest                             # roda os testes — exige o Compose no ar (ver Testes)
 ```
 
 O `uv sync` cria a virtualenv em `backend/.venv/` — não é preciso ativar nada à mão, o `uv run`
@@ -55,12 +61,47 @@ Ticketmaster mais adiante.
 | `APP_NOME` | `RockHub API` | Título que aparece no `/docs` |
 | `AMBIENTE` | `local` | `local` ou `producao`. Qualquer outro valor derruba a aplicação na subida, de propósito |
 | `CORS_ORIGENS` | `http://localhost:3000` | Origens autorizadas, separadas por vírgula |
+| `DATABASE_URL` | `postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub` | Conexão com o Postgres do `docker-compose.yml` da raiz |
+| `DATABASE_URL_TESTE` | `.../rockhub_teste` | Banco usado por `uv run pytest`. Criado pelo script de `docker/initdb/` na primeira subida do Compose |
+
+`DATABASE_URL` e `DATABASE_URL_TESTE` aceitam também `postgres://` e `postgresql://` — os
+esquemas que a Railway injeta. Um validador normaliza os três casos para `postgresql+psycopg://`,
+porque o SQLAlchemy resolve `postgresql://` para o driver **psycopg2**, que não está instalado
+aqui (o driver é o psycopg 3). Sem essa normalização o erro no dia do deploy da Story 1.8 seria um
+`ModuleNotFoundError` que não aponta para a URL como causa.
 
 `CORS_ORIGENS` aceita lista separada por vírgula em vez de JSON. O padrão do `pydantic-settings`
 para campos de lista é interpretar a variável como JSON, e eu desliguei isso (`NoDecode` + um
 validador). O motivo é prático: quem for colar essa variável no painel da Railway vai digitar
 `https://a.com,https://b.com`, não `["https://a.com","https://b.com"]` — e um JSON malformado num
 painel de deploy é um erro chato de achar.
+
+## Banco de dados
+
+O Postgres sobe pelo `docker-compose.yml` da raiz — não pela pasta `backend/`, porque o banco é
+infraestrutura do projeto inteiro (a Story 1.7 semeia por ele, e é a mesma instância que o
+frontend depende em desenvolvimento).
+
+```bash
+# da raiz do repositório
+docker compose up -d          # Postgres 16 em localhost:5432
+docker compose ps             # conferir que o serviço está saudável
+docker compose down -v        # derruba e apaga o volume — banco do zero
+
+cd backend
+uv run alembic upgrade head                              # aplica as migrações
+uv run alembic downgrade base                             # desfaz tudo
+uv run alembic revision --autogenerate -m "descrição"      # nova migração
+uv run alembic current                                     # em que revisão o banco está
+```
+
+O `docker compose up` também cria o `rockhub_teste` na primeira subida (script em
+`docker/initdb/`) — é o banco que `uv run pytest` migra e usa.
+
+**Nunca `Base.metadata.create_all` — nem em teste.** Toda mudança de schema é migração Alembic
+versionada, verificada em código pela T9 desta story (busca literal por `create_all` no
+repositório). O `--autogenerate` é ponto de partida, não resultado: sempre revi a migração gerada
+à mão antes de aplicar, confirmando `CheckConstraint`, `UniqueConstraint` e o `downgrade()`.
 
 ## Estrutura
 
@@ -70,21 +111,30 @@ backend/
     main.py          # cria o FastAPI, aplica CORS, registra o handler de erro e os routers
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
-    services/        # regra de negócio, transações e acesso ao banco
-    models/          # SQLAlchemy (entra na Story 1.3)
+    services/        # regra de negócio, transações e acesso ao banco (primeiro service: Story 1.4)
+    models/          # SQLAlchemy
+      base.py        # Base declarativa + convenção de nomes de constraint
+      usuario.py      # PapelUsuario + Usuario
     schemas/         # Pydantic de entrada e saída
     core/
       config.py      # Settings
-      erros.py       # erro de domínio + formato único de resposta
-  tests/             # espelha a estrutura de app/
+      db.py           # engine, SessaoLocal, a dependência obter_sessao()
+      erros.py        # erro de domínio + formato único de resposta
+  migrations/         # Alembic — script_location desta story
+    env.py
+    versions/
+  tests/              # espelha a estrutura de app/
+    conftest.py        # fixtures que migram rockhub_teste pelo Alembic
+  alembic.ini
   pyproject.toml
   uv.lock
   .env.example
 ```
 
-As pastas `services/`, `models/` e `schemas/` já nascem aqui vazias, só com `__init__.py`. É
-proposital: elas materializam o paradigma desde o primeiro commit, para que as stories seguintes
-não tenham que decidir no calor da hora onde cada coisa mora.
+As pastas `services/` e `schemas/` continuam vazias, só com `__init__.py` — o primeiro service e o
+primeiro schema nascem na Story 1.4, com o login. É proposital: elas materializam o paradigma
+desde o primeiro commit, para que as stories seguintes não tenham que decidir no calor da hora
+onde cada coisa mora.
 
 ### O paradigma: `routers → services → models`
 
@@ -147,17 +197,39 @@ escopo deste projeto.
 ## Testes
 
 ```bash
+docker compose up -d      # a partir da Story 1.3, os testes exigem o Postgres no ar
+cd backend
 uv run pytest
 ```
 
-Os testes ficam em `tests/`, espelhando `app/`. Hoje cobrem o que existe: a rota de saúde, o `/docs`,
-as três origens de erro e a leitura de configuração do ambiente.
+Os testes ficam em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
+de erro, a leitura de configuração do ambiente, a migração Alembic e o modelo `Usuario`.
 
 Para testar os erros eu montei apps mínimas com os handlers reais e rotas que só existem para
 falhar. Assim o contrato fica verificado desde já, sem precisar esperar o primeiro endpoint de
 negócio aparecer para descobrir que ele estava errado. O `404` e o `405` são testados direto na
 aplicação de verdade, e um teste confere que os três handlers estão de fato registrados nela — de
 nada adianta o handler certo se ninguém o pendurou na app.
+
+**Os testes de banco rodam contra Postgres real, migrado pelo próprio Alembic** — não `create_all`,
+não SQLite. A fixture de sessão em `tests/conftest.py` roda `alembic downgrade base` seguido de
+`upgrade head` contra `DATABASE_URL_TESTE` antes da suíte, o que verifica a migração de ida e de
+volta a cada execução. Cada teste individual roda dentro de uma transação (com um `SAVEPOINT`
+reaberto a cada flush) que é revertida ao final, para um teste não sujar o outro.
+
+Esse custo — `uv run pytest` agora exige o Compose no ar — foi deliberado. As alternativas
+(`create_all` pelos modelos, SQLite em memória) rodariam mais rápido, mas nenhuma das duas prova
+que a migração de verdade funciona, e é exatamente isso que a Story 1.3 entrega. Os testes de
+`/saude`, erros e config continuam passando com o Postgres desligado — as fixtures de banco ficam
+isoladas em `conftest.py` e não conectam em escopo de import.
+
+A fixture tem uma trava específica: ela nunca aponta para o banco de desenvolvimento, mesmo que o
+`.env` esteja carregado. A URL do Alembic é definida em código
+(`cfg.set_main_option("sqlalchemy.url", ...)`) a partir de `DATABASE_URL_TESTE`, nunca por
+variável de ambiente — e um teste (`test_banco_de_teste_e_o_rockhub_teste`) confere via
+`SELECT current_database()` que a trava está de fato ativa. Um `alembic downgrade base` acidental
+contra o banco de desenvolvimento apaga dados; essa é a garantia de que isso não acontece pela
+suíte de testes.
 
 ## Histórico desta camada
 
@@ -178,3 +250,34 @@ Duas coisas eu antecipei de propósito, mesmo sem serem necessárias para respon
 O que deliberadamente **não** entrou: banco, SQLAlchemy, Alembic, autenticação, Docker, CI. Cada um
 tem a sua story. Instalar dependência antes da hora só polui o lockfile com coisa que ainda não
 tem uso.
+
+### Story 1.3 — modelo de usuário e primeira migração
+
+Primeira story que toca banco: até aqui não havia PostgreSQL, SQLAlchemy, Alembic nem
+`docker-compose.yml` no repositório. Subi o Postgres 16 local pelo Compose (na raiz, não aqui —
+ver [README da raiz](../README.md)), estendi a `Settings` existente com `DATABASE_URL` e
+`DATABASE_URL_TESTE`, criei `app/core/db.py` (engine + `SessaoLocal` + `obter_sessao()`), a `Base`
+declarativa com convenção de nomes de constraint, o modelo `Usuario` com o enum `PapelUsuario`, e
+o setup do Alembic em `migrations/` com a primeira migração.
+
+As cinco decisões de projeto por trás disso — Postgres por Compose, SQLAlchemy síncrono, `papel`
+como `VARCHAR` + `CHECK` em vez de enum nativo, migração Alembic desde a primeira tabela e testes
+contra Postgres real — estão no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo),
+cada uma com a alternativa que descartei e por quê.
+
+Duas armadilhas valeram a pena registrar aqui porque vão se repetir nas próximas migrações
+(Epics 2 a 5, que também mexem em schema):
+
+- **`env.py` precisa importar os modelos.** O `alembic init` deixa `target_metadata = None`; trocar
+  por `Base.metadata` não basta sozinho — se nada importar `app.models.usuario`, a classe nunca é
+  registrada no metadata e o `--autogenerate` gera um `upgrade()` vazio. `app/models/__init__.py`
+  reexporta `Base` e `Usuario` justamente para o `env.py` importar um módulo só.
+- **A URL do Alembic nunca vem só da variável de ambiente na fixture de teste.** Ela precisa ser
+  escrita em código (`cfg.set_main_option`) a partir de `DATABASE_URL_TESTE`, porque a fixture
+  começa com `alembic downgrade base` — e se essa chamada resolvesse a URL da forma normal (que
+  cai na `Settings`, ou seja, no banco de desenvolvimento), um `uv run pytest` distraído apagaria
+  dados de verdade. Documentei o contrato completo na seção [Testes](#testes) acima.
+
+O `Base.metadata.create_all` nunca aparece neste projeto, nem em teste — é a primeira regra que
+travei nesta story, porque contrariá-la resolveria o problema imediato e criaria um schema que a
+migração Alembic não conhece.

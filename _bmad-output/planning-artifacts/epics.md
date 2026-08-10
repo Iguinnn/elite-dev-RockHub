@@ -329,6 +329,26 @@ para poder comprar ingressos.
 **When** eu o navego por teclado
 **Then** todo campo tem `<label>` associado e o foco é visível em âmbar — UX-DR9
 
+**Given** o cadastro
+**When** eu procuro como escolher o papel da conta
+**Then** não existe seletor — todo cadastro nasce `CLIENTE`, e não há caminho na interface para
+criar conta de `ORGANIZADOR` ou de `PORTARIA`
+
+> **Só cliente se cadastra, e isso é decisão.** O enunciado pede "autenticação com três papéis
+> distintos" e pede o organizador entre os **dados semeados** — ou seja, ele próprio responde como
+> um organizador passa a existir. Portaria então é caso fechado: conta de portaria autocriada
+> validaria ingresso de evento alheio, que é justamente o furo que o AD-7 fecha.
+>
+> **Cadastro de organizador está adiado, não descartado.** O Igor pretende acrescentá-lo **depois**
+> que todo o fluxo obrigatório estiver de pé — é a ordem que o próprio enunciado recomenda ("faça o
+> básico rodar de ponta a ponta e só depois agregue valor") e que o NFR6 registra. Enquanto isso, as
+> credenciais semeadas cobrem o caminho do organizador pelo README.
+>
+> **Consequência para o README da raiz:** isso entra em *O que não está pronto*, como corte
+> consciente com data de volta — **não** na seção de decisões como alternativa descartada. Se ele
+> for implementado antes da entrega, vira uma tela nova e uma AC extra aqui: seletor entre `CLIENTE`
+> e `ORGANIZADOR`, `PORTARIA` nunca. A assimetria precisa de uma frase em tela explicando por quê.
+
 ### Story 1.6: Cada papel só acessa o que lhe cabe
 
 Como o sistema,
@@ -367,6 +387,12 @@ para percorrer o fluxo sem cadastrar nada.
 **When** eu rodo de novo
 **Then** ele não duplica contas nem falha
 
+**Given** o banco de produção, com contas que avaliadores criaram pelo cadastro
+**When** o seed roda de novo depois de um redeploy
+**Then** nenhum dado existente é apagado nem sobrescrito
+**And** a idempotência vem de "já existe? então não insere" — **nunca** de limpar a tabela antes de
+inserir, que funcionaria hoje e destruiria o trabalho de quem estiver avaliando no primeiro redeploy
+
 ### Story 1.8: Backend e banco no ar na Railway
 
 Como avaliador,
@@ -383,6 +409,22 @@ para ver o projeto funcionando sem instalar nada.
 **Given** as variáveis de ambiente em produção
 **When** eu as inspeciono
 **Then** `DATABASE_URL`, `JWT_SECRET`, `TICKET_SIGNING_SECRET` e `TICKETMASTER_API_KEY` existem só lá
+
+**Given** os serviços do projeto na Railway
+**When** eu os inspeciono
+**Then** existe um PostgreSQL provisionado lá, e o `DATABASE_URL` do backend aponta para ele
+**And** o `docker-compose.yml` da raiz **não** é usado em produção — ele existe só para o
+desenvolvimento local
+
+**Given** um deploy novo
+**When** ele executa
+**Then** `alembic upgrade head` roda **antes** de a aplicação começar a atender requisição
+**And** migração que falha impede o deploy de entrar no ar, em vez de subir com o schema errado
+
+**Given** o seed em produção
+**When** ele roda
+**Then** as quatro contas do NFR2 existem no banco da Railway, com as credenciais do README
+**And** um redeploy posterior não apaga as contas criadas por quem estiver avaliando — Story 1.7
 
 ### Story 1.9: Frontend no ar na Vercel
 
