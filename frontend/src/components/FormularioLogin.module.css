@@ -1,0 +1,50 @@
+/* Anatomia — Dev Notes da Story 1.4. Raio zero, sombra zero, nenhum card:
+   tudo aqui é dado de máquina, então tudo é monoespaçada. */
+
+.campo {
+  margin-bottom: 20px;
+}
+
+.rotulo {
+  display: block;
+  margin-bottom: 7px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.entrada {
+  width: 100%;
+  background: var(--breu2);
+  border: 1px solid var(--fio);
+  color: var(--cal);
+  padding: 14px;
+  font: 16px/1 var(--mono);
+}
+
+/* ALÉM do :focus-visible global âmbar, nunca em vez dele: o contorno de foco
+   não é desligado em lugar nenhum do projeto. */
+.entrada:focus {
+  border-color: var(--ambar);
+}
+
+.botao {
+  width: 100%;
+  background: var(--ambar);
+  color: var(--breu);
+  padding: 18px;
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.botao:disabled {
+  opacity: 0.35;
+}
+
+.erro {
+  margin-bottom: 16px;
+  color: var(--brasa);
+  font: 11px/1.6 var(--mono);
+}

@@ -5,10 +5,12 @@ chaves e valores de exemplo. O `.env` real fica fora do controle de versão.
 """
 
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_JWT_SECRET_EXEMPLO = "troque-este-valor-em-producao"
 
 
 class Settings(BaseSettings):
@@ -34,6 +36,27 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub"
     database_url_teste: str = "postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub_teste"
+
+    jwt_secret: str = _JWT_SECRET_EXEMPLO
+    cookie_sessao_nome: str = "rockhub_sessao"
+
+    @property
+    def cookie_secure(self) -> bool:
+        """`Secure` só em produção — `localhost` roda em HTTP (ver Dev Notes da Story 1.4).
+
+        Não é campo configurável de propósito: ninguém desliga em produção por
+        engano num painel de deploy.
+        """
+        return self.ambiente == "producao"
+
+    @model_validator(mode="after")
+    def _recusar_segredo_de_exemplo_em_producao(self) -> Self:
+        if self.ambiente == "producao" and self.jwt_secret == _JWT_SECRET_EXEMPLO:
+            raise ValueError(
+                "JWT_SECRET ainda é o valor de exemplo em produção. Gere um novo com: "
+                "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            )
+        return self
 
     @field_validator("cors_origens", mode="before")
     @classmethod

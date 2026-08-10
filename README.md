@@ -11,11 +11,11 @@ de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no cami
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
 camada.
 
-> **Estado atual:** em construção. O backend sobe com banco: PostgreSQL migrado por Alembic e a
-> tabela `usuario` já existe, com `papel` restrito a `ORGANIZADOR`/`CLIENTE`/`PORTARIA`. O frontend
-> sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. As duas metades
-> ainda não conversam: a primeira chamada de verdade acontece no login (Story 1.4), que também é
-> quando a tabela `usuario` ganha o primeiro consumidor. A seção
+> **Estado atual:** em construção. **As duas metades já conversam:** dá para entrar na aplicação em
+> `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o navegador falando só com
+> o domínio do frontend. O backend sobe com PostgreSQL migrado por Alembic e a tabela `usuario`; o
+> frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. Ainda
+> não há contas semeadas (Story 1.7) nem rota protegida (Story 1.6). A seção
 > [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## Como executar
@@ -43,9 +43,16 @@ cd backend
 cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
+# gere o segredo que assina a sessão e cole no .env, em JWT_SECRET
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+
 uv run alembic upgrade head       # cria o schema (tabela usuario)
 uv run uvicorn app.main:app --reload
 ```
+
+Em desenvolvimento o valor de exemplo do `JWT_SECRET` funciona e você pode pular esse passo. Com
+`AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito — o motivo está no
+[README do backend](backend/README.md#configuração).
 
 Sobe em <http://127.0.0.1:8000>. Para conferir que está no ar:
 
@@ -78,30 +85,52 @@ npm run dev
 
 Abre em <http://localhost:3000>, com o cabeçalho e o sistema visual aplicados.
 
-**Não mude a porta.** A 3000 é a origem que o `CORS_ORIGENS` do backend já autoriza por padrão; em
-outra porta, o login da Story 1.4 falha com um erro de CORS que custa a achar.
-
-Nesta altura o frontend ainda não chama a API — dá para abrir os dois ou só um, tanto faz.
-Convenções de CSS, tokens da identidade e armadilhas do Next 16 estão no
+**Suba o backend antes.** Desde o login, o frontend chama a API — e ele a alcança por um proxy
+próprio: o navegador só conhece `/api/...`, e o Next reescreve para `http://localhost:8000` do lado
+do servidor. Convenções de CSS, tokens da identidade, o proxy e as armadilhas do Next 16 estão no
 [README do frontend](frontend/README.md).
 
 ## Contas semeadas
 
 Ainda não existem — o seed com os quatro usuários de avaliação (organizador, cliente e portaria)
-entra na Story 1.7, junto com o modelo de usuário.
+entra na Story 1.7. Até lá, para experimentar o login, crie um usuário descartável a partir de
+`backend/`, com o Compose no ar e a migração aplicada:
+
+```bash
+uv run python -c "
+from app.core.db import SessaoLocal
+from app.core.seguranca import gerar_hash
+from app.models.usuario import PapelUsuario, Usuario
+s = SessaoLocal()
+s.add(Usuario(nome='Igor Teste', email='igor@exemplo.com',
+              senha_hash=gerar_hash('rockhub'), papel=PapelUsuario.CLIENTE.value))
+s.commit()
+"
+```
 
 ## Roteiro de avaliação
 
 O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento
-e validar na portaria — é escrito quando o fluxo estiver completo. Por enquanto, o que dá para
-verificar é o backend subindo e respondendo e o frontend abrindo com a identidade aplicada, como
-descrito acima.
+e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá para verificar:
+
+1. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/login` e
+   `/auth/logout`
+2. Com o usuário descartável criado acima, abrir `http://localhost:3000/login` e entrar com
+   `igor@exemplo.com` / `rockhub` → cai na raiz
+3. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
+   frontend — com `HttpOnly` marcado. E `document.cookie` no console não o mostra
+4. Na aba Network, a chamada foi para `/api/auth/login`, nunca para `localhost:8000`
+5. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
+   resposta é `401` com `CREDENCIAIS_INVALIDAS`. Um e-mail que não existe devolve **exatamente** a
+   mesma coisa
+6. `Tab` percorre e-mail → senha → botão com o contorno âmbar visível em todos os três
 
 ## Stack e estrutura
 
 | Camada | Escolha |
 |---|---|
 | Backend | FastAPI 0.141 · Python 3.12 · Pydantic v2 |
+| Sessão | Argon2id (`argon2-cffi`) para a senha · JWT HS256 (`PyJWT`) em cookie `httpOnly` |
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
 | Catálogo externo | Ticketmaster Discovery v2 *(Epic 2)* |
@@ -351,6 +380,151 @@ foi que `uv run pytest` passa a exigir o Compose no ar, e isso está documentado
 **O que caiu:** SQLite em memória — mais rápido e sem dependência externa, mas testando um banco
 que não é o de produção. `create_all` para os testes caiu pelo mesmo motivo da decisão anterior.
 
+### Senha em Argon2id, não bcrypt nem SHA com sal
+
+**Decidi** gravar senha como hash **Argon2id**, pelo `argon2-cffi`, com os parâmetros padrão da
+biblioteca — que já são o perfil de baixa memória da RFC 9106.
+
+**Por quê:** Argon2id é o vencedor da Password Hashing Competition e a recomendação atual do OWASP,
+e é o único dos candidatos que resiste tanto a ataque por GPU quanto a ataque por hardware dedicado,
+porque custa **memória** além de tempo. Na prática ele me dá de graça três coisas que eu teria que
+construir e defender sozinho: sal aleatório por hash (por isso a mesma senha hasheada duas vezes dá
+strings diferentes, e por isso não existe coluna de sal no banco — ele viaja dentro da própria
+string), todos os parâmetros embutidos no hash (posso endurecê-los depois sem invalidar o que já
+está gravado), e um custo deliberado de ~50ms por verificação.
+
+**O que caiu:** **bcrypt**, que ainda é perfeitamente aceitável, mas trunca a senha em 72 bytes
+silenciosamente e não impõe custo de memória. E **SHA-256 com sal**, que é o erro clássico: parece
+seguro porque é criptografia de verdade, mas é rápido *por projeto* — e velocidade é exatamente a
+propriedade errada aqui, porque quem tem o banco vazado testa bilhões de palpites por segundo.
+Descartei junto o `passlib`, que é o wrapper que a documentação antiga do FastAPI usa: está sem
+lançamento desde 2020, quebrou com o bcrypt 4, e não acrescenta nada sobre a API direta do
+`argon2-cffi`.
+
+**O custo que aceitei:** ~50ms e ~64 MB por verificação de senha. É o objetivo do algoritmo, não um
+problema a otimizar, mas aparece de duas formas concretas — a suíte de testes de login é
+perceptivelmente mais lenta que o resto, e isso pesa na escolha do tamanho da instância na Railway.
+
+### Sessão em cookie `httpOnly`, não token no `localStorage`
+
+**Decidi** que o JWT viaja num cookie `httpOnly`, `SameSite=Lax`, `Path=/`, com 8 horas de validade
+e `Secure` quando `AMBIENTE=producao`. JavaScript nunca lê o token.
+
+**Por quê:** token em `localStorage` é legível por qualquer script que rode na página — uma única
+falha de XSS, em qualquer dependência, entrega a sessão inteira. Com `httpOnly` o navegador envia o
+cookie e o JavaScript não o enxerga, então o mesmo XSS não consegue exfiltrar a credencial. E como o
+frontend é Next com Server Components, cookie é também a única forma que funciona nos dois lados:
+`localStorage` não existe no servidor, então eu acabaria com dois jeitos de autenticar — um no
+cliente, outro no servidor — que é precisamente o que o AD-15 existe para impedir.
+
+As 8 horas cobrem um turno de portaria, que é o cenário mais longo do sistema. Elas não são
+configuráveis de propósito: invariante de arquitetura com justificativa de domínio não vira knob,
+senão o valor em produção passa a divergir do documentado e ninguém descobre até alguém ser
+deslogado no meio do turno.
+
+**O que caiu:** `Authorization: Bearer` com o token no `localStorage`, que é o padrão que quase todo
+tutorial de SPA ensina. É mais simples de depurar (dá para ver o token) e imune a CSRF por
+construção — mas troca uma classe de ataque difícil por uma fácil, e quebraria os Server Components.
+Caiu junto o **refresh token**: resolveria a sessão expirar no meio de um uso longo, ao custo de
+mais um endpoint, mais uma tabela e uma regra de rotação para escrever e testar. Para 8 horas de
+validade num sistema avaliado em dias, expirou e faz login de novo.
+
+### PyJWT, não `python-jose` nem HMAC na mão
+
+**Decidi** usar **PyJWT 2.13.0** para assinar e ler o token, sempre em HS256 com a lista de
+algoritmos fixa no código.
+
+**Por quê:** é a biblioteca de JWT mantida e minimalista do ecossistema Python — para HMAC ela não
+traz dependência nenhuma a mais. E ela me protege de um erro específico: `jwt.decode` recusa rodar
+sem `algorithms=[...]` explícito. Isso não é burocracia. Aceitar o algoritmo que vem escrito *dentro
+do próprio token* é a vulnerabilidade clássica de JWT — um token forjado com `"alg": "none"` passaria
+a valer. A biblioteca me obriga a fechar essa porta.
+
+**O que caiu:** **`python-jose`**, que era a recomendação antiga da documentação do FastAPI. Último
+lançamento em maio de 2025, e implementa o JOSE inteiro (JWE, JWK) — trazendo `pyasn1`, `rsa` e
+`ecdsa` para o lockfile — quando eu uso exatamente uma primitiva. E **`hmac` + `hashlib` da
+biblioteca padrão**, que teria zero dependência nova e é o mesmo mecanismo que eu vou usar na
+assinatura do QR (AD-5): caiu porque me obrigaria a escrever à mão expiração, `base64url` e
+comparação em tempo constante. Código de segurança escrito à mão, quando existe versão testada por
+muita gente, é risco sem contrapartida.
+
+### Proxy `/api/*` no Next, não `SameSite=None` em produção
+
+**Decidi** que o navegador **nunca fala com o backend diretamente**. Ele chama `/api/auth/login` no
+domínio do próprio frontend, e o Next reescreve para a API do lado do servidor.
+
+**Por quê:** o deploy separa as duas metades em `rockhub.vercel.app` e `rockhub.up.railway.app`, e
+para o navegador esses são *sites diferentes* — `vercel.app` e `up.railway.app` estão os dois na
+Public Suffix List, então não existe domínio registrável em comum. Um cookie `SameSite=Lax` não é
+aceito nem reenviado nesse cruzamento. O detalhe cruel é que isso passa despercebido: em
+`localhost`, `:3000` e `:8000` são o mesmo site (porta não conta), então a suíte inteira ficaria
+verde e o login só falharia em produção. Com o proxy, o `Set-Cookie` volta pelo domínio da Vercel, o
+cookie é de origem própria, e o `SameSite=Lax` do AD-15 vale literalmente — sem exceção por
+ambiente e sem depender da política de cookie de terceiro de cada navegador, que muda por decisão de
+fornecedor.
+
+**O que caiu:** **`SameSite=None; Secure` em produção**, que é menos código e a saída óbvia. Ela
+transforma a sessão em cookie de terceiro — o Safari bloqueia isso por padrão, então o login
+simplesmente não entraria naquele navegador — e exigiria emendar o AD-15 com uma exceção por
+ambiente. Caiu também **deixar `Lax` cru e resolver no dia do deploy**: empurraria para a Story 1.9
+uma correção que mexe no frontend, descoberta no pior momento possível.
+
+**O que veio junto:** como as chamadas passaram a ser de mesma origem, CORS deixou de participar do
+caminho do navegador — mas eu **não** removi o `CORSMiddleware` do backend, que continua sendo a
+rede de proteção de qualquer chamada direta. E a variável `NEXT_PUBLIC_API_URL` virou `API_URL`,
+lida no servidor: com o proxy, o navegador não precisa mais saber o endereço da API, e manter as
+duas seria manter dois caminhos para alcançar a mesma coisa.
+
+### Credencial inválida tem uma resposta só — inclusive no tempo
+
+**Decidi** que e-mail inexistente e senha errada devolvem exatamente a mesma resposta: mesmo `401`,
+mesmo `CREDENCIAIS_INVALIDAS`, mesma mensagem. E que as duas custam o mesmo tempo.
+
+**Por quê:** a metade fácil é a mensagem — "esse e-mail não está cadastrado" entrega, para quem
+perguntar, quem tem conta no sistema. Eu garanto isso usando literalmente a *mesma construção* de
+erro nos dois caminhos, não duas strings iguais que alguém pode divergir depois; e o teste compara
+as duas respostas **entre si**, em vez de comparar cada uma com um literal.
+
+A metade que quase todo mundo esquece é o tempo. O caminho natural — não achou o usuário, levanta o
+erro na hora — responde em ~1ms para e-mail desconhecido e em ~50ms para e-mail existente com senha
+errada, porque só o segundo paga o custo do Argon2. Cinquenta vezes de diferença é medível de fora
+com um `for` e um cronômetro, e transforma o endpoint num oráculo de cadastro sem precisar de senha
+nenhuma. A correção é uma linha: quando o usuário não existe, eu confiro a senha contra um hash
+descartável e jogo o resultado fora.
+
+**O que caiu:** a resposta específica ("e-mail não cadastrado", com link para criar conta), que é
+mais gentil e é o que muito site grande faz. Ela ajuda o usuário legítimo que errou o e-mail e
+entrega a base de cadastro para qualquer um que perguntar — e num sistema com dados de compra, a
+lista de quem tem conta já é informação. Caiu também **limitar tentativas de login** por IP ou por
+conta, que seria a defesa mais direta contra força bruta: está declarado em
+[O que não está pronto](#o-que-não-está-pronto), porque é infraestrutura (contador com expiração,
+armazenamento compartilhado entre instâncias) que não se paga no prazo deste desafio.
+
+### A tela de acesso não tem a navegação do site
+
+**Decidi** partir o frontend em duas cascas: `(site)`, com o masthead completo, e `(entrada)`, que
+mostra só o logotipo. `/login` — e o cadastro, quando existir — ficam na segunda.
+
+**Por quê:** a primeira versão da tela de login herdava o masthead do layout raiz, e o resultado era
+oferecer "Meus ingressos" e "Minha conta" para quem ainda não tinha entrado. São dois links que essa
+pessoa não consegue abrir, e que hoje caem no 404 — a tela pedia credencial com uma mão e apontava
+para portas trancadas com a outra. Uma tela de acesso mostra a marca e o formulário; o resto é
+ruído, e ruído numa tela de duas entradas é o que faz parecer template.
+
+**O que caiu:** dois **layouts raiz** separados, que é o outro jeito de fazer isso no App Router.
+Caiu por dois motivos concretos: a documentação do Next avisa que navegar entre layouts raiz
+diferentes força recarga completa da página, e layout raiz múltiplo exige abrir mão do
+`app/layout.tsx` — o que deixaria o `not-found.tsx` sem layout de onde herdar e obrigaria a adotar
+`global-not-found`, que ainda é experimental. Caiu também esconder o masthead com `usePathname()`:
+funcionaria em três linhas, mas transformaria o masthead inteiro num componente de cliente para
+resolver o que é uma questão de estrutura de rota.
+
+**O que eu aprendi tentando:** cheguei a mover o `not-found.tsx` para dentro de `(site)` para ele
+herdar o masthead de graça. Não funciona — só o `not-found` na raiz de `app/` atende URL que não
+casa com rota nenhuma, e o efeito foi o visitante cair no 404 padrão do Next, sem identidade. Ele
+voltou para a raiz montando a própria casca, e isso está escrito no arquivo para ninguém repetir a
+tentativa.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -363,4 +537,7 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Cancelamento pelo cliente** | O modelo já suporta; faltam endpoint e tela |
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
+| **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
+| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar |
+| **Login que encaminha por papel** | Entrar leva todo mundo para a raiz. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |

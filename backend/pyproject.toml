@@ -11,6 +11,8 @@ dependencies = [
     "sqlalchemy==2.0.51",
     "alembic==1.19.1",
     "psycopg[binary]==3.3.4",
+    "argon2-cffi==25.1.0",
+    "pyjwt==2.13.0",
 ]
 
 [dependency-groups]

@@ -1,3 +1,4 @@
+import Logotipo from "./Logotipo";
 import estilos from "./Masthead.module.css";
 import NavLink from "./NavLink";
 
@@ -16,9 +17,7 @@ export default function Masthead() {
   return (
     <header className={estilos.masthead}>
       <div className={estilos.topo}>
-        <span className={estilos.logo}>
-          Rock<em>Hub</em>
-        </span>
+        <Logotipo />
       </div>
 
       <nav className={estilos.navbar} aria-label="Navegação principal">

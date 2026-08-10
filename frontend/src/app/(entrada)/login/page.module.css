@@ -1,0 +1,13 @@
+/* Coluna centrada, largura única de formulário — DESIGN.md#Components (botao). */
+
+/* O espaço acima vem da marca, na casca do grupo `(entrada)`. */
+.coluna {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 0 0 96px;
+}
+
+.coluna > :global(.kicker) {
+  display: block;
+  margin-bottom: 22px;
+}

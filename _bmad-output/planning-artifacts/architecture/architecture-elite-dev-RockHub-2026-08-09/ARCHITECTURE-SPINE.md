@@ -143,6 +143,7 @@ O frontend é Next.js com App Router; chama **apenas** a API própria, nunca ser
 - **Binds:** cadastro, login, toda rota autenticada, busca de dados no frontend
 - **Prevents:** senha guardada de forma recuperável; token roubado por XSS; e duas formas diferentes de o frontend autenticar (uma lendo `localStorage`, outra lendo cookie), o que quebraria os Server Components
 - **Rule:** senha é gravada como hash **Argon2id** (`argon2-cffi`), nunca em texto e nunca com hash reversível ou sem sal. O JWT viaja em cookie `httpOnly`, `Secure`, `SameSite=Lax`, com validade de **8 horas** — o suficiente para um turno de portaria. JavaScript nunca lê o token, e nenhum componente guarda credencial em `localStorage`. Sem refresh token: expirou, faz login de novo.
+- **Como o `SameSite=Lax` se sustenta em produção** (resolvido na Story 1.4): Vercel e Railway são sites diferentes para o navegador — `vercel.app` e `up.railway.app` estão os dois na *Public Suffix List*, então um cookie `Lax` não sobreviveria ao cruzamento. A saída é que **o navegador nunca fala com a Railway**: ele chama `/api/...` no domínio da Vercel e o Next reescreve para a API do lado do servidor (`rewrites()` em `next.config.ts`). O `Set-Cookie` volta pelo domínio do próprio frontend, o cookie é de origem própria, e esta regra vale literalmente, sem exceção por ambiente e sem depender da política de cookie de terceiro de cada navegador. `Secure` é derivado de `AMBIENTE` (`False` em `local`, porque desenvolvimento roda em HTTP). As Stories 1.8 e 1.9 herdam isso pronto — não reabram a discussão.
 
 ## Convenções de Consistência
 
@@ -171,6 +172,7 @@ Versões conferidas na web em 09/08/2026.
 | Pydantic | 2.13.4 |
 | Alembic | 1.19.1 |
 | argon2-cffi | 25.1.0 |
+| PyJWT | 2.13.0 |
 | PostgreSQL | 16 |
 | Node.js | 20.9+ (máquina de desenvolvimento: 24.14) |
 | npm | 11.9 — gerenciador do frontend, `package-lock.json` versionado |

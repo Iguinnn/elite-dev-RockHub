@@ -18,15 +18,8 @@
   border-bottom: 1px solid var(--fio);
 }
 
-.logo {
-  font: 400 44px/0.86 var(--serif);
-  letter-spacing: -0.035em;
-}
-
-.logo em {
-  font-style: italic;
-  color: var(--ambar);
-}
+/* O logotipo mora em `Logotipo.module.css` — ele é compartilhado com a casca
+   das telas de acesso, que não tem masthead. */
 
 /* Em tela estreita os três itens não cabem lado a lado. Quebram linha em vez de
    transbordar — a entreletra larga do versalete é parte da identidade e não vai

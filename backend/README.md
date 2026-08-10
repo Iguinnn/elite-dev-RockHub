@@ -63,6 +63,18 @@ Ticketmaster mais adiante.
 | `CORS_ORIGENS` | `http://localhost:3000` | Origens autorizadas, separadas por vírgula |
 | `DATABASE_URL` | `postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub` | Conexão com o Postgres do `docker-compose.yml` da raiz |
 | `DATABASE_URL_TESTE` | `.../rockhub_teste` | Banco usado por `uv run pytest`. Criado pelo script de `docker/initdb/` na primeira subida do Compose |
+| `JWT_SECRET` | `troque-este-valor-em-producao` | Segredo que assina o cookie de sessão. **Gere o seu antes de subir em produção** (comando abaixo) |
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+**Com `AMBIENTE=producao`, o valor de exemplo do `JWT_SECRET` derruba a aplicação na
+inicialização**, com a mensagem dizendo o comando acima. Isso é de propósito: o ponto mais provável
+de um segredo vazar não é alguém colar a chave no código — é o valor de exemplo continuar
+funcionando e ninguém perceber. Um `JWT_SECRET` padrão rodando em produção é um segredo público
+assinando sessões, e o deploy não teria como descobrir sozinho, porque *funciona*. Mesmo padrão vai
+valer para `TICKETMASTER_API_KEY` (Story 2.1) e `TICKET_SIGNING_SECRET` (Story 3.9).
 
 `DATABASE_URL` e `DATABASE_URL_TESTE` aceitam também `postgres://` e `postgresql://` — os
 esquemas que a Railway injeta. Um validador normaliza os três casos para `postgresql+psycopg://`,
@@ -111,16 +123,20 @@ backend/
     main.py          # cria o FastAPI, aplica CORS, registra o handler de erro e os routers
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
-    services/        # regra de negócio, transações e acesso ao banco (primeiro service: Story 1.4)
+      auth.py         # POST /auth/login, POST /auth/logout
+    services/        # regra de negócio, transações e acesso ao banco
+      autenticacao.py # autenticar(sessao, email, senha) -> Usuario
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
     schemas/         # Pydantic de entrada e saída
+      auth.py         # LoginEntrada, UsuarioSaida
     core/
       config.py      # Settings
       db.py           # engine, SessaoLocal, a dependência obter_sessao()
       erros.py        # erro de domínio + formato único de resposta
-  migrations/         # Alembic — script_location desta story
+      seguranca.py    # hash Argon2id e token de sessão (JWT)
+  migrations/         # Alembic
     env.py
     versions/
   tests/              # espelha a estrutura de app/
@@ -131,10 +147,54 @@ backend/
   .env.example
 ```
 
-As pastas `services/` e `schemas/` continuam vazias, só com `__init__.py` — o primeiro service e o
-primeiro schema nascem na Story 1.4, com o login. É proposital: elas materializam o paradigma
-desde o primeiro commit, para que as stories seguintes não tenham que decidir no calor da hora
-onde cada coisa mora.
+`services/` e `schemas/` nasceram vazias na Story 1.1, só com `__init__.py`, e ganharam o primeiro
+morador na 1.4 com o login. Foi proposital: elas materializaram o paradigma desde o primeiro
+commit, para que as stories seguintes não tivessem que decidir no calor da hora onde cada coisa
+mora.
+
+## Autenticação
+
+Duas rotas, e nada além disso até a Story 1.6:
+
+```
+POST /auth/login
+  ← {"email": "igor@exemplo.com", "senha": "..."}
+  → 200  {"id": "…", "nome": "…", "email": "…", "papel": "CLIENTE"}
+         Set-Cookie: rockhub_sessao=<jwt>; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800
+                     (+ Secure quando AMBIENTE=producao)
+  → 401  {"erro": {"codigo": "CREDENCIAIS_INVALIDAS", "mensagem": "E-mail ou senha incorretos."}}
+
+POST /auth/logout
+  → 204  sem corpo; apaga o cookie. Não exige sessão válida — quem tem token vencido
+         é justamente quem mais precisa sair
+```
+
+O JWT carrega só `sub` (id do usuário, **como string**), `papel`, `iat` e `exp`. Nome e e-mail não
+entram: token é credencial que trafega em toda requisição, então quanto menos carrega, menos vaza
+se for lido — e menos fica velho quando o usuário troca o nome.
+
+Três coisas que valem saber antes de mexer nisso:
+
+- **A validade da sessão tem uma fonte só.** `EXPIRACAO_SESSAO` em `app/core/seguranca.py` é uma
+  constante de módulo, e dela saem tanto o `exp` do JWT quanto o `max_age` do cookie. Não é
+  variável de ambiente de propósito: as 8 horas vêm do AD-15 com justificativa de domínio (cobre um
+  turno de portaria), e knob de configuração faria o valor em produção divergir do documentado sem
+  ninguém descobrir até alguém ser deslogado no meio do turno. Se ficassem em dois lugares, um dia
+  divergiriam — e o sintoma é cookie válido carregando token vencido, ou seja, `401` numa tela que
+  parece logada
+- **`sub` precisa ser `str`.** O PyJWT valida essa claim desde a 2.10 e levanta `InvalidSubjectError`
+  se ela não for string. `usuario.id` é `UUID`: passar direto funciona no `encode` e explode no
+  `decode`, então o login pareceria certo e quem quebraria seria a rota autenticada da Story 1.6
+- **`jwt.decode` sempre com `algorithms=["HS256"]` fixo no código.** Não é burocracia da biblioteca:
+  aceitar o algoritmo que vem escrito dentro do próprio token é a vulnerabilidade clássica de JWT —
+  um token com `"alg": "none"` passaria a valer
+
+E a resposta de erro do login é uma só. E-mail inexistente e senha errada devolvem **a mesma
+construção** de `ErroDeDominio`, não duas strings iguais por coincidência — e quando o usuário não
+existe, o service ainda confere a senha contra um `HASH_FANTASMA` e descarta o resultado. Sem isso a
+rota responderia em ~1ms para e-mail desconhecido e em ~50ms para e-mail existente com senha errada:
+uma diferença de cinquenta vezes, medível de fora com um `for` e um cronômetro, que transformaria o
+endpoint num oráculo de "quem tem conta aqui" sem precisar de senha nenhuma.
 
 ### O paradigma: `routers → services → models`
 
@@ -202,8 +262,9 @@ cd backend
 uv run pytest
 ```
 
-Os testes ficam em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
-de erro, a leitura de configuração do ambiente, a migração Alembic e o modelo `Usuario`.
+São **40 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
+de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o hash e o
+token de sessão, e as duas rotas de autenticação.
 
 Para testar os erros eu montei apps mínimas com os handlers reais e rotas que só existem para
 falhar. Assim o contrato fica verificado desde já, sem precisar esperar o primeiro endpoint de
@@ -222,6 +283,15 @@ Esse custo — `uv run pytest` agora exige o Compose no ar — foi deliberado. A
 que a migração de verdade funciona, e é exatamente isso que a Story 1.3 entrega. Os testes de
 `/saude`, erros e config continuam passando com o Postgres desligado — as fixtures de banco ficam
 isoladas em `conftest.py` e não conectam em escopo de import.
+
+**Os testes de HTTP que precisam de banco usam `dependency_overrides`.** Até a Story 1.3 havia dois
+tipos de teste que não se encontravam: os de `TestClient` não tocavam banco, e os de banco não
+subiam HTTP. O login precisa dos dois ao mesmo tempo, e a ponte é substituir a dependência
+`obter_sessao` pela sessão da fixture — que já roda dentro da transação revertida. Duas sutilezas
+que custam tempo: o `app.dependency_overrides.clear()` no fim é obrigatório (o `app` é módulo
+importado, o override é global e sobrevive ao teste, e a falha depois aparece longe da causa), e o
+override é `lambda: sessao`, devolvendo a sessão em vez de um gerador — com `yield`, o FastAPI
+fecharia a sessão da fixture ao fim da requisição e o teste seguinte receberia uma sessão morta.
 
 A fixture tem uma trava específica: ela nunca aponta para o banco de desenvolvimento, mesmo que o
 `.env` esteja carregado. A URL do Alembic é definida em código
@@ -281,3 +351,44 @@ Duas armadilhas valeram a pena registrar aqui porque vão se repetir nas próxim
 O `Base.metadata.create_all` nunca aparece neste projeto, nem em teste — é a primeira regra que
 travei nesta story, porque contrariá-la resolveria o problema imediato e criaria um schema que a
 migração Alembic não conhece.
+
+### Story 1.4 — entrar com e-mail e senha
+
+A tabela `usuario` ganhou o primeiro consumidor, e as pastas `services/` e `schemas/` deixaram de
+estar vazias. Entraram `argon2-cffi` e `pyjwt`, o `app/core/seguranca.py` (hash Argon2id, criação e
+leitura do token), o `app/schemas/auth.py`, o `app/services/autenticacao.py` e o `app/api/auth.py`
+com as duas rotas. A `Settings` ganhou `JWT_SECRET`, o nome do cookie e a propriedade `cookie_secure`.
+
+As decisões de projeto — Argon2id, sessão em cookie `httpOnly` em vez de token no `localStorage`,
+PyJWT no lugar do `python-jose`, e a mensagem única para credenciais inválidas — estão no
+[README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
+descartei.
+
+Quatro convenções nasceram aqui e valem para as stories seguintes:
+
+- **`app/services/<assunto>.py` com funções de módulo, não classes.** O service recebe a `Session`
+  como primeiro parâmetro e devolve modelo ou levanta `ErroDeDominio`. Não há classe de service,
+  não há injeção de service — a função é a unidade
+- **O service nunca sabe de HTTP.** Nem status, nem cookie, nem header. Ele levanta `ErroDeDominio`
+  com o status embutido, e o router não traduz nada. `autenticar()` devolve um `Usuario`; quem monta
+  o token e grava o cookie é a rota
+- **`app/schemas/<assunto>.py`**, um arquivo por assunto, com os nomes sufixados `Entrada` e
+  `Saida`. **Nunca reaproveite um schema de entrada como saída** — é assim que um `senha_hash` acaba
+  num corpo de resposta
+- **Todo segredo é campo da `Settings` com valor de exemplo, e o `model_validator` recusa o exemplo
+  em produção**
+
+Duas escolhas de biblioteca que valem registrar aqui porque a documentação antiga do FastAPI sugere
+o contrário: **não uso `passlib`** (sem lançamento desde 2020, e era só um wrapper — o `argon2-cffi`
+é a API direta), e **não uso `EmailStr`** no login. Nesse endpoint não há o que validar: o e-mail é
+chave de busca, e formato inválido simplesmente não encontra ninguém. Pior, um `422` de formato
+antes do `401` de credencial criaria exatamente a distinção que a resposta única existe para
+eliminar. `EmailStr` faz sentido na Story 1.5, onde o e-mail é *gravado*.
+
+O `PasswordHasher()` sem argumento nenhum já entrega o que o AD-15 pede: Argon2id é o tipo padrão,
+os parâmetros são o perfil de baixa memória da RFC 9106, o sal é aleatório por hash e viaja dentro
+da própria string — por isso não existe coluna de sal, e não deve existir. Como todos os parâmetros
+estão embutidos no hash, trocá-los depois não invalida o que já está gravado. O custo é real e é
+proposital: cada verificação leva ~50ms e ~64 MB, o que deixa os testes de login perceptivelmente
+mais lentos que os outros e vai importar na hora de escolher o tamanho da instância na Railway
+(Story 1.8).
