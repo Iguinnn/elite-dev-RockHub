@@ -1,7 +1,9 @@
-"""Rotas de autenticação: criar conta, entrar e sair.
+"""Rotas de autenticação: criar conta, entrar, sair e saber quem está logado.
 
-Nenhuma verificação de papel aqui — autorização por papel é dependência do
-FastAPI e é assunto da Story 1.6 (AD-9).
+Nenhuma verificação de papel aqui, e nem poderia haver: autorização por papel é
+dependência declarada na assinatura do endpoint e mora em
+`app/core/dependencias.py` (AD-9). Estas quatro rotas são justamente as que
+qualquer papel pode chamar.
 """
 
 from fastapi import APIRouter, Depends, Response
@@ -9,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import obter_settings
 from app.core.db import obter_sessao
+from app.core.dependencias import usuario_atual
 from app.core.seguranca import EXPIRACAO_SESSAO, criar_token_sessao
 from app.models.usuario import Usuario
 from app.schemas.auth import CadastroEntrada, LoginEntrada, UsuarioSaida
@@ -79,3 +82,13 @@ def entrar(
 @router.post("/logout", status_code=204)
 def sair(resposta: Response) -> None:
     _limpar_cookie_de_sessao(resposta)
+
+
+@router.get("/eu", response_model=UsuarioSaida)
+def quem_sou_eu(usuario: Usuario = Depends(usuario_atual)) -> UsuarioSaida:
+    """Quem está do outro lado do cookie. Responde `401` quando não há ninguém.
+
+    Nenhuma `Session` na assinatura: `usuario_atual` já recebeu a dela, e pedir
+    uma segunda aqui abriria uma sessão que este handler não usa.
+    """
+    return UsuarioSaida.model_validate(usuario)

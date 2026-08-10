@@ -22,7 +22,10 @@ function mensagemParaCodigo(codigo: string): string {
   return MENSAGEM_GENERICA;
 }
 
-export default function FormularioCadastro() {
+/** Mesma prop do login, pelo mesmo motivo: já validada no servidor. */
+type Props = { voltar?: string };
+
+export default function FormularioCadastro({ voltar = "/" }: Props) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -59,8 +62,13 @@ export default function FormularioCadastro() {
         body: JSON.stringify({ nome, email, senha }),
       });
       // Sem encaminhar por papel: toda conta criada aqui nasce CLIENTE, e nem
-      // `/organizador` nem `/portaria` existem.
-      router.push("/");
+      // `/organizador` nem `/portaria` existem. O destino é o `voltar`, quando
+      // veio de uma página protegida.
+      //
+      // ⚠️ `refresh()` obrigatório antes do `push` — o cadastro já abre sessão,
+      // e sem ele o masthead continuaria mostrando `Entrar`.
+      router.refresh();
+      router.push(voltar);
     } catch (erroCapturado) {
       // Erro de rede (`TypeError: Failed to fetch`) não passa pelo `ErroDaApi`
       // e não tem `codigo` — daí o `instanceof` antes de ler qualquer coisa.

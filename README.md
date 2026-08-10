@@ -121,7 +121,7 @@ O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a
 e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá para verificar:
 
 1. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
-   `/auth/login` e `/auth/logout`
+   `/auth/login`, `/auth/logout` e `/auth/eu`
 2. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
    caracteres) → **cai na raiz já logado**, sem precisar entrar de novo
 3. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
@@ -138,6 +138,19 @@ e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá p
    mesma coisa
 9. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL
 10. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
+
+E o ciclo da sessão, que fecha na Story 1.6:
+
+11. **Sem sessão**, a raiz `http://localhost:3000/` abre normalmente e o masthead mostra
+    `Início` · `Entrar` — a raiz é pública
+12. Ainda sem sessão, abrir `http://localhost:3000/conta` → você é levado para
+    `/login?voltar=%2Fconta`. Entrar ali **devolve você a `/conta`**, não à raiz
+13. Com sessão, o masthead vira `Início` · `Minha conta`, e a `/conta` mostra nome, e-mail e papel
+14. Clicar em `Sair` leva de volta para `/` **e o masthead vira `Entrar` na hora**, sem recarregar
+15. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie responde
+    `401 {"erro":{"codigo":"NAO_AUTENTICADO", ...}}`
+16. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=https://exemplo.com`, ou
+    `?voltar=javascript:alert(1)`) e entrar → você cai em `/`. **Nunca fora do site**
 
 ## Stack e estrutura
 
@@ -637,6 +650,84 @@ formulário, essa regra é a primeira coisa que alguém apaga por parecer óbvia
 segundo. **Regra que protege acessibilidade vira componente mesmo com poucos usos**, porque é onde
 ela se protege sozinha.
 
+### Autorização é dependência na assinatura do endpoint, não `if` no corpo do handler
+
+**Decidi** que papel se declara, não se confere:
+
+```python
+@router.get("/organizador/eventos")
+def meus_eventos(usuario: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR))): ...
+```
+
+Não existe um `if usuario.papel == ...` dentro do corpo de handler nenhum, no projeto inteiro.
+
+**Por quê:** a proteção passa a fazer parte da *assinatura* da rota. Ela aparece na documentação
+gerada — o `/docs` sabe que a rota é restrita —, e esquecê-la vira uma linha ausente que se vê à
+distância, em vez de uma verificação que alguém precisava lembrar de escrever. É o AD-9, e a razão
+de ele existir é que autorização espalhada por handler é o tipo de coisa que funciona em 19 rotas e
+falha na vigésima, sem nada acusando.
+
+**O que caiu:** **conferir o papel dentro do handler**, que é o caminho de menos código e o que
+qualquer tutorial mostra. Ele não custa nada na primeira rota; custa na décima, quando a proteção
+depende de disciplina de quem escreve, e não da estrutura. Considerei também um **middleware que
+inspeciona o caminho da URL** (`/organizador/*` exige `ORGANIZADOR`): resolveria de um lugar só, ao
+preço de manter uma tabela caminho→papel paralela às rotas — duas listas que divergem, e a
+desatualizada é sempre a que ninguém olha.
+
+### O papel vem do banco, não do que está escrito no token
+
+**Decidi** que `exigir_papel` consulta o usuário no banco a cada requisição, mesmo com o `papel`
+gravado dentro do JWT desde a Story 1.4.
+
+**Por quê:** a sessão dura 8 horas (AD-15). Um papel corrigido no banco continuaria valendo o antigo
+por todo esse tempo, e a única forma de derrubar o token seria trocar o `JWT_SECRET` — deslogando
+todo mundo. Além disso, a consulta acontece de qualquer jeito: a dependência precisa do usuário
+inteiro para responder o `GET /auth/eu`. Ler o papel do banco não custa uma consulta a mais, custa
+zero.
+
+**O que caiu:** **ler `carga["papel"]` do token**, que é o caminho curto e é o que a maior parte dos
+exemplos de JWT faz. A economia é real (uma consulta por requisição) e paga-se com uma janela de 8
+horas em que a autorização está errada e ninguém consegue corrigir. Um teste guarda essa decisão: um
+usuário gravado como `CLIENTE`, com um token forjado dizendo `ORGANIZADOR`, recebe `403`.
+
+Isso vale também para o vínculo portaria ↔ evento do AD-7, que vai ser lido do banco a cada
+validação em vez de carregado na sessão.
+
+### A guarda de rota mora na página, não em `middleware` do Next
+
+**Decidi** que cada página protegida do frontend lê a sessão e redireciona por conta própria — três
+linhas repetidas por página.
+
+**Por quê:** o middleware só consegue ver que **existe** um cookie, não que ele vale. Validar o JWT
+ali exigiria o `JWT_SECRET` no ambiente do frontend, e o AD-2 diz o contrário: o segredo que assina
+a sessão não tem por que existir na Vercel. A guarda na página pergunta ao backend, que é quem tem o
+segredo.
+
+**O que caiu:** **o `middleware.ts` conferindo o cookie**, que é o caminho que todo tutorial de Next
+mostra e centraliza a regra num arquivo só. Além do problema do segredo, ele viraria uma segunda
+lista de rotas protegidas, paralela às páginas — e as três linhas repetidas, em compensação, ficam
+ao lado do conteúdo que protegem, que é onde quem edita a página vai olhar. Considerei também
+`unauthorized()`/`forbidden()`, que o Next 16 traz e seriam o caminho idiomático: estão atrás da
+flag experimental `authInterrupts`, e eu não ligo flag experimental por conveniência.
+
+### Página protegida sem sessão redireciona **com volta**, em vez de mostrar um convite
+
+**Decidi** que abrir `/conta` sem sessão leva para `/login?voltar=%2Fconta`, e que entrar devolve a
+pessoa ao destino original.
+
+**Por quê:** ela pediu uma página específica. Depois de provar quem é, entregar essa página é o
+mínimo — mandá-la para a raiz obriga a navegar de novo até onde já estava indo, e é atrito puro. O
+parâmetro passa por `caminhoInternoSeguro` antes de virar navegação: `?voltar=` é um valor que quem
+chega escolhe e a aplicação obedece, e sem filtro é o redirecionamento aberto clássico — um link
+para o meu domínio que joga a pessoa em outro site logo depois de ela digitar a senha. Pior: a
+documentação do Next avisa que uma URL `javascript:` entregue ao `router.push` executa no contexto
+da página, o que faz disso um XSS.
+
+**O que caiu:** **mostrar a página com um convite a entrar**, sem redirecionar. É mais simples, não
+tem parâmetro e não tem o que validar — e perde o lugar de onde a pessoa veio. E **redirecionar sem
+devolver**, que é o mais barato dos três e tem a mesma perda, sem nem a economia de código do
+segundo.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -653,5 +744,7 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
 | **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Até a Story 1.7, organizador nasce pelo script em [Contas semeadas](#contas-semeadas). **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
-| **Login que encaminha por papel** | Entrar leva todo mundo para a raiz. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
+| **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
+| **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. Pelo mesmo motivo não há `Meus eventos` para organizador nem `Turnos` para portaria — navegação diferente por papel nasce nas Epics 2 e 5, com as telas |
+| **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |

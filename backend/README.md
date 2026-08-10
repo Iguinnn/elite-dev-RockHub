@@ -123,9 +123,9 @@ backend/
     main.py          # cria o FastAPI, aplica CORS, registra o handler de erro e os routers
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
-      auth.py         # POST /auth/cadastro, /auth/login, /auth/logout
+      auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
     services/        # regra de negócio, transações e acesso ao banco
-      autenticacao.py # autenticar() -> Usuario (só lê) · cadastrar() -> Usuario (grava e commita)
+      autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
@@ -134,13 +134,14 @@ backend/
     core/
       config.py      # Settings
       db.py           # engine, SessaoLocal, a dependência obter_sessao()
+      dependencias.py # usuario_atual() e exigir_papel() — a autorização do AD-9
       erros.py        # erro de domínio + formato único de resposta
       seguranca.py    # hash Argon2id e token de sessão (JWT)
   migrations/         # Alembic
     env.py
     versions/
   tests/              # espelha a estrutura de app/
-    conftest.py        # fixtures que migram rockhub_teste pelo Alembic
+    conftest.py        # fixtures de banco + o TestClient ligado a elas
   alembic.ini
   pyproject.toml
   uv.lock
@@ -154,7 +155,7 @@ mora.
 
 ## Autenticação
 
-Três rotas, e nada além disso até a Story 1.6:
+Quatro rotas, e nada além disso — todas abertas a qualquer papel:
 
 ```
 POST /auth/cadastro
@@ -175,6 +176,12 @@ POST /auth/login
 POST /auth/logout
   → 204  sem corpo; apaga o cookie. Não exige sessão válida — quem tem token vencido
          é justamente quem mais precisa sair
+
+GET /auth/eu
+  ← Cookie: rockhub_sessao=<jwt>
+  → 200  {"id": "…", "nome": "…", "email": "…", "papel": "CLIENTE"}
+  → 401  {"erro": {"codigo": "NAO_AUTENTICADO", "mensagem": "Entre para continuar."}}
+         sem cookie · token adulterado · token expirado · conta apagada
 ```
 
 O cadastro **já devolve a sessão**: o mesmo cookie que o login gravaria. Obrigar a pessoa a digitar
@@ -184,8 +191,9 @@ provada no ato de criar a conta. Os atributos do cookie são montados por um hel
 imediatamente ao lado dele: atributo que diverge entre gravar e apagar produz um cookie que o
 navegador não apaga, e a única defesa contra isso é os dois estarem sempre à vista um do outro.
 
-As três rotas devolvem o **mesmo** `UsuarioSaida`, e a `GET /auth/eu` da Story 1.6 vai devolver o
-mesmo de novo. Três rotas, um schema.
+O cadastro, o login e o `GET /auth/eu` devolvem o **mesmo** `UsuarioSaida`. Três rotas, um schema —
+e um teste afirma que o corpo do `/auth/eu` é idêntico ao que o login acabou de devolver, para que
+divergência entre elas seja o que quebra.
 
 ### O que `CadastroEntrada` aceita, e por que cada limite existe
 
@@ -277,6 +285,70 @@ rota responderia em ~1ms para e-mail desconhecido e em ~50ms para e-mail existen
 uma diferença de cinquenta vezes, medível de fora com um `for` e um cronômetro, que transformaria o
 endpoint num oráculo de "quem tem conta aqui" sem precisar de senha nenhuma.
 
+## Autorização: papel se declara, não se confere
+
+A regra vale para todas as rotas das Epics 2 a 5, e mora em
+[`app/core/dependencias.py`](app/core/dependencias.py):
+
+```python
+@router.get("/organizador/eventos")
+def meus_eventos(
+    usuario: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR)),
+) -> ...
+```
+
+**Nenhum `if usuario.papel == ...` dentro do corpo de um handler, no projeto inteiro.** Funcionaria
+igual, e é errado por duas razões: some da documentação gerada — o `/docs` não teria como saber que
+a rota é restrita — e depende de alguém lembrar de escrever a linha em cada rota nova. Na
+assinatura, esquecer a proteção é uma linha ausente que se vê à distância. É o AD-9, e a alternativa
+que descartei está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+São duas peças:
+
+| Peça | O que faz |
+|---|---|
+| `usuario_atual` | Traduz o cookie no `Usuario`. Levanta `401` se não houver sessão válida |
+| `exigir_papel(*papeis)` | **Fábrica** que devolve uma dependência. Levanta `403` se o papel não estiver na lista |
+
+### Autenticação antes de autorização
+
+Sem sessão é `401`; com sessão e papel errado é `403`. Primeiro se pergunta quem é, depois o que
+pode. Quem garante a ordem é o `Depends` encadeado: `exigir_papel` depende de `usuario_atual`
+**por `Depends`**, não por chamada direta. Chamar `usuario_atual(...)` à mão lá dentro obrigaria a
+repassar `Request` e `Session` e faria quem não tem sessão nenhuma receber `403` — uma resposta que
+diz "seu papel está errado" para alguém que sequer entrou.
+
+Os dois códigos, `NAO_AUTENTICADO` e `SEM_PERMISSAO`, são exatamente os que `CODIGO_POR_STATUS`
+daria para `401` e `403`. É de propósito, e é o contrário do que aconteceu com o `409` do cadastro:
+lá o domínio tinha algo a dizer que o status não dizia (`EMAIL_JA_CADASTRADO`); aqui não tem — "não
+autenticado" é a informação inteira. Uso `ErroDeDominio` mesmo assim pela **mensagem**: um
+`HTTPException` daria o mesmo código com a `MENSAGEM_PADRAO` genérica, e o UX-DR8 pede uma frase que
+diga o que fazer agora ("Entre para continuar.").
+
+### Os quatro modos de não ter sessão respondem igual
+
+Cookie ausente, token adulterado, token expirado e conta apagada são situações diferentes para quem
+depura e **a mesma** para quem chama: não há sessão válida. Diferenciá-las na resposta transformaria
+a rota num oráculo — "esse id já existiu?" —, pela mesma razão que o login gasta um `HASH_FANTASMA`
+para não revelar se o e-mail existe. O `ler_token_sessao` já colapsa expirado e adulterado num
+`None` só, porque o `jwt.decode` levanta `PyJWTError` para os dois.
+
+### O papel vem do banco, nunca do token
+
+O JWT carrega `papel` desde a Story 1.4, e o caminho curto seria lê-lo dali. Não faço isso:
+
+1. **A sessão dura 8 horas (AD-15).** Um papel corrigido no banco continuaria valendo o antigo por
+   todo esse tempo, e a única saída seria trocar o `JWT_SECRET` e deslogar todo mundo
+2. **A consulta acontece de qualquer jeito.** `usuario_atual` precisa do usuário inteiro para o
+   `GET /auth/eu`, então ler o papel do banco não custa uma consulta a mais — custa zero
+
+O `papel` no token continua útil como possibilidade futura (recusar antes da ida ao banco), mas hoje
+não é lido para autorizar nada, e um teste prova isso: um usuário gravado como `CLIENTE`, com um
+token forjado dizendo `ORGANIZADOR`, recebe `403`.
+
+Isso vale também para o vínculo portaria ↔ evento do AD-7, que será lido do banco a cada validação
+em vez de carregado na sessão.
+
 ### O paradigma: `routers → services → models`
 
 Dependência sempre para dentro, nunca o inverso, nunca pulando camada.
@@ -343,9 +415,31 @@ cd backend
 uv run pytest
 ```
 
-São **55 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
+São **73 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
 de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o hash e o
-token de sessão, e as três rotas de autenticação.
+token de sessão, as quatro rotas de autenticação e a dependência de papel.
+
+### A rota `/_teste` não existe no código de produção
+
+Se você procurar `/_teste/so-organizador` em `app/`, não vai achar: ela é declarada **dentro de**
+`tests/test_autorizacao.py`, montada no `app` real por uma fixture de módulo e removida no teardown.
+`app/` não importa `tests/`, então nada disso sobe com a aplicação.
+
+Ela existe porque provar o `403` exige uma rota que exija papel, e a primeira rota real de
+organizador é escopo da Epic 2. As duas alternativas: criar uma rota provisória de verdade em
+`app/api/` (daria `curl` no navegador, ao custo de uma rota que não faz nada esquecida em produção)
+ou adiar o `403` para a Epic 2 (deixaria um AC do `epics.md` sem cumprir e o AD-9 sem materialização
+nesta epic).
+
+Dois detalhes que a fizeram funcionar: ela é montada no `app` **real**, e não num `FastAPI()` novo —
+os três `exception_handler` que dão à API a forma `{"erro": {...}}` estão em `app/main.py`, e um app
+novo não os teria, fazendo os testes afirmarem sobre um `{"detail": ...}` que a API nunca devolve. E
+o teardown remove as rotas **e** zera `app.openapi_schema`: o `app` é módulo importado por toda a
+suíte, e rota que fica é rota que outro arquivo encontra por acidente.
+
+⚠️ **O `TestClient` guarda cookie entre chamadas.** Um teste que faz login e depois quer provar o
+`401` precisa de outra instância ou de `cliente.cookies.clear()` — senão o cookie da chamada
+anterior autentica a seguinte sem ninguém pedir.
 
 Um dos testes de cadastro merece nota: em vez de afirmar à mão os quatro atributos do cookie, ele
 **compara o cabeçalho do cadastro contra o do login**, ignorando só o valor do token. Repetir as
@@ -514,3 +608,37 @@ sobre o banco naquele ponto acusa um bug que não existe.
 Duas rotas mudaram de forma sem mudar de comportamento (`entrar` e `sair`, agora chamando os
 helpers), e os 40 testes anteriores continuaram passando sem uma linha alterada — que era exatamente
 o critério dessa refatoração.
+
+### Story 1.6 — cada papel só acessa o que lhe cabe
+
+A segunda story seguida sem dependência nova e sem migração: nada de `uv sync`, nada no lockfile,
+nenhuma coluna alterada. O modelo `Usuario` da 1.3 já previa esta story no próprio docstring, e o
+`UsuarioSaida` da 1.4 serviu a terceira rota sem mudar uma linha.
+
+Entrou um arquivo: [`app/core/dependencias.py`](app/core/dependencias.py), com `usuario_atual` e
+`exigir_papel` — o AD-9 saindo do documento e virando código. O resto foram acréscimos:
+`obter_usuario()` no service (leitura por `Session.get`, sem `commit`, do lado que só lê), e
+`GET /auth/eu` no router, com uma linha de corpo e nenhuma `Session` na assinatura, porque
+`usuario_atual` já recebeu a dela.
+
+Nos testes, a fixture `cliente` saiu de `test_auth.py` e foi para o `conftest.py` — ela é
+infraestrutura, e o `test_autorizacao.py` passou a precisar dela. Junto dela nasceu
+`fabricar_usuario`, que grava conta com o papel que o teste pedir. A `usuario_gravado` **não** foi
+reescrita sobre a fábrica: quinze testes de login e cadastro dependem daquele e-mail exato, e trocar
+uma fixture já conferida por uma genérica não ganharia nada. Os 55 testes anteriores passaram sem
+uma linha alterada.
+
+Duas armadilhas que custaram tempo e vão se repetir:
+
+- **`exigir_papel` precisa depender de `usuario_atual` por `Depends`**, não por chamada direta. É o
+  que faz a ordem `401` antes de `403` acontecer sozinha. O teste
+  `test_sem_cookie_na_rota_de_papel_responde_401_e_nao_403` existe exatamente para quebrar se
+  alguém "simplificar" isso
+- **`UUID(str(carga["sub"]))`, com o `str()`.** O `sub` chega dentro de um `dict` sem tipo; um `sub`
+  numérico faria `UUID(int)` levantar `AttributeError` em vez de `ValueError`, o `except` não
+  pegaria, e um cookie malformado viraria `500` no lugar de `401`
+
+As quatro decisões de projeto desta story — autorização como dependência, papel lido do banco,
+guarda na página em vez de `middleware`, e redirecionar com volta — estão no
+[README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
+descartei.

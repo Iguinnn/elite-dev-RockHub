@@ -1,5 +1,5 @@
 # generated: 2026-08-10
-# last_updated: 2026-08-10 (story 1.5 criada)
+# last_updated: 2026-08-10 (story 1.6 criada)
 # project: elite-dev-RockHub
 # project_key: NOKEY
 # tracking_system: file-system
@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-10 (story 1.5 pronta para review)
+last_updated: 2026-08-10 (story 1.6 pronta para review)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -54,7 +54,7 @@ development_status:
   1-3-modelo-de-usuario-e-primeira-migracao: review
   1-4-entrar-com-e-mail-e-senha: review
   1-5-cadastro-de-cliente: review
-  1-6-cada-papel-so-acessa-o-que-lhe-cabe: backlog
+  1-6-cada-papel-so-acessa-o-que-lhe-cabe: review
   1-7-dados-semeados-para-avaliacao: backlog
   1-8-backend-e-banco-no-ar-na-railway: backlog
   1-9-frontend-no-ar-na-vercel: backlog

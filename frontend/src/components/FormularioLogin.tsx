@@ -22,7 +22,14 @@ function mensagemParaCodigo(codigo: string): string {
   return MENSAGEM_GENERICA;
 }
 
-export default function FormularioLogin() {
+/**
+ * O `voltar` chega **já validado** por `caminhoInternoSeguro`, do Server
+ * Component que renderiza esta tela. Nada de `useSearchParams()` aqui: além de
+ * exigir fronteira de `<Suspense>`, faria a sanitização acontecer no navegador.
+ */
+type Props = { voltar?: string };
+
+export default function FormularioLogin({ voltar = "/" }: Props) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -42,7 +49,12 @@ export default function FormularioLogin() {
           senha: dados.get("senha"),
         }),
       });
-      router.push("/");
+      // ⚠️ O `refresh()` vem antes do `push` e não é opcional: o masthead é
+      // Server Component e o roteador serviria a versão em cache, ainda com
+      // `Entrar` no lugar de `Minha conta`. Não dá erro nenhum — só a tela
+      // mente.
+      router.refresh();
+      router.push(voltar);
     } catch (erroCapturado) {
       const mensagem =
         erroCapturado instanceof ErroDaApi

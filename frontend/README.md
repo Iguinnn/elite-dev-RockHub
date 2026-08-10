@@ -5,8 +5,10 @@ shows, a compra, o ingresso com QR e a tela de validação da portaria. A API vi
 [`../backend`](../backend/README.md) e este projeto só a consome.
 
 Hoje está de pé a casca — o sistema visual "jornal noturno" aplicado, o masthead, a raiz em estado
-vazio e um 404 com a cara do projeto — mais as **duas telas de acesso**, login e cadastro, que são as
-primeiras a conversar de verdade com a API.
+vazio e um 404 com a cara do projeto —, as **duas telas de acesso**, login e cadastro, e o **ciclo
+de sessão fechado**: o masthead sabe quem está do outro lado, existe uma `/conta` com os dados e o
+botão de sair, e quem abre uma página protegida sem sessão é levado ao login e devolvido ao destino
+depois de entrar.
 
 O histórico de decisões do projeto inteiro está no [README da raiz](../README.md). Aqui fica o que
 é específico desta camada.
@@ -132,9 +134,39 @@ Dois detalhes que já estão tratados e que é fácil quebrar sem querer:
   genérica — sem isso a tela quebra em branco quando a API cai, que é o primeiro estado que alguém
   encontra ao subir só o frontend
 
-**Só o caminho do navegador existe hoje.** Buscar dados a partir de um Server Component precisa de
-URL absoluta e de repassar o cookie lido por `cookies()`; isso nasce na Story 1.6, com o
-`GET /auth/eu`, que é o primeiro consumidor real.
+### E o caminho do servidor: `src/lib/sessao.ts`
+
+`api.ts` é o caminho do **navegador**. A leitura da sessão a partir de um Server Component é outro
+arquivo, e a separação não é organização — é obrigatória: `api.ts` é importado pelos formulários,
+que são `"use client"`, e `next/headers` num módulo que chega ao bundle do cliente **quebra o
+build**. A fronteira aqui é física.
+
+```ts
+const usuario = await obterUsuarioDaSessao();   // UsuarioDaSessao | null
+```
+
+Cinco decisões dentro de quinze linhas:
+
+- **URL absoluta**, `process.env.API_URL`, a mesma variável do `next.config.ts`. O `rewrite` de
+  `/api/*` é do navegador; um `fetch("/api/…")` do servidor não tem origem para resolver
+- **O cookie é repassado à mão** no cabeçalho `Cookie`. O `fetch` do servidor não herda nada do
+  pedido que está sendo atendido — este é o erro que faz a página renderizar deslogada com sessão
+  perfeitamente válida, e sem erro nenhum para investigar
+- **`cache()` do React**, não `unstable_cache` nem revalidação por tempo: a deduplicação que
+  interessa é *dentro de uma requisição*. O masthead e a `/conta` chamam a mesma função na mesma
+  renderização, e o backend é consultado uma vez
+- **Sem cookie, sem ida à rede.** A raiz é pública e visitante é o caso comum
+- **`try/catch` em volta do `fetch`, e `!resposta.ok` também devolve `null`.** Backend fora do ar
+  ou cookie vencido renderizam a página como visitante, em vez de derrubá-la
+
+O nome do cookie, `rockhub_sessao`, está escrito nos dois lados: aqui e como padrão de
+`cookie_sessao_nome` no `backend/app/core/config.py`. É acoplamento assumido — trocar lá exige
+trocar aqui.
+
+**Estado de sessão é lido no servidor, nunca guardado no cliente.** Não há contexto React de
+usuário, não há `localStorage`, não há estado global. A página pergunta ao servidor, e o servidor
+pergunta ao backend, que é quem tem o segredo do token. Sessão duplicada no cliente é a origem
+clássica da tela que continua mostrando o usuário antigo depois do logout.
 
 ## Estrutura
 
@@ -155,19 +187,22 @@ frontend/
         layout.tsx
         page.tsx              # raiz
         page.module.css
+        conta/
+          page.tsx            # Server Component com a guarda de sessão
+          page.module.css
       (entrada)/              # casca sem masthead: só a marca
         layout.tsx
         layout.module.css
         login/
-          page.tsx            # Server Component: coluna de 440px
+          page.tsx            # Server Component async: lê e valida o ?voltar=
           page.module.css
         cadastro/
-          page.tsx            # Server Component: a mesma coluna
+          page.tsx            # Server Component async: o mesmo ?voltar=
           page.module.css
     components/
       Logotipo.tsx            # a marca, num lugar só
       Logotipo.module.css
-      Masthead.tsx            # cabeçalho de jornal
+      Masthead.tsx            # cabeçalho de jornal — async, lê a sessão
       Masthead.module.css
       NavLink.tsx             # "use client" — marca o item ativo
       Campo.tsx               # rótulo + entrada, sempre juntos
@@ -178,8 +213,11 @@ frontend/
       AvisoDeErro.module.css
       FormularioLogin.tsx     # "use client"
       FormularioCadastro.tsx  # "use client"
+      BotaoSair.tsx           # "use client" — logout + router.refresh()
     lib/
-      api.ts                  # chamarApi + ErroDaApi — o único caminho até a API
+      api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
+      sessao.ts               # obterUsuarioDaSessao() — só servidor
+      caminho.ts              # caminhoInternoSeguro() — função pura
 ```
 
 ### Duas cascas, e por quê
@@ -191,9 +229,8 @@ O layout raiz é só `<html><body>`. A casca visível vem de dois grupos de rota
 | `(site)` | Masthead: logotipo, navegação, fio duplo | A raiz, e daqui em diante tudo que exige sessão ou é navegável |
 | `(entrada)` | Só o logotipo, centrado | `/login` e `/cadastro` |
 
-**Quem está tentando entrar não pode ver "Meus ingressos" e "Minha conta".** São dois links que ele
-não consegue abrir, e que hoje caem no 404. A tela de acesso mostra a marca e o formulário, nada
-mais.
+**Quem está tentando entrar não pode ver "Minha conta".** É um link que ele não consegue abrir. A
+tela de acesso mostra a marca e o formulário, nada mais.
 
 Usei grupo de rotas em vez de **dois layouts raiz** (que também separaria as cascas) porque a
 documentação do Next avisa que navegar entre layouts raiz diferentes força **recarga completa da
@@ -251,6 +288,11 @@ por papel nasce quando aquelas telas existirem (Epics 2 e 5).
 primeira versão do login herdava o masthead do layout raiz, e ficava oferecendo "Meus ingressos" e
 "Minha conta" para quem ainda não entrou. Corrigi antes de fechar a 1.4.
 
+> A frase "o sucesso leva para `/` nas duas" continua valendo como padrão, mas deixou de ser
+> absoluta na Story 1.6: quando a pessoa chegou por um `?voltar=`, o destino é ele. O que **não**
+> mudou é o resto — não há encaminhamento por papel, e não vai haver até as telas de organizador e
+> portaria existirem.
+
 ### `Campo`, `Botao`, `AvisoDeErro` — e quando abstrair
 
 Os três nasceram na Story 1.5, **não na 1.4**, e o critério é o que interessa: **componente
@@ -304,10 +346,92 @@ O campo "repetir senha" existe porque **não há recuperação de senha neste pr
 seria conta perdida para sempre, sem suporte e sem e-mail. A alternativa considerada e descartada
 está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
 
-Uma pendência continua aberta, e tem dono: **não há link para `/login` a partir do resto do site.**
-O "Entrar" entra no masthead na **Story 1.6**, que é quem passa a saber se existe sessão — lá as duas
-navegações nascem juntas ("Entrar" para visitante, "Minha conta / Sair" para quem entrou), sem estado
-intermediário errado.
+> Aquela pendência — "não há link para `/login` a partir do resto do site" — foi paga na Story 1.6,
+> na seção abaixo.
+
+## A sessão na tela
+
+### O masthead sabe quem está do outro lado
+
+Ele virou Server Component `async`: lê a sessão e monta a navegação a partir dela.
+
+| Estado | Navegação |
+|---|---|
+| Sem sessão | `Início` · `Entrar` |
+| Com sessão | `Início` · `Minha conta` |
+
+**`Meus ingressos` saiu do masthead** até a Epic 4 criar a tela. É o precedente que firmei na 1.4:
+link que cai no 404 não fica no repositório.
+
+**E o nome de quem entrou não aparece ali**, mesmo agora que o componente o conhece. O
+`DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio duplo, e nada mais —, e o
+UX-DR10 já tinha derrubado a linha de contexto pelo mesmo motivo. Os dados da pessoa são o conteúdo
+da `/conta`.
+
+### A `/conta`
+
+Kicker, o nome em serifada (nome próprio), e-mail e papel em mono versalete entre dois fios, e o
+botão `Sair`. Nenhum card, nenhum avatar, nenhuma inicial em círculo — círculo com letra dentro é
+justamente o vocabulário visual que este projeto está inteiro tentando não ter.
+
+**O `Sair` fica aqui, não no masthead.** O `EXPERIENCE.md#Information Architecture` diz "Minha conta
+→ dados, sair", e o `DESIGN.md` não prevê ação dentro do masthead. Ele usa o `Botao` que já existe,
+com um `max-width` no CSS da página — largura é decisão do contexto, não uma prop nova no componente.
+
+### A guarda mora na página, não em `middleware`
+
+Cada página protegida repete três linhas: lê a sessão, e se não houver, `redirect()`. O caminho que
+todo tutorial mostra é um `middleware.ts` conferindo o cookie antes da rota renderizar, e eu
+descartei por dois motivos:
+
+1. **O middleware só consegue ver que o cookie existe, não que ele vale.** Validar o JWT ali
+   significaria pôr o `JWT_SECRET` no ambiente do frontend, e o AD-2 diz o contrário — o segredo de
+   sessão do backend não tem por que existir na Vercel
+2. **Ele viraria uma segunda lista de rotas protegidas**, paralela às páginas. Duas listas divergem,
+   e a que fica desatualizada é sempre a que ninguém olha
+
+O custo são as três linhas repetidas, e elas ficam **ao lado** do conteúdo que protegem — que é
+exatamente onde quem edita a página vai olhar. O Next 16 traz `unauthorized()` e `forbidden()`, que
+seriam o caminho idiomático, mas estão atrás da flag experimental `authInterrupts`, e eu não ligo
+flag experimental por conveniência.
+
+**A raiz continua pública.** Visitante sem sessão vê a programação e não é redirecionado para lugar
+nenhum.
+
+### O `?voltar=`, e por que ele passa por um filtro
+
+Quem abre `/conta` sem sessão vai para `/login?voltar=%2Fconta` e, depois de entrar, cai de volta em
+`/conta` — não em `/`. O link recíproco entre login e cadastro carrega o parâmetro adiante, senão
+quem foi mandado para o login, resolveu se cadastrar e criou a conta perderia o destino no meio do
+caminho.
+
+**`?voltar=` é um valor que quem chega escolhe e a aplicação obedece** — o redirecionamento aberto
+clássico: um link para o meu domínio que joga a pessoa em outro site logo depois de ela digitar a
+senha. E pior: a própria documentação do Next avisa que uma URL `javascript:` entregue ao
+`router.push` **executa no contexto da página**, o que faz disto um XSS, não só um redirecionamento
+indevido. Daí `src/lib/caminho.ts`:
+
+| `?voltar=` | Destino | Por quê |
+|---|---|---|
+| `/conta` | `/conta` | caminho interno |
+| `/ingressos?filtro=x` | `/ingressos?filtro=x` | query preservada; ainda é interno |
+| ausente, `""`, lista | `/` | não é string que começa com `/` |
+| `https://exemplo.com` | `/` | não começa com `/` |
+| `//exemplo.com` | `/` | o navegador lê como protocolo relativo e sai do site |
+| `/\exemplo.com` | `/` | vários navegadores normalizam a contrabarra para barra |
+| `javascript:alert(1)` | `/` | o caso que a doc do Next chama de XSS |
+| `/login`, `/cadastro` | `/` | entrar para cair na tela de entrar é laço |
+
+A lista é de **prefixos recusados**, não de caminhos permitidos. Uma lista de permitidos seria mais
+rigorosa e obrigaria a editar aquele arquivo a cada tela nova das Epics 3 a 5 — e no dia em que
+alguém esquecesse, a tela nova deixaria de receber o retorno em silêncio.
+
+A validação acontece **no servidor**, na página, e o valor já limpo desce como prop para o
+formulário. `useSearchParams()` no Client Component funcionaria e exigiria fronteira de
+`<Suspense>`, além de mandar a regra para o navegador, onde ela vale menos.
+
+**Convenção:** parâmetro de URL que vira navegação passa por `caminhoInternoSeguro`. Vale para o
+retorno depois do checkout (Epic 3) e para o link compartilhado (Epic 4).
 
 ## O sistema visual
 
@@ -376,10 +500,15 @@ está na porta trabalha em pé, à noite, com uma mão e gente esperando.
 responsivo" no fim: o breakpoint só faz sentido escrito junto da grade que ele colapsa, e layout
 adiado para o último dia não acontece.
 
-Nesta casca o único ponto que precisava de tratamento era a navegação do masthead — os três itens em
+Nesta casca o único ponto que precisava de tratamento era a navegação do masthead — os itens em
 versalete com entreletra larga não cabem lado a lado em celular, então ela quebra linha
 (`flex-wrap`). Encolher a entreletra não era opção: ela é parte da identidade. O resto já reflui
 sozinho, porque não existe largura fixa em lugar nenhum — só `max-width`.
+
+A `/conta` tem um ajuste próprio, abaixo de 560px: os pares rótulo/valor deixam a grade de duas
+colunas e empilham. A coluna fixa de 90px para os rótulos aperta demais o valor em tela de celular, e
+e-mail é justamente o dado mais longo da tela — ele também recebeu `overflow-wrap: anywhere`, que é o
+que segura a ausência de rolagem horizontal em 375px.
 
 As telas de acesso não precisaram de media query nenhuma, e isso é consequência de três escolhas
 anteriores: a coluna é `max-width: 440px` com `margin: 0 auto`, os campos são `width: 100%`, e o
@@ -390,9 +519,12 @@ horizontal em formulário, e ela está desarmada na origem.
 ## Convenções
 
 - **Server Component por padrão.** `"use client"` só onde há interação que exige o navegador. Hoje
-  são três ilhas: o `NavLink`, que precisa de `usePathname()` para marcar o item ativo, e os dois
-  formulários — a exceção prevista no `ARCHITECTURE-SPINE.md#Convenções`. `Campo`, `Botao` e
-  `AvisoDeErro` **não** levam a diretiva: sem interação própria, ela marcaria como ilha algo que não é
+  são quatro ilhas: o `NavLink`, que precisa de `usePathname()` para marcar o item ativo, os dois
+  formulários — a exceção prevista no `ARCHITECTURE-SPINE.md#Convenções` — e o `BotaoSair`. `Campo`,
+  `Botao` e `AvisoDeErro` **não** levam a diretiva: sem interação própria, ela marcaria como ilha
+  algo que não é
+- **Estado de sessão é lido no servidor, nunca guardado no cliente.** Sem contexto React de usuário,
+  sem `localStorage`, sem estado global
 - **Componente compartilhado nasce no segundo uso, nunca no primeiro** — com uma exceção: regra que
   protege acessibilidade vira componente mesmo com poucos usos, porque é o tipo de regra que se perde
   ao copiar
@@ -409,9 +541,19 @@ horizontal em formulário, e ela está desarmada na origem.
 
 ## Armadilhas do Next 16 que eu já tropecei ou vou tropeçar
 
-- **`params` e `searchParams` são `Promise`.** O acesso síncrono foi removido de vez (era só
-  depreciado no 15). Não morde hoje, porque nenhuma rota é dinâmica ainda — vai morder na Story 3.4,
-  em `/eventos/[id]`. Sempre `const { id } = await params`
+- **⚠️ `router.refresh()` depois de toda mudança de sessão.** É a armadilha central da Story 1.6 e
+  não dá erro nenhum: a tela navega, o `fetch` acontece, o cookie muda — e o masthead continua
+  exibindo o estado antigo, porque é Server Component servido do cache do roteador. São três
+  lugares: `FormularioLogin`, `FormularioCadastro` e `BotaoSair`. **Convenção do projeto:** entrou,
+  cadastrou ou saiu, chama `refresh()`
+- **`params`, `searchParams` e `cookies()` são `Promise`.** O acesso síncrono foi removido de vez
+  (era só depreciado no 15). Sem o `await`, `cookies().get` não existe e `searchParams.voltar` é
+  `undefined` — que cai calado no padrão e parece "o voltar não funciona"
+- **`redirect()` funciona levantando `NEXT_REDIRECT`** e não pode ficar dentro de `try/catch`, que o
+  transformaria numa página em branco. Na `/conta` isso está resolvido por construção: o `try` mora
+  dentro do `sessao.ts`, e o que sobra na página é um `if`
+- **`fetch` do servidor não herda o cookie** do pedido que está sendo atendido. Sem repassar à mão,
+  a página renderiza deslogada com sessão válida — e não há erro nenhum para investigar
 - **`next lint` não existe mais.** O script `npm run lint` chama o ESLint direto
 - **Turbopack é o bundler padrão**, em dev e no build. Não configure webpack, não adicione flag
 - **O `create-next-app` gera coisa que viola o projeto.** Ele importa a fonte `Geist` de
@@ -420,6 +562,16 @@ horizontal em formulário, e ela está desarmada na origem.
   de novo
 - **`.gitignore` só existe na raiz.** O que o `create-next-app` cria aqui é redundante; a única
   regra que ele tinha a mais (`next-env.d.ts`) eu movi para o arquivo da raiz
+
+### `/` deixou de ser estática, e está certo
+
+Desde a Story 1.6 o `npm run build` marca **todas** as rotas com `ƒ` (renderizadas sob demanda), a
+raiz inclusive. O masthead lê `cookies()`, e isso torna dinâmica toda rota do grupo `(site)`; as
+telas de acesso ficaram dinâmicas por lerem `searchParams`.
+
+**É o comportamento correto**, não uma regressão: uma página cujo cabeçalho depende de quem pediu não
+pode ser pré-renderizada — a versão em cache mostraria `Entrar` para quem está logado. Não tente
+consertar com `export const dynamic` nem tirando o masthead do layout.
 
 ## Sobre não ter teste automatizado aqui
 
@@ -441,8 +593,24 @@ mais a conferência no navegador: fundo escuro, fio duplo fechando o masthead e 
 contorno âmbar em todo link.
 
 O preço disso é que **a reescrita de um formulário já entregue não tem rede de proteção** — foi
-exatamente o caso da Story 1.5, ao extrair `Campo` e `Botao` do login. Os 55 testes do backend não
-olham para o markup. Por isso a conferência manual das telas de acesso tem uma lista fixa:
+exatamente o caso da Story 1.5, ao extrair `Campo` e `Botao` do login. Os 73 testes do backend não
+olham para o markup, e na 1.6 isso pesou mais que o normal: o `router.refresh()` esquecido não quebra
+build, não quebra tipo e não quebra lint. Só a tela mente.
+
+A lista da sessão, acrescentada na 1.6:
+
+- **Sem sessão:** `/` abre normalmente e o masthead mostra `Início` · `Entrar`
+- **`/conta` sem sessão** cai em `/login?voltar=%2Fconta`; entrar leva de volta a `/conta`, não a `/`
+- **`?voltar=` forjado** — `//exemplo.com`, `https://exemplo.com`, `javascript:alert(1)`,
+  `/\exemplo.com`, `/login` — leva a `/`, nunca para fora do site
+- **Com sessão:** o masthead mostra `Início` · `Minha conta`, e a `/conta` traz nome, e-mail e papel
+- **`Sair` volta para `/` e o masthead vira `Entrar` na hora**, sem recarregar a página à mão. É a
+  verificação do `router.refresh()`, e é a que não tem substituto automatizado
+- **Cookie apagado à mão no DevTools + abrir `/conta`** → redireciona para o login
+- **`Tab`** percorre a navegação do masthead e a `/conta` inteira com contorno âmbar
+- **Janela em 375px na `/conta`:** nada transborda, sem rolagem horizontal
+
+E a lista original das telas de acesso:
 
 - **Login, com credenciais certas:** o DevTools mostra o cookie `rockhub_sessao` no domínio
   `localhost:3000`, com `HttpOnly` marcado, e a aba Network mostra a chamada indo para

@@ -1,29 +1,20 @@
-"""`POST /auth/cadastro`, `/auth/login` e `/auth/logout` — precisa do Compose no ar.
+"""`POST /auth/cadastro`, `/auth/login`, `/auth/logout` e `GET /auth/eu` —
+precisa do Compose no ar.
 
-A ponte entre o `TestClient` (HTTP) e a fixture `sessao` (transação revertida
-ao fim de cada teste) é `dependency_overrides`, substituindo `obter_sessao`.
-Ver Dev Notes da Story 1.4, "Ligar o `TestClient` ao banco de teste".
+A fixture `cliente`, que liga o `TestClient` (HTTP) à fixture `sessao`
+(transação revertida ao fim de cada teste) por `dependency_overrides`, mora no
+`conftest.py` desde a Story 1.6 — o `test_autorizacao.py` também a usa.
 """
 
-from collections.abc import Generator
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.db import obter_sessao
-from app.core.seguranca import gerar_hash
-from app.main import app
+from app.core.seguranca import criar_token_sessao, gerar_hash
 from app.models.usuario import PapelUsuario, Usuario
-
-
-@pytest.fixture()
-def cliente(sessao: Session) -> Generator[TestClient, None, None]:
-    app.dependency_overrides[obter_sessao] = lambda: sessao
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture()
@@ -340,3 +331,124 @@ def test_email_com_maiusculas_e_espacos_e_gravado_em_minusculas(
         sessao.scalar(select(Usuario).where(Usuario.email == "ana@exemplo.com"))
         is not None
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/eu — Story 1.6
+#
+# ⚠️ O `TestClient` guarda cookie entre chamadas: depois de um `POST
+# /auth/login` no mesmo `cliente`, o `GET /auth/eu` já vai autenticado. Os
+# testes de `401` usam um `cliente` que nunca entrou, ou limpam os cookies.
+# ---------------------------------------------------------------------------
+
+
+def _entrar(cliente: TestClient) -> dict:
+    resposta = cliente.post(
+        "/auth/login", json={"email": "igor@exemplo.com", "senha": "rockhub"}
+    )
+    assert resposta.status_code == 200
+    return resposta.json()
+
+
+def test_eu_com_cookie_do_login_responde_200_sem_senha_hash(
+    cliente: TestClient, usuario_gravado: Usuario
+) -> None:
+    _entrar(cliente)
+
+    resposta = cliente.get("/auth/eu")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["id"] == str(usuario_gravado.id)
+    assert corpo["nome"] == "Igor Teste"
+    assert corpo["email"] == "igor@exemplo.com"
+    assert corpo["papel"] == PapelUsuario.CLIENTE.value
+    assert "senha_hash" not in corpo
+    assert "senha" not in corpo
+
+
+def test_eu_devolve_exatamente_o_mesmo_corpo_do_login(
+    cliente: TestClient, usuario_gravado: Usuario
+) -> None:
+    """Três rotas, um schema. Divergência entre elas é o que quebra aqui."""
+    corpo_do_login = _entrar(cliente)
+
+    assert cliente.get("/auth/eu").json() == corpo_do_login
+
+
+def test_eu_sem_cookie_responde_401_no_formato_de_erro(cliente: TestClient) -> None:
+    resposta = cliente.get("/auth/eu")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+
+def test_eu_com_assinatura_adulterada_responde_401(
+    cliente: TestClient, usuario_gravado: Usuario
+) -> None:
+    """O caractere trocado é o do **meio** da assinatura, nunca o último.
+
+    A assinatura HMAC-SHA256 ocupa 43 caracteres em base64url e os 2 bits
+    finais são padding: trocar o último por `A`, `B`, `C` ou `D` decodifica
+    para os mesmos 32 bytes e não adultera nada. Diagnóstico no Debug Log da
+    Story 1.5.
+    """
+    _entrar(cliente)
+    cabecalho, carga, assinatura = cliente.cookies["rockhub_sessao"].split(".")
+
+    meio = len(assinatura) // 2
+    trocado = "A" if assinatura[meio] != "A" else "B"
+    adulterada = assinatura[:meio] + trocado + assinatura[meio + 1 :]
+
+    cliente.cookies.set("rockhub_sessao", f"{cabecalho}.{carga}.{adulterada}")
+    resposta = cliente.get("/auth/eu")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+
+def test_eu_com_cookie_que_nem_e_jwt_responde_401_e_nao_500(
+    cliente: TestClient,
+) -> None:
+    cliente.cookies.set("rockhub_sessao", "nao-e-um-token")
+
+    resposta = cliente.get("/auth/eu")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+
+def test_eu_com_token_valido_de_usuario_apagado_responde_401(
+    cliente: TestClient,
+) -> None:
+    """Token assinado por nós, e mesmo assim `401`: a conta não existe mais.
+
+    É o quarto caminho da dependência, e responde igual aos outros três de
+    propósito — diferenciá-lo faria a rota confirmar quais ids já existiram.
+    """
+    fantasma = Usuario(
+        id=uuid.uuid4(),
+        nome="Quem Já Foi",
+        email="fantasma@exemplo.com",
+        senha_hash=gerar_hash("rockhub"),
+        papel=PapelUsuario.CLIENTE.value,
+    )
+    cliente.cookies.set("rockhub_sessao", criar_token_sessao(fantasma))
+
+    resposta = cliente.get("/auth/eu")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+
+def test_eu_depois_do_logout_responde_401(
+    cliente: TestClient, usuario_gravado: Usuario
+) -> None:
+    _entrar(cliente)
+    assert cliente.get("/auth/eu").status_code == 200
+
+    cliente.post("/auth/logout")
+
+    resposta = cliente.get("/auth/eu")
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"

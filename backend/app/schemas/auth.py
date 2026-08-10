@@ -1,8 +1,8 @@
 """Schemas de entrada e saída da autenticação.
 
 `UsuarioSaida` nasce aqui porque `POST /auth/login` é o primeiro endpoint a
-devolvê-lo — `POST /auth/cadastro` devolve o mesmo, e a Story 1.6 reaproveita
-em `GET /auth/eu`. Três rotas, um schema.
+devolvê-lo — `POST /auth/cadastro` e `GET /auth/eu` devolvem o mesmo. Três
+rotas, um schema.
 """
 
 import re
