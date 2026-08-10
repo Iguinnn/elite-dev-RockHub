@@ -123,14 +123,14 @@ backend/
     main.py          # cria o FastAPI, aplica CORS, registra o handler de erro e os routers
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
-      auth.py         # POST /auth/login, POST /auth/logout
+      auth.py         # POST /auth/cadastro, /auth/login, /auth/logout
     services/        # regra de negócio, transações e acesso ao banco
-      autenticacao.py # autenticar(sessao, email, senha) -> Usuario
+      autenticacao.py # autenticar() -> Usuario (só lê) · cadastrar() -> Usuario (grava e commita)
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
     schemas/         # Pydantic de entrada e saída
-      auth.py         # LoginEntrada, UsuarioSaida
+      auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
     core/
       config.py      # Settings
       db.py           # engine, SessaoLocal, a dependência obter_sessao()
@@ -154,9 +154,17 @@ mora.
 
 ## Autenticação
 
-Duas rotas, e nada além disso até a Story 1.6:
+Três rotas, e nada além disso até a Story 1.6:
 
 ```
+POST /auth/cadastro
+  ← {"nome": "Igor Duarte", "email": "igor@exemplo.com", "senha": "..."}
+  → 201  {"id": "…", "nome": "…", "email": "…", "papel": "CLIENTE"}
+         Set-Cookie: rockhub_sessao=<jwt>; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800
+                     (+ Secure quando AMBIENTE=producao)
+  → 409  {"erro": {"codigo": "EMAIL_JA_CADASTRADO", "mensagem": "Esse e-mail já tem conta. …"}}
+  → 422  {"erro": {"codigo": "DADOS_INVALIDOS", "mensagem": "…"}}
+
 POST /auth/login
   ← {"email": "igor@exemplo.com", "senha": "..."}
   → 200  {"id": "…", "nome": "…", "email": "…", "papel": "CLIENTE"}
@@ -168,6 +176,79 @@ POST /auth/logout
   → 204  sem corpo; apaga o cookie. Não exige sessão válida — quem tem token vencido
          é justamente quem mais precisa sair
 ```
+
+O cadastro **já devolve a sessão**: o mesmo cookie que o login gravaria. Obrigar a pessoa a digitar
+de novo o e-mail e a senha que acabou de escolher é atrito sem contrapartida — a credencial já foi
+provada no ato de criar a conta. Os atributos do cookie são montados por um helper único
+(`_gravar_cookie_de_sessao`), usado pelas duas rotas, e o `delete_cookie` do logout mora
+imediatamente ao lado dele: atributo que diverge entre gravar e apagar produz um cookie que o
+navegador não apaga, e a única defesa contra isso é os dois estarem sempre à vista um do outro.
+
+As três rotas devolvem o **mesmo** `UsuarioSaida`, e a `GET /auth/eu` da Story 1.6 vai devolver o
+mesmo de novo. Três rotas, um schema.
+
+### O que `CadastroEntrada` aceita, e por que cada limite existe
+
+| Campo | Regra | Motivo |
+|---|---|---|
+| `nome` | `.strip()`, depois 1 a 120 caracteres | O `.strip()` vem antes porque `min_length=1` sozinho não segura `"   "` — três espaços são três caracteres válidos. O teto de 120 casa com o `VARCHAR(120)` da coluna, transformando num `422` legível o que seria um `500` de truncamento |
+| `email` | `.strip().lower()`, até 255, formato conferido | A normalização é a convenção que nasceu na Story 1.3, agora aplicada nos dois lados |
+| `senha` | 6 a 128 caracteres | O piso é decisão de produto (ver [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo)). O teto não é enfeite: Argon2id não tem o limite de 72 bytes do bcrypt, e uma senha de 10 MB seria hasheada inteira, com 64 MB de memória, por requisição |
+
+A normalização de e-mail é um tipo só — `EmailNormalizado`, um `Annotated` com `BeforeValidator` —
+usado pelo cadastro **e** pelo login. Estava duplicada como `field_validator` dentro do
+`LoginEntrada`; se as duas rotas normalizassem de jeitos diferentes, a conta gravada por uma não
+seria encontrada pela outra. O validador de *formato*, esse fica só no cadastro: no login o e-mail é
+chave de busca, e um `422` de formato antes do `401` de credencial recriaria a distinção entre
+"e-mail não existe" e "senha errada" que a resposta única existe para eliminar.
+
+**Não há `extra="forbid"` no schema, e isso é deliberado.** Parece a escolha rigorosa e quebraria a
+garantia mais importante da rota: enviar `{"papel": "ORGANIZADOR"}` no corpo passaria a responder
+`422` em vez de simplesmente criar uma conta `CLIENTE`. O papel é literal dentro do service, sem
+parâmetro e sem valor padrão sobrescrevível — um campo desconhecido sendo **ignorado** é a garantia
+mais forte que existe, porque ele não tem como influenciar nada. **O papel de uma conta nunca vem do
+corpo da requisição**, e essa regra vale para a Story 2.5, quando o organizador escalar portaria.
+
+### Duplicata é detectada pelo banco, não por um `SELECT` antes
+
+O caminho intuitivo seria consultar se o e-mail existe e, se não existir, gravar. Não é o que
+`cadastrar()` faz, por dois motivos:
+
+1. **Seria uma corrida.** Entre a consulta e a gravação cabe outra requisição com o mesmo e-mail. A
+   segunda bate no `UNIQUE` e vira `500` — justamente no caso que o `409` existe para cobrir
+2. **Criaria dois caminhos para a mesma regra.** O `SELECT` seria a regra "de verdade" e o `UNIQUE`
+   uma rede de proteção com comportamento diferente. Duas respostas para uma pergunta é como as duas
+   divergem
+
+Então há um caminho só: tenta gravar, e a restrição criada na Story 1.3 é quem responde. O
+`IntegrityError` vira `ErroDeDominio("EMAIL_JA_CADASTRADO", …, status_http=409)`. Três detalhes do
+bloco que custam tempo se passarem batido: o `flush()` fica dentro do `try` e o `commit()` fora
+(assim a exceção aparece na linha que a provoca); o `rollback()` é obrigatório, senão a `Session`
+fica em estado inválido e a próxima operação levanta um `PendingRollbackError` que aponta para longe
+da causa; e o `raise ... from erro` mantém no traceback o que o banco disse.
+
+Isso vale para os `UNIQUE` que vierem — evento, setor, vínculo de portaria. Como só existe uma
+restrição única na tabela `usuario`, não há ambiguidade sobre qual falhou; no dia em que houver duas,
+isto vira `erro.orig.diag.constraint_name`.
+
+**`cadastrar()` é o primeiro service do projeto que escreve**, e o par com `autenticar()` materializa
+a convenção de transação: *service que lê não faz nada; service que escreve abre e fecha a
+transação.* `obter_sessao()` entrega a `Session` sem transação aberta, e o router nunca chama
+`commit`.
+
+Uma consequência disso aparece nos testes e vale o aviso: depois de um `409`, o `rollback()` do
+service desfaz a transação **até o savepoint** da fixture, e leva junto o usuário que ela inseriu por
+`flush`. A resposta HTTP continua sendo `409`, mas um `assert` contando linhas na tabela depois disso
+veria zero e pareceria um bug do service. Afirme sobre a **resposta**, não sobre o banco.
+
+### A enumeração de e-mail que o cadastro oferece
+
+O `409` revela que aquele e-mail tem conta — exatamente o que o login gasta um `HASH_FANTASMA` para
+não revelar. A contradição é real e está registrada em *O que não está pronto* no
+[README da raiz](../README.md): o login pode esconder porque as duas respostas cabem numa frase só;
+o cadastro não tem essa saída sem verificação por e-mail, que está fora do escopo. O que continua
+valendo é que o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um
+e-mail por vez.
 
 O JWT carrega só `sub` (id do usuário, **como string**), `papel`, `iat` e `exp`. Nome e e-mail não
 entram: token é credencial que trafega em toda requisição, então quanto menos carrega, menos vaza
@@ -262,9 +343,15 @@ cd backend
 uv run pytest
 ```
 
-São **40 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
+São **55 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
 de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o hash e o
-token de sessão, e as duas rotas de autenticação.
+token de sessão, e as três rotas de autenticação.
+
+Um dos testes de cadastro merece nota: em vez de afirmar à mão os quatro atributos do cookie, ele
+**compara o cabeçalho do cadastro contra o do login**, ignorando só o valor do token. Repetir as
+quatro asserções nos dois lugares deixaria a suíte passar no dia em que apenas uma das rotas mudasse;
+do jeito que está, divergência entre elas é o que quebra — que é exatamente o que o helper
+compartilhado existe para impedir.
 
 Para testar os erros eu montei apps mínimas com os handlers reais e rotas que só existem para
 falhar. Assim o contrato fica verificado desde já, sem precisar esperar o primeiro endpoint de
@@ -383,7 +470,11 @@ o contrário: **não uso `passlib`** (sem lançamento desde 2020, e era só um w
 é a API direta), e **não uso `EmailStr`** no login. Nesse endpoint não há o que validar: o e-mail é
 chave de busca, e formato inválido simplesmente não encontra ninguém. Pior, um `422` de formato
 antes do `401` de credencial criaria exatamente a distinção que a resposta única existe para
-eliminar. `EmailStr` faz sentido na Story 1.5, onde o e-mail é *gravado*.
+eliminar.
+
+> Escrevi aqui, na 1.4, que `EmailStr` faria sentido na 1.5, onde o e-mail é *gravado*. Quando cheguei
+> lá, decidi o contrário — e o porquê está na [Story 1.5](#story-15--cadastro-de-cliente) e no README
+> da raiz. Deixo a previsão errada escrita de propósito: apagá-la esconderia que houve uma escolha.
 
 O `PasswordHasher()` sem argumento nenhum já entrega o que o AD-15 pede: Argon2id é o tipo padrão,
 os parâmetros são o perfil de baixa memória da RFC 9106, o sal é aleatório por hash e viaja dentro
@@ -392,3 +483,34 @@ estão embutidos no hash, trocá-los depois não invalida o que já está gravad
 proposital: cada verificação leva ~50ms e ~64 MB, o que deixa os testes de login perceptivelmente
 mais lentos que os outros e vai importar na hora de escolher o tamanho da instância na Railway
 (Story 1.8).
+
+### Story 1.5 — cadastro de cliente
+
+A primeira story desde a 1.1 que **não acrescenta dependência nenhuma**: nada de `uv sync`, nada no
+lockfile. Isso é consequência direta de ter escrito a validação de e-mail à mão em vez de instalar
+`email-validator` para usar `EmailStr` — decisão de produto, com a alternativa descartada registrada
+no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+Também não houve migração. O modelo `Usuario` da Story 1.3 já tinha tudo de que o cadastro precisa, e
+o fato de nenhuma coluna ter mudado é o sinal de que aquela story dimensionou certo.
+
+Entraram `CadastroEntrada` e o tipo `EmailNormalizado` no schema, `cadastrar()` no service, e
+`POST /auth/cadastro` no router — mais a extração dos dois helpers de cookie, que agora seriam
+escritos duas vezes. As regras de cada campo, a detecção de duplicata pelo `IntegrityError` e a
+convenção de transação estão na seção [Autenticação](#autenticação) acima.
+
+Três convenções que valem daqui para a frente:
+
+- **Service que escreve faz `commit`; service que lê não faz nada.** `autenticar()` e `cadastrar()`
+  são o par que mostra a regra
+- **Duplicata é detectada pelo banco, nunca por um `SELECT` antes do `INSERT`**
+- **O papel de uma conta nunca vem do corpo da requisição** — é literal no service, e a assinatura da
+  função é a garantia
+
+Uma armadilha que só aparece sob teste ficou documentada em [Autenticação](#autenticação): depois de
+um `409`, o `rollback()` do service leva junto o que a fixture inseriu por `flush`, e um `assert`
+sobre o banco naquele ponto acusa um bug que não existe.
+
+Duas rotas mudaram de forma sem mudar de comportamento (`entrar` e `sair`, agora chamando os
+helpers), e os 40 testes anteriores continuaram passando sem uma linha alterada — que era exatamente
+o critério dessa refatoração.

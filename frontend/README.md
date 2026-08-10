@@ -5,8 +5,8 @@ shows, a compra, o ingresso com QR e a tela de validação da portaria. A API vi
 [`../backend`](../backend/README.md) e este projeto só a consome.
 
 Hoje está de pé a casca — o sistema visual "jornal noturno" aplicado, o masthead, a raiz em estado
-vazio e um 404 com a cara do projeto — mais a **tela de login**, que é a primeira a conversar de
-verdade com a API.
+vazio e um 404 com a cara do projeto — mais as **duas telas de acesso**, login e cadastro, que são as
+primeiras a conversar de verdade com a API.
 
 O histórico de decisões do projeto inteiro está no [README da raiz](../README.md). Aqui fica o que
 é específico desta camada.
@@ -30,7 +30,7 @@ npm install
 npm run dev
 ```
 
-Abre em <http://localhost:3000>. Para a tela de login funcionar, o backend precisa estar no ar em
+Abre em <http://localhost:3000>. Para as telas de acesso funcionarem, o backend precisa estar no ar em
 `localhost:8000` — é para lá que o proxy `/api/*` aponta por padrão.
 
 A porta 3000 é também a origem que o `CORS_ORIGENS` do backend autoriza. Desde o proxy da Story 1.4
@@ -161,14 +161,23 @@ frontend/
         login/
           page.tsx            # Server Component: coluna de 440px
           page.module.css
+        cadastro/
+          page.tsx            # Server Component: a mesma coluna
+          page.module.css
     components/
       Logotipo.tsx            # a marca, num lugar só
       Logotipo.module.css
       Masthead.tsx            # cabeçalho de jornal
       Masthead.module.css
       NavLink.tsx             # "use client" — marca o item ativo
-      FormularioLogin.tsx     # "use client" — o formulário em si
-      FormularioLogin.module.css
+      Campo.tsx               # rótulo + entrada, sempre juntos
+      Campo.module.css
+      Botao.tsx               # ação primária âmbar
+      Botao.module.css
+      AvisoDeErro.tsx         # a região role="alert" e a regra que a faz funcionar
+      AvisoDeErro.module.css
+      FormularioLogin.tsx     # "use client"
+      FormularioCadastro.tsx  # "use client"
     lib/
       api.ts                  # chamarApi + ErroDaApi — o único caminho até a API
 ```
@@ -180,7 +189,7 @@ O layout raiz é só `<html><body>`. A casca visível vem de dois grupos de rota
 | Grupo | O que mostra | O que mora nele |
 |---|---|---|
 | `(site)` | Masthead: logotipo, navegação, fio duplo | A raiz, e daqui em diante tudo que exige sessão ou é navegável |
-| `(entrada)` | Só o logotipo, centrado | `/login` — e o cadastro, na Story 1.5 |
+| `(entrada)` | Só o logotipo, centrado | `/login` e `/cadastro` |
 
 **Quem está tentando entrar não pode ver "Meus ingressos" e "Minha conta".** São dois links que ele
 não consegue abrir, e que hoje caem no 404. A tela de acesso mostra a marca e o formulário, nada
@@ -204,45 +213,101 @@ identidade. Como o layout raiz é só `<html><body>`, o masthead precisa ser mon
 nasceram vazias no backend: deixar a estrutura materializada desde o primeiro commit, para que as
 stories seguintes não improvisem onde as coisas moram. Ganhou morador na 1.4.
 
-## A tela de login
+## As telas de acesso
 
-`/login` — rota em inglês sendo o resto tudo em português, e foi escolha: `/entrar` combinaria com o
-rótulo do botão, mas `login` é o termo que quem avalia reconhece de imediato, e é o que o próprio
-protótipo usa.
+Duas: `/login` e `/cadastro`. Rota em inglês para a primeira, sendo o resto tudo em português, e foi
+escolha — `/entrar` combinaria com o rótulo do botão, mas `login` é o termo que quem avalia reconhece
+de imediato, e é o que o próprio protótipo usa. `/cadastro` é português e casa com o
+`POST /auth/cadastro` do backend.
 
-A página é Server Component; a ilha de cliente é só o `FormularioLogin`, que é interação de
-formulário — está na lista de exceções legítimas do `"use client"`. O contrato de acessibilidade,
-que vale para todo formulário daqui em diante (UX-DR9):
+**As duas se alcançam uma da outra.** No pé de cada coluna há o link recíproco — "Ainda não tem
+conta? Cadastre-se" e "Já tem conta? Entrar" —, com `next/link`, nunca `<a href>`: as duas telas
+compartilham a casca do grupo `(entrada)`, e um `<a>` recarregaria o documento inteiro para trocar de
+formulário. Nenhuma das duas é alcançável só digitando a URL, que era a pendência aberta na 1.4.
 
-- `<label htmlFor>` explícito em todo campo — nada de placeholder fazendo as vezes de rótulo
+Cada página é Server Component; a ilha de cliente é só o formulário — interação de formulário está na
+lista de exceções legítimas do `"use client"`. O contrato de acessibilidade, que vale para todo
+formulário daqui em diante (UX-DR9):
+
+- `<label htmlFor>` explícito em todo campo — nada de placeholder fazendo as vezes de rótulo. O
+  `Campo` não tem caminho para renderizar entrada sem rótulo associado: o `id` é obrigatório e serve
+  às duas pontas
 - `<form onSubmit>` de verdade, para `Enter` enviar sem precisar acertar o botão
-- `autoComplete="email"` e `autoComplete="current-password"`, para o gerenciador de senhas funcionar
+- `autoComplete` em todo campo. No login, `email` e `current-password`. No cadastro, `name`, `email` e
+  **`new-password` nos dois campos de senha** — é o que faz o gerenciador oferecer uma senha nova em
+  vez de tentar preencher a de uma conta que ainda não existe
 - o erro vive numa região `role="alert"` **que existe sempre, vazia** — se ela só entrasse no DOM
   junto com o texto, parte dos leitores de tela não anunciaria nada. Vazia ela não ocupa espaço
 - o foco é o `:focus-visible` âmbar global; o `border-color` âmbar no `:focus` do campo é *além*
   dele, nunca em vez dele. O protótipo tem um `outline: none` no input (l. 152) que **não** foi para
   o código
 
-Duas coisas que deixei de fora de propósito. **Não criei `Campo.tsx` nem `Botao.tsx`**: dois campos
-no mesmo formulário não justificam abstração, e componente sem consumidor firme é componente que a
-próxima story reescreve — é o mesmo critério que manteve o CSS do 404 repetido em vez de abstraído.
-Eles nascem na Story 1.5, quando existir o segundo formulário. E **o sucesso leva para `/`, sem
-encaminhar por papel**: `/organizador/...` e `/portaria` ainda não existem, e inventar rota aqui
-produziria um 404 na cara de quem está avaliando. O encaminhamento por papel nasce quando aquelas
-telas existirem (Epics 2 e 5).
+E **o sucesso leva para `/` nas duas**, sem encaminhar por papel: `/organizador/...` e `/portaria`
+ainda não existem, e inventar rota aqui produziria um 404 na cara de quem está avaliando. No cadastro
+isso é ainda mais direto, porque toda conta criada pela interface nasce `CLIENTE`. O encaminhamento
+por papel nasce quando aquelas telas existirem (Epics 2 e 5).
 
-**A tela não tem masthead** — só a marca, pela casca do grupo `(entrada)` descrita acima. A primeira
-versão herdava o masthead do layout raiz, e ficava oferecendo "Meus ingressos" e "Minha conta" para
-quem ainda não entrou. Corrigi antes de fechar a story.
+**As telas não têm masthead** — só a marca, pela casca do grupo `(entrada)` descrita acima. A
+primeira versão do login herdava o masthead do layout raiz, e ficava oferecendo "Meus ingressos" e
+"Minha conta" para quem ainda não entrou. Corrigi antes de fechar a 1.4.
 
-Duas coisas continuam faltando, e cada uma tem dono:
+### `Campo`, `Botao`, `AvisoDeErro` — e quando abstrair
 
-- **Não há link para `/login` em lugar nenhum.** Hoje se chega digitando a URL. O "Entrar" entra no
-  masthead na **Story 1.6**, que é quem passa a saber se existe sessão — lá as duas navegações
-  nascem juntas ("Entrar" para visitante, "Minha conta / Sair" para quem entrou), sem estado
-  intermediário errado
-- **Não há link "Ainda não tem conta?".** Ele entra na **Story 1.5**, junto da tela de cadastro que
-  ele abre — link que cai no 404 não entra no repositório nem por um commit
+Os três nasceram na Story 1.5, **não na 1.4**, e o critério é o que interessa: **componente
+compartilhado nasce no segundo uso, nunca no primeiro.** Dois campos num único formulário não
+justificavam abstração; seis campos e dois botões entre duas telas, sim. Antes disso, componente sem
+consumidor firme é componente que a próxima story reescreve — foi o mesmo critério que manteve o CSS
+do 404 repetido em vez de abstraído, na 1.2.
+
+Extrair custou reescrever o `FormularioLogin`, que já estava entregue e conferido. Foi o ponto de
+maior risco da story: um `htmlFor` que perde o par com o `id`, um `autoComplete` que some, um `name`
+renomeado — e a tela continua parecendo certa, sem nenhum teste para acusar. A alternativa era
+repetir o CSS nas duas telas, e ela cai por um motivo simples: duas cópias do mesmo campo divergem na
+primeira vez que alguém ajustar só uma.
+
+O `Botao` tem **só a variante primária**. O `DESIGN.md` descreve também um secundário e um
+destrutivo, e nenhum dos dois tem consumidor — uma prop `variante` com um valor só é abstração
+inventada. Quando o segundo aparecer, ela nasce ali.
+
+**O `AvisoDeErro` foi extraído por um critério diferente dos outros dois.** `Campo` e `Botao` saíram
+porque se repetem. Este saiu porque a regra que o faz funcionar é *invisível*: a região `role="alert"`
+precisa existir no DOM desde o primeiro render, vazia, e receber só o texto depois. Escrita como
+comentário dentro de um formulário, essa regra é a primeira coisa que alguém apaga por parecer óbvia
+ao copiar para o segundo — e o que se perde não é estilo, é o anúncio do erro para quem usa leitor de
+tela. Componente é onde uma regra dessas se protege sozinha. **Regra que protege acessibilidade vira
+componente mesmo com poucos usos.**
+
+Os três não têm `"use client"`. Nenhum tem interação própria, e importados por um componente de
+cliente vão para o bundle do cliente do mesmo jeito — a diretiva só marcaria como ilha algo que não é.
+
+### Onde cada validação mora, e por que em dois lugares
+
+Não é redundância; são responsabilidades diferentes. **O cliente valida para ser gentil, o servidor
+valida para estar correto.**
+
+| Regra | Cliente | Servidor | Por quê |
+|---|---|---|---|
+| Campo obrigatório | `required` | `min_length` | O navegador dá o retorno imediato; o servidor é o que vale |
+| Senha ≥ 6 caracteres | sim, antes do `fetch` | `Field(min_length=6)` | O cliente evita uma ida à rede; o servidor é a garantia |
+| Senhas conferem | **só cliente** | — | Não é regra de negócio |
+| Formato do e-mail | `type="email"` | `field_validator` | O `type` some num `curl`; o validador não |
+| E-mail já existe | — | **só servidor** | Só o banco sabe |
+
+A única regra que existe **só** no cliente é a confirmação de senha, e ela é a exceção que confirma o
+critério: "duas caixas de texto iguais" é sobre o próprio ato de digitar, não sobre o domínio. O
+formulário tem os dois valores em mãos, compara em memória e nem chega a fazer a requisição — o corpo
+enviado tem três campos (`nome`, `email`, `senha`), nunca quatro. Mandar a confirmação para a API
+acrescentaria um campo ao contrato, um validador cruzado, uma mensagem e um teste, tudo para
+verificar algo que nenhum outro cliente da API teria por que enviar.
+
+O campo "repetir senha" existe porque **não há recuperação de senha neste projeto**: uma letra errada
+seria conta perdida para sempre, sem suporte e sem e-mail. A alternativa considerada e descartada
+está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+Uma pendência continua aberta, e tem dono: **não há link para `/login` a partir do resto do site.**
+O "Entrar" entra no masthead na **Story 1.6**, que é quem passa a saber se existe sessão — lá as duas
+navegações nascem juntas ("Entrar" para visitante, "Minha conta / Sair" para quem entrou), sem estado
+intermediário errado.
 
 ## O sistema visual
 
@@ -316,11 +381,21 @@ versalete com entreletra larga não cabem lado a lado em celular, então ela que
 (`flex-wrap`). Encolher a entreletra não era opção: ela é parte da identidade. O resto já reflui
 sozinho, porque não existe largura fixa em lugar nenhum — só `max-width`.
 
+As telas de acesso não precisaram de media query nenhuma, e isso é consequência de três escolhas
+anteriores: a coluna é `max-width: 440px` com `margin: 0 auto`, os campos são `width: 100%`, e o
+reset global aplica `box-sizing: border-box` em tudo. Sem o `border-box`, o `padding: 14px` do campo
+somaria à largura total e transbordaria a coluna em telas estreitas — é a causa mais comum de rolagem
+horizontal em formulário, e ela está desarmada na origem.
+
 ## Convenções
 
 - **Server Component por padrão.** `"use client"` só onde há interação que exige o navegador. Hoje
-  são duas ilhas: o `NavLink`, que precisa de `usePathname()` para marcar o item ativo, e o
-  `FormularioLogin`, que é formulário — a exceção prevista no `ARCHITECTURE-SPINE.md#Convenções`
+  são três ilhas: o `NavLink`, que precisa de `usePathname()` para marcar o item ativo, e os dois
+  formulários — a exceção prevista no `ARCHITECTURE-SPINE.md#Convenções`. `Campo`, `Botao` e
+  `AvisoDeErro` **não** levam a diretiva: sem interação própria, ela marcaria como ilha algo que não é
+- **Componente compartilhado nasce no segundo uso, nunca no primeiro** — com uma exceção: regra que
+  protege acessibilidade vira componente mesmo com poucos usos, porque é o tipo de regra que se perde
+  ao copiar
 - **CSS Modules por componente** (`Componente.module.css`), com os tokens vindo do `globals.css`.
   Sem folha global gigante e sem colisão de nome de classe
 - **Componentes em `PascalCase`**; o domínio continua em português (`evento`, `setor`, `reserva`,
@@ -365,9 +440,19 @@ npm run lint       # limpo
 mais a conferência no navegador: fundo escuro, fio duplo fechando o masthead e `Tab` desenhando o
 contorno âmbar em todo link.
 
-Para o login, a conferência manual tem um item que nenhum comando pega — **em `/login`, com
-credenciais certas, o DevTools tem que mostrar o cookie `rockhub_sessao` no domínio
-`localhost:3000`, com `HttpOnly` marcado, e a aba Network tem que mostrar a chamada indo para
-`/api/auth/login`, nunca para `localhost:8000`.** É a verificação literal de que o proxy está no
-caminho. `document.cookie` no console **não** pode mostrar o cookie: isso é o `httpOnly`
-funcionando.
+O preço disso é que **a reescrita de um formulário já entregue não tem rede de proteção** — foi
+exatamente o caso da Story 1.5, ao extrair `Campo` e `Botao` do login. Os 55 testes do backend não
+olham para o markup. Por isso a conferência manual das telas de acesso tem uma lista fixa:
+
+- **Login, com credenciais certas:** o DevTools mostra o cookie `rockhub_sessao` no domínio
+  `localhost:3000`, com `HttpOnly` marcado, e a aba Network mostra a chamada indo para
+  `/api/auth/login`, nunca para `localhost:8000`. É a verificação literal de que o proxy está no
+  caminho. `document.cookie` no console **não** pode mostrar o cookie: isso é o `httpOnly` funcionando
+- **Cadastro:** criar conta cai em `/` já logado, com o mesmo cookie; repetir o mesmo e-mail mostra a
+  mensagem de conta existente e um `409` no Network; e **senhas diferentes mostram "As senhas não
+  conferem." sem nenhuma requisição** — se aparecer chamada no Network, a confirmação vazou para o
+  backend
+- **Sair e entrar pelo `/login` com a conta recém-criada.** É a prova de que hash e normalização de
+  e-mail batem entre as duas rotas
+- **`Tab` percorre** nome → e-mail → senha → repetir → botão → link, com contorno âmbar em todos, e os
+  links levam de uma tela à outra sem digitar URL

@@ -1,4 +1,7 @@
-/* Anatomia — Dev Notes da Story 1.4. Raio zero, sombra zero, nenhum card:
+/* Vindo do FormularioLogin.module.css da Story 1.4, sem mudança de valor:
+   extrair componente é mover código que já funciona, não reescrevê-lo.
+
+   Anatomia — Dev Notes da Story 1.4. Raio zero, sombra zero, nenhum card:
    tudo aqui é dado de máquina, então tudo é monoespaçada. */
 
 .campo {
@@ -27,24 +30,4 @@
    não é desligado em lugar nenhum do projeto. */
 .entrada:focus {
   border-color: var(--ambar);
-}
-
-.botao {
-  width: 100%;
-  background: var(--ambar);
-  color: var(--breu);
-  padding: 18px;
-  font: 700 12px/1 var(--mono);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.botao:disabled {
-  opacity: 0.35;
-}
-
-.erro {
-  margin-bottom: 16px;
-  color: var(--brasa);
-  font: 11px/1.6 var(--mono);
 }

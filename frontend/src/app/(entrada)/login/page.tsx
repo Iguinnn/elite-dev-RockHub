@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import FormularioLogin from "@/components/FormularioLogin";
 
 import estilos from "./page.module.css";
@@ -9,8 +11,11 @@ import estilos from "./page.module.css";
 export default function Login() {
   return (
     <section className={estilos.coluna}>
-      <p className="kicker"></p>
+      <p className="kicker">Acesso</p>
       <FormularioLogin />
+      <p className={estilos.rodape}>
+        Ainda não tem conta? <Link href="/cadastro">Cadastre-se</Link>
+      </p>
     </section>
   );
 }

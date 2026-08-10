@@ -1,4 +1,4 @@
-"""`POST /auth/login` e `POST /auth/logout` — precisa do Compose no ar.
+"""`POST /auth/cadastro`, `/auth/login` e `/auth/logout` — precisa do Compose no ar.
 
 A ponte entre o `TestClient` (HTTP) e a fixture `sessao` (transação revertida
 ao fim de cada teste) é `dependency_overrides`, substituindo `obter_sessao`.
@@ -9,6 +9,7 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
@@ -157,3 +158,185 @@ def test_logout_sem_cookie_nenhum_tambem_responde_204(cliente: TestClient) -> No
     resposta = cliente.post("/auth/logout")
 
     assert resposta.status_code == 204
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/cadastro — Story 1.5
+# ---------------------------------------------------------------------------
+
+CADASTRO_VALIDO = {
+    "nome": "Ana Ribeiro",
+    "email": "ana@exemplo.com",
+    "senha": "rockhub",
+}
+
+
+def test_cadastro_responde_201_com_papel_cliente_e_sem_senha(
+    cliente: TestClient,
+) -> None:
+    resposta = cliente.post("/auth/cadastro", json=CADASTRO_VALIDO)
+
+    assert resposta.status_code == 201
+    corpo = resposta.json()
+    assert corpo["papel"] == PapelUsuario.CLIENTE.value
+    assert corpo["nome"] == "Ana Ribeiro"
+    assert corpo["email"] == "ana@exemplo.com"
+    assert "id" in corpo
+    assert "senha" not in corpo
+    assert "senha_hash" not in corpo
+
+
+def test_cadastro_grava_hash_argon2id_e_nao_a_senha_digitada(
+    cliente: TestClient, sessao: Session
+) -> None:
+    cliente.post("/auth/cadastro", json=CADASTRO_VALIDO)
+
+    gravado = sessao.scalar(select(Usuario).where(Usuario.email == "ana@exemplo.com"))
+    assert gravado is not None
+    assert gravado.senha_hash.startswith("$argon2id$")
+    assert gravado.senha_hash != "rockhub"
+
+
+def test_cadastro_grava_o_mesmo_cookie_de_sessao_que_o_login(
+    cliente: TestClient,
+) -> None:
+    """Os atributos do cadastro são comparados **contra os do login**.
+
+    Afirmar os quatro atributos à mão nos dois lugares deixaria o teste passar
+    no dia em que só um dos dois mudasse. Aqui, divergência entre as rotas é o
+    que quebra — que é exatamente o que o helper compartilhado deve impedir.
+    """
+    resposta_cadastro = cliente.post("/auth/cadastro", json=CADASTRO_VALIDO)
+    resposta_login = cliente.post(
+        "/auth/login", json={"email": "ana@exemplo.com", "senha": "rockhub"}
+    )
+
+    def atributos(cabecalho: str) -> set[str]:
+        # O valor do cookie é o único pedaço que difere entre as duas
+        # respostas (o token carrega o instante de emissão).
+        return {
+            pedaco.strip()
+            for pedaco in cabecalho.split(";")
+            if not pedaco.strip().startswith("rockhub_sessao=")
+        }
+
+    cookie_cadastro = resposta_cadastro.headers["set-cookie"]
+    assert "HttpOnly" in cookie_cadastro
+    assert "SameSite=lax" in cookie_cadastro or "SameSite=Lax" in cookie_cadastro
+    assert "Path=/" in cookie_cadastro
+    assert "Max-Age=28800" in cookie_cadastro
+    assert atributos(cookie_cadastro) == atributos(resposta_login.headers["set-cookie"])
+
+
+def test_conta_criada_pelo_cadastro_consegue_entrar_pelo_login(
+    cliente: TestClient,
+) -> None:
+    cliente.post("/auth/cadastro", json=CADASTRO_VALIDO)
+
+    resposta = cliente.post(
+        "/auth/login", json={"email": "ana@exemplo.com", "senha": "rockhub"}
+    )
+
+    assert resposta.status_code == 200
+
+
+def test_email_ja_cadastrado_responde_409(
+    cliente: TestClient, usuario_gravado: Usuario
+) -> None:
+    resposta = cliente.post(
+        "/auth/cadastro",
+        json={"nome": "Outro Igor", "email": "igor@exemplo.com", "senha": "rockhub"},
+    )
+
+    # Nada de `assert` sobre o banco depois de um 409: o `rollback()` do
+    # service desfaz a transação até o savepoint e leva junto o usuário que a
+    # fixture inseriu por `flush`. A resposta é o que o critério pede.
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "EMAIL_JA_CADASTRADO"
+
+
+def test_email_ja_cadastrado_com_outra_caixa_responde_409_e_nao_500(
+    cliente: TestClient, usuario_gravado: Usuario
+) -> None:
+    resposta = cliente.post(
+        "/auth/cadastro",
+        json={"nome": "Outro Igor", "email": " IGOR@Exemplo.COM ", "senha": "rockhub"},
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "EMAIL_JA_CADASTRADO"
+
+
+def test_papel_no_corpo_e_ignorado_e_a_conta_nasce_cliente(
+    cliente: TestClient,
+) -> None:
+    resposta = cliente.post(
+        "/auth/cadastro", json={**CADASTRO_VALIDO, "papel": "ORGANIZADOR"}
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["papel"] == PapelUsuario.CLIENTE.value
+
+
+def test_senha_curta_responde_422_e_nao_cria_conta(
+    cliente: TestClient, sessao: Session
+) -> None:
+    resposta = cliente.post("/auth/cadastro", json={**CADASTRO_VALIDO, "senha": "rock"})
+
+    assert resposta.status_code == 422
+    assert "erro" in resposta.json()
+    assert sessao.scalar(select(Usuario).where(Usuario.email == "ana@exemplo.com")) is None
+
+
+@pytest.mark.parametrize(
+    "email",
+    ["ana", "ana@exemplo", "ana exu@exemplo.com"],
+    ids=["sem-arroba", "sem-ponto-no-dominio", "com-espaco-no-meio"],
+)
+def test_email_malformado_responde_422(cliente: TestClient, email: str) -> None:
+    resposta = cliente.post("/auth/cadastro", json={**CADASTRO_VALIDO, "email": email})
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+def test_nome_so_com_espacos_responde_422(cliente: TestClient) -> None:
+    resposta = cliente.post("/auth/cadastro", json={**CADASTRO_VALIDO, "nome": "   "})
+
+    assert resposta.status_code == 422
+
+
+def test_nome_longo_demais_responde_422_e_nao_500_por_truncamento(
+    cliente: TestClient,
+) -> None:
+    resposta = cliente.post(
+        "/auth/cadastro", json={**CADASTRO_VALIDO, "nome": "a" * 121}
+    )
+
+    assert resposta.status_code == 422
+
+
+def test_cadastro_sem_campo_obrigatorio_responde_422_no_formato_de_erro(
+    cliente: TestClient,
+) -> None:
+    resposta = cliente.post(
+        "/auth/cadastro", json={"email": "ana@exemplo.com", "senha": "rockhub"}
+    )
+
+    assert resposta.status_code == 422
+    assert "erro" in resposta.json()
+
+
+def test_email_com_maiusculas_e_espacos_e_gravado_em_minusculas(
+    cliente: TestClient, sessao: Session
+) -> None:
+    resposta = cliente.post(
+        "/auth/cadastro", json={**CADASTRO_VALIDO, "email": "  Ana@Exemplo.COM "}
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["email"] == "ana@exemplo.com"
+    assert (
+        sessao.scalar(select(Usuario).where(Usuario.email == "ana@exemplo.com"))
+        is not None
+    )

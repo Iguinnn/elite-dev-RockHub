@@ -11,11 +11,11 @@ de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no cami
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
 camada.
 
-> **Estado atual:** em construção. **As duas metades já conversam:** dá para entrar na aplicação em
-> `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o navegador falando só com
-> o domínio do frontend. O backend sobe com PostgreSQL migrado por Alembic e a tabela `usuario`; o
-> frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. Ainda
-> não há contas semeadas (Story 1.7) nem rota protegida (Story 1.6). A seção
+> **Estado atual:** em construção. **O acesso está fechado pelos dois lados:** dá para criar conta em
+> `/cadastro` e entrar em `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o
+> navegador falando só com o domínio do frontend. O backend sobe com PostgreSQL migrado por Alembic e
+> a tabela `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de
+> estado vazio. Ainda não há contas semeadas (Story 1.7) nem rota protegida (Story 1.6). A seção
 > [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## Como executar
@@ -93,8 +93,15 @@ do servidor. Convenções de CSS, tokens da identidade, o proxy e as armadilhas 
 ## Contas semeadas
 
 Ainda não existem — o seed com os quatro usuários de avaliação (organizador, cliente e portaria)
-entra na Story 1.7. Até lá, para experimentar o login, crie um usuário descartável a partir de
-`backend/`, com o Compose no ar e a migração aplicada:
+entra na Story 1.7.
+
+**Para conta de cliente não é mais preciso script:** abra <http://localhost:3000/cadastro>, preencha
+nome, e-mail e senha, e você já entra logado. Toda conta criada pela interface nasce `CLIENTE`, de
+propósito — não há seletor de papel, e enviar `papel` na requisição não muda nada.
+
+Para **organizador** e **portaria**, o script abaixo continua sendo o único caminho até a Story 1.7.
+Rode a partir de `backend/`, com o Compose no ar e a migração aplicada, trocando o `PapelUsuario`
+conforme o papel desejado:
 
 ```bash
 uv run python -c "
@@ -103,7 +110,7 @@ from app.core.seguranca import gerar_hash
 from app.models.usuario import PapelUsuario, Usuario
 s = SessaoLocal()
 s.add(Usuario(nome='Igor Teste', email='igor@exemplo.com',
-              senha_hash=gerar_hash('rockhub'), papel=PapelUsuario.CLIENTE.value))
+              senha_hash=gerar_hash('rockhub'), papel=PapelUsuario.ORGANIZADOR.value))
 s.commit()
 "
 ```
@@ -113,17 +120,24 @@ s.commit()
 O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento
 e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá para verificar:
 
-1. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/login` e
-   `/auth/logout`
-2. Com o usuário descartável criado acima, abrir `http://localhost:3000/login` e entrar com
-   `igor@exemplo.com` / `rockhub` → cai na raiz
+1. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
+   `/auth/login` e `/auth/logout`
+2. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
+   caracteres) → **cai na raiz já logado**, sem precisar entrar de novo
 3. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
    frontend — com `HttpOnly` marcado. E `document.cookie` no console não o mostra
-4. Na aba Network, a chamada foi para `/api/auth/login`, nunca para `localhost:8000`
-5. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
+4. Na aba Network, a chamada foi para `/api/auth/cadastro`, nunca para `localhost:8000`
+5. Tentar cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) mostra
+   "Esse e-mail já tem conta. Entre com ele ou use outro." e responde `409` — nunca um `500`
+6. No cadastro, digitar senha e confirmação diferentes mostra "As senhas não conferem." **sem
+   nenhuma requisição no Network** — a confirmação nunca sai do navegador
+7. Apagar o cookie e entrar em `/login` com a conta que você acabou de criar → cai na raiz. É a prova
+   de que hash e normalização de e-mail batem entre as duas rotas
+8. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
    resposta é `401` com `CREDENCIAIS_INVALIDAS`. Um e-mail que não existe devolve **exatamente** a
    mesma coisa
-6. `Tab` percorre e-mail → senha → botão com o contorno âmbar visível em todos os três
+9. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL
+10. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
 
 ## Stack e estrutura
 
@@ -503,7 +517,7 @@ armazenamento compartilhado entre instâncias) que não se paga no prazo deste d
 ### A tela de acesso não tem a navegação do site
 
 **Decidi** partir o frontend em duas cascas: `(site)`, com o masthead completo, e `(entrada)`, que
-mostra só o logotipo. `/login` — e o cadastro, quando existir — ficam na segunda.
+mostra só o logotipo. `/login` e `/cadastro` ficam na segunda.
 
 **Por quê:** a primeira versão da tela de login herdava o masthead do layout raiz, e o resultado era
 oferecer "Meus ingressos" e "Minha conta" para quem ainda não tinha entrado. São dois links que essa
@@ -525,6 +539,104 @@ casa com rota nenhuma, e o efeito foi o visitante cair no 404 padrão do Next, s
 voltou para a raiz montando a própria casca, e isso está escrito no arquivo para ninguém repetir a
 tentativa.
 
+### Só cliente cria a própria conta; organizador e portaria nascem por fora
+
+**Decidi** que o cadastro pela interface produz **sempre** uma conta `CLIENTE`. Não existe seletor de
+papel na tela, não existe campo `papel` no schema de entrada, e o papel é literal dentro do service —
+enviar `{"papel": "ORGANIZADOR"}` na requisição cria uma conta cliente do mesmo jeito, calada.
+
+**Por quê:** um seletor de papel numa tela pública é uma escalada de privilégio com aparência de
+formulário — qualquer visitante viraria organizador e passaria a publicar eventos. E o AD-7 é ainda
+mais direto sobre a portaria: ela só valida onde foi *escalada* por um organizador, então uma conta
+de portaria autocriada não faria sentido nenhum, porque não estaria ligada a evento algum. O papel é
+uma afirmação sobre confiança, e afirmação de confiança não pode vir de quem está pedindo o acesso.
+
+Fiz questão de que o campo desconhecido seja **ignorado** em vez de recusado com `422`: um `422`
+provaria que o servidor viu o campo, enquanto ignorá-lo prova que ele não tem como influenciar nada.
+A garantia mais forte é a que não depende de validação.
+
+**O que caiu:** um seletor "sou cliente / sou organizador" no cadastro, que é o que várias
+plataformas de evento fazem — elas resolvem o problema com aprovação manual ou verificação de CNPJ,
+que é exatamente a etapa que este projeto não tem. Caiu também **um cadastro de organizador separado,
+em rota própria**: é o caminho certo, e está *adiado, não descartado* — sem uma forma de decidir quem
+merece o papel, a rota seria o mesmo buraco com um endereço diferente. Até a Story 1.7, organizador e
+portaria nascem pelo script documentado em [Contas semeadas](#contas-semeadas).
+
+### Validação de e-mail escrita à mão, não `EmailStr` do Pydantic
+
+**Decidi** conferir o formato do e-mail com uma expressão regular de uma linha —
+`^[^@\s]+@[^@\s]+\.[^@\s]+$` — em vez de instalar `email-validator` para usar o `EmailStr`.
+
+**Por quê:** essa regra pega o que ela precisa pegar: `igor`, `igor@`, `igor@exemplo` sem ponto no
+domínio, e-mail com espaço no meio. Ou seja, o erro de digitação, que é o único caso realista aqui.
+`EmailStr` seria a escolha de um sistema em produção, e o custo é uma dependência a mais no lockfile
+— e este sistema não vai para produção real: ele existe para o avaliador ver que o cadastro funciona,
+e três linhas provam isso igual. **Não é RFC 5322 e não pretende ser**, e essa decisão está escrita
+como corte consciente no código, ao lado da regex, e não deixada para quem ler adivinhar.
+
+**O que caiu:** `EmailStr` + `email-validator`, mais correto e mais caro. E, do outro lado,
+**nenhuma validação no backend**, que deixaria o `type="email"` do navegador como única barreira — e
+ele desaparece num `curl`. Ficar sem validação nenhuma é o tipo de ausência que quem avalia nota em
+dez segundos.
+
+**O efeito colateral que eu gostei:** esta foi a primeira story desde a 1.1 a não acrescentar
+nenhuma dependência, em nenhuma das duas camadas.
+
+### Confirmação de senha, porque não existe recuperação de senha
+
+**Decidi** que o cadastro tem quatro campos, e o quarto é "repetir senha". A senha mínima é de **6
+caracteres**, sem exigir maiúscula, número ou símbolo.
+
+**Por quê:** as duas metades desta decisão vêm do mesmo lugar — **não há recuperação de senha neste
+projeto**, e isso não vai mudar. Uma letra digitada errada seria conta perdida para sempre: sem
+suporte, sem e-mail de redefinição, sem saída. O campo de confirmação custa uma comparação em memória
+e elimina a falha inteira. Já o piso de 6 caracteres é o que basta para um sistema que existe para
+ser avaliado, sem travar as senhas curtas que as contas semeadas da Story 1.7 vão usar.
+
+A confirmação **não chega ao backend**, e isso é parte da decisão: o formulário tem os dois valores em
+mãos, compara antes do `fetch` e nem faz a requisição. Mandá-la para a API acrescentaria um campo ao
+contrato, um validador cruzado, uma mensagem e um teste — tudo para verificar algo que nenhum outro
+cliente da API teria por que enviar. A regra de negócio é "senha com pelo menos 6 caracteres"; "duas
+caixas de texto iguais" é ergonomia de tela.
+
+**O que caiu:** **8 caracteres**, que é o piso do NIST SP 800-63B e teria sido o padrão defensável —
+6 ganhou por ser suficiente no contexto real deste sistema. **Nenhuma regra de senha**, que aceitaria
+senha de um caractere. E, no lugar da confirmação, um **botão "mostrar senha"**: menos atrito e uma
+interação a menos, mas expõe a senha na tela de quem se cadastra em público, e exigiria um componente
+novo para resolver o mesmo problema com menos garantia.
+
+### `Campo` e `Botao` extraídos no segundo formulário, não no primeiro
+
+**Decidi** que componente compartilhado nasce no **segundo uso**, nunca no primeiro. Na Story 1.4, com
+só a tela de login, o campo e o botão ficaram dentro do próprio formulário. Nesta story, com o
+cadastro, eles viraram `Campo.tsx` e `Botao.tsx` — e o login foi reescrito sobre eles.
+
+**Por quê:** dois campos num único formulário não dão evidência nenhuma sobre qual é a abstração
+certa; seis campos e dois botões entre duas telas dão. Componente extraído cedo é componente com
+`props` inventadas para casos que nunca chegam, e que a próxima story reescreve inteiro. Extrair
+depois custa reescrever código que já funciona — que é um custo real e conhecido — mas em troca a
+forma do componente sai dos usos de verdade.
+
+**O que caiu:** **repetir o CSS nas duas telas**, que é o precedente que eu mesmo abri na 1.2 com o
+404. Cairia bem aqui também, e não tocaria em arquivo já entregue — mas ao custo de duas cópias do
+mesmo campo que divergem na primeira vez que alguém ajustar uma só. O 404 e o formulário são casos
+diferentes: uma tela isolada pode divergir sem consequência; um campo de formulário que diverge entre
+o login e o cadastro racha a identidade em duas.
+
+**O risco que eu assumi, e como cobri:** reescrever o `FormularioLogin` foi o ponto mais perigoso da
+story — um `htmlFor` que perde o par com o `id`, um `autoComplete` que some, e a tela continua
+*parecendo* certa, sem nenhum teste de frontend para acusar. A cobertura foi conferir o login inteiro
+no navegador depois da extração, campo por campo, e os 40 testes anteriores do backend passarem sem
+uma linha alterada.
+
+**Um terceiro componente que eu não tinha planejado:** o `AvisoDeErro`, extraído por um critério
+diferente. `Campo` e `Botao` saíram porque se repetem; ele saiu porque a regra que o faz funcionar é
+*invisível* — a região `role="alert"` precisa existir no DOM desde o primeiro render, vazia, para que
+o leitor de tela anuncie o erro quando o texto chegar. Escrita como comentário dentro de um
+formulário, essa regra é a primeira coisa que alguém apaga por parecer óbvia ao copiar para o
+segundo. **Regra que protege acessibilidade vira componente mesmo com poucos usos**, porque é onde
+ela se protege sozinha.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -538,6 +650,8 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
 | **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
-| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar |
+| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
+| **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Até a Story 1.7, organizador nasce pelo script em [Contas semeadas](#contas-semeadas). **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
+| **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva todo mundo para a raiz. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |

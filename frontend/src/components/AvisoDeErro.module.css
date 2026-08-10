@@ -1,0 +1,7 @@
+/* Vindo do FormularioLogin.module.css da Story 1.4, sem mudança de valor. */
+
+.erro {
+  margin-bottom: 16px;
+  color: var(--brasa);
+  font: 11px/1.6 var(--mono);
+}

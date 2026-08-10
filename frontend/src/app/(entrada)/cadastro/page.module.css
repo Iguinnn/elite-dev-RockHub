@@ -1,4 +1,9 @@
-/* Coluna centrada, largura única de formulário — DESIGN.md#Components (botao). */
+/* Coluna centrada, largura única de formulário — a mesma do login.
+
+   As duas folhas são idênticas hoje, e não viram um terceiro arquivo
+   compartilhado de propósito: CSS Module de página é barato, e a próxima tela
+   do grupo `(entrada)` pode divergir sem arrastar as outras junto. Abstrair
+   aqui seria abstrair no primeiro uso. */
 
 /* O espaço acima vem da marca, na casca do grupo `(entrada)`. */
 .coluna {

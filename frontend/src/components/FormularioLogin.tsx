@@ -3,9 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import AvisoDeErro from "@/components/AvisoDeErro";
+import Botao from "@/components/Botao";
+import Campo from "@/components/Campo";
 import { ErroDaApi, chamarApi } from "@/lib/api";
-
-import estilos from "./FormularioLogin.module.css";
 
 const MENSAGEM_GENERICA = "Não foi possível entrar agora. Tente de novo em instantes.";
 
@@ -54,44 +55,21 @@ export default function FormularioLogin() {
 
   return (
     <form onSubmit={aoEnviar}>
-      <div className={estilos.campo}>
-        <label htmlFor="email" className={estilos.rotulo}>
-          E-mail
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          className={estilos.entrada}
-        />
-      </div>
+      <Campo id="email" name="email" rotulo="E-mail" type="email" autoComplete="email" required />
+      <Campo
+        id="senha"
+        name="senha"
+        rotulo="Senha"
+        type="password"
+        autoComplete="current-password"
+        required
+      />
 
-      <div className={estilos.campo}>
-        <label htmlFor="senha" className={estilos.rotulo}>
-          Senha
-        </label>
-        <input
-          id="senha"
-          name="senha"
-          type="password"
-          autoComplete="current-password"
-          required
-          className={estilos.entrada}
-        />
-      </div>
+      <AvisoDeErro mensagem={erro} />
 
-      {/* A região existe sempre, vazia, e só o texto entra depois: leitor de
-          tela que recebe o `role="alert"` junto com o conteúdo pode não
-          anunciar nada. Vazia ela não ocupa espaço. */}
-      <div role="alert">
-        {erro && <p className={estilos.erro}>{erro}</p>}
-      </div>
-
-      <button type="submit" disabled={enviando} className={estilos.botao}>
+      <Botao type="submit" disabled={enviando}>
         Entrar
-      </button>
+      </Botao>
     </form>
   );
 }
