@@ -245,6 +245,7 @@ yarn-error.log*
 .next/
 .vercel
 out/
+next-env.d.ts
 .turbo/
 .swc/
 *.tsbuildinfo

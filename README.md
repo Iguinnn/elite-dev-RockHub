@@ -11,10 +11,11 @@ de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no cami
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
 camada.
 
-> **Estado atual:** em construção. Hoje está de pé o esqueleto do backend — a aplicação sobe,
-> responde `GET /saude` e publica a documentação automática. Banco, autenticação e telas entram nas
-> stories seguintes. A seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a
-> cada passo.
+> **Estado atual:** em construção. Hoje estão de pé os dois esqueletos — o backend sobe, responde
+> `GET /saude` e publica a documentação automática; o frontend sobe com a identidade visual
+> aplicada, o cabeçalho e as páginas de estado vazio. As duas metades ainda não conversam: a
+> primeira chamada de verdade acontece no login. Banco, autenticação e telas entram nas stories
+> seguintes. A seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## Como executar
 
@@ -22,8 +23,9 @@ camada.
 
 - **[uv](https://docs.astral.sh/uv/)** para o backend. Ele mesmo baixa o Python 3.12 se a máquina
   não tiver
+- **Node ≥ 20.9** e **npm** para o frontend. O Next 16 não roda no Node 18
 
-Node e PostgreSQL entram aqui quando o frontend (Story 1.2) e o banco (Story 1.3) chegarem.
+PostgreSQL entra aqui quando o banco (Story 1.3) chegar.
 
 ### Backend
 
@@ -53,7 +55,25 @@ Windows estão no [README do backend](backend/README.md).
 
 ### Frontend
 
-Ainda não existe. Entra na Story 1.2.
+Em outro terminal:
+
+```bash
+cd frontend
+
+cp .env.example .env.local    # no Windows: copy .env.example .env.local
+npm install
+
+npm run dev
+```
+
+Abre em <http://localhost:3000>, com o cabeçalho e o sistema visual aplicados.
+
+**Não mude a porta.** A 3000 é a origem que o `CORS_ORIGENS` do backend já autoriza por padrão; em
+outra porta, o login da Story 1.4 falha com um erro de CORS que custa a achar.
+
+Nesta altura o frontend ainda não chama a API — dá para abrir os dois ou só um, tanto faz.
+Convenções de CSS, tokens da identidade e armadilhas do Next 16 estão no
+[README do frontend](frontend/README.md).
 
 ## Contas semeadas
 
@@ -64,7 +84,8 @@ entra na Story 1.7, junto com o modelo de usuário.
 
 O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento
 e validar na portaria — é escrito quando o fluxo estiver completo. Por enquanto, o que dá para
-verificar é o backend subindo e respondendo, como descrito acima.
+verificar é o backend subindo e respondendo e o frontend abrindo com a identidade aplicada, como
+descrito acima.
 
 ## Stack e estrutura
 
@@ -72,7 +93,7 @@ verificar é o backend subindo e respondendo, como descrito acima.
 |---|---|
 | Backend | FastAPI 0.141 · Python 3.12 · Pydantic v2 |
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic *(Story 1.3)* |
-| Frontend | Next.js 16 · React 19 *(Story 1.2)* |
+| Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
 | Catálogo externo | Ticketmaster Discovery v2 *(Epic 2)* |
 | Deploy | Railway (API e banco) · Vercel (frontend) *(Stories 1.8 e 1.9)* |
 
@@ -178,6 +199,76 @@ Cada instrução a menos no README é um jeito a menos de a avaliação travar a
 e sabe criar a venv. E o Poetry, que resolve o mesmo problema, mas é ele próprio mais uma
 instalação a fazer antes de começar.
 
+### A interface é um jornal noturno, e não um catálogo de e-commerce
+
+**Decidi** que a listagem de shows não tem card: são filas separadas por fio, com a data na margem
+esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Fundo preto quente,
+âmbar como acento único, raio zero e sombra zero em todo o sistema.
+
+**Por quê:** ingresso não é produto de prateleira — é o direito de entrar num lugar, numa hora. Card
+com imagem, preço e botão é vocabulário de e-commerce, e ele carrega junto a promessa errada. A
+estrutura de impresso diz a coisa certa sobre o que está sendo vendido, e custa o mesmo para
+construir. O desafio penaliza por escrito a interface que "parece gerada", e o que denuncia uma
+interface gerada não é ser feia: é ser bonita de um jeito só. Escolher qual dos vários bonitos era
+justamente o ponto.
+
+**O que caiu:** a fileira horizontal de cards com paleta empresarial — o formato de Sympla, Eventim e
+Ingresso.com. É o que o mercado faz e é o que qualquer gerador entrega por padrão, então seria a
+escolha segura. Caiu junto uma lista de padrões que eu proibi de propósito e que estão anotados no
+[DESIGN.md](_bmad-output/planning-artifacts/ux-designs/ux-elite-dev-RockHub-2026-08-09/DESIGN.md):
+faixa que varre a tela, grade de 6 a 8 cards de seção, par de título gigante com textinho embaixo, e
+a linha de contexto decorativa no cabeçalho ("Edição de sexta · 14 apresentações em cartaz") — essa
+última eu cheguei a montar no protótipo e removi, porque soava gerada.
+
+Duas direções visuais competiram antes: um jornal de eventos londrino, editorial e claro, e uma
+parede de cartazes de casa de show, noturna. Nenhuma das duas resolvia sozinha — a primeira não tem
+noite, a segunda não tem estrutura. A identidade final é a fusão: estrutura de impresso, cor de
+madrugada.
+
+### CSS escrito à mão, sem biblioteca de componentes
+
+**Decidi** não usar shadcn, MUI, Chakra nem Tailwind. O frontend tem um `globals.css` com os nove
+tokens da identidade e um `.module.css` por componente.
+
+**Por quê:** é a mesma razão da decisão acima. Biblioteca de componentes não traz só código pronto —
+traz junto um vocabulário visual, e é exatamente o vocabulário que este projeto está tentando não
+ter. O card arredondado com sombra sutil vem de graça, e tirar ele depois dá mais trabalho do que
+nunca tê-lo. Com CSS Modules o token fica num lugar só e o estilo de cada componente tem escopo
+isolado, sem colisão de nome de classe.
+
+**O que caiu:** Tailwind, que é o padrão do `create-next-app` e teria sido mais rápido de escrever.
+Além do argumento acima, ele empurra a decisão visual para dentro do JSX, onde eu não consigo mais
+ler a identidade inteira num arquivo só. Caiu também a folha global única no estilo do protótipo:
+funciona hoje, mas com 30 telas pela frente vira um arquivo enorme com nomes de classe brigando.
+
+### Fontes do sistema, nenhuma fonte externa
+
+**Decidi** usar Georgia para a voz serifada e a monoespaçada do sistema para etiqueta e código.
+Nenhuma fonte é baixada.
+
+**Por quê:** a tensão entre as duas famílias é o que faz a identidade funcionar — serifada sozinha
+vira convite de casamento, monoespaçada sozinha vira terminal —, e essa tensão eu consigo com o que
+já existe em qualquer máquina. Sem requisição de rede, sem salto de layout enquanto a fonte carrega,
+sem depender de um CDN de terceiro estar no ar durante a avaliação.
+
+**O que caiu:** uma serifada de display do Google Fonts, que seria mais distinta. O `create-next-app`
+inclusive já vem com a `Geist` configurada — eu arranquei. Ganhar meio grau de personalidade não
+paga o custo de fazer a primeira renderização depender de rede.
+
+### TypeScript no frontend
+
+**Decidi** escrever o frontend em TypeScript.
+
+**Por quê:** o que trafega entre as duas camadas é um contrato com muitos campos, em português, com
+dinheiro em centavos e data em UTC — `preco_centavos`, `data_hora`, `vendidos`, `expira_em`. É
+precisamente o tipo de coisa em que se erra o nome do campo e só se descobre com um `undefined`
+aparecendo na tela. Como não há teste automatizado no frontend, o `tsc` é a única rede que eu tenho
+ali.
+
+**O que caiu:** JavaScript puro, que é mais rápido de escrever. Ele é mais rápido até a primeira vez
+que eu renomeio um campo no backend — aí eu descubro as telas quebradas uma a uma, abrindo cada
+uma, em vez de ler a lista que o compilador me dá de uma vez.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -190,3 +281,4 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Cancelamento pelo cliente** | O modelo já suporta; faltam endpoint e tela |
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
+| **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |

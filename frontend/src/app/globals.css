@@ -1,0 +1,104 @@
+/* ==========================================================================
+   RockHub — base do sistema visual "jornal noturno".
+
+   Este arquivo é o único lugar do frontend onde cor e família tipográfica
+   são declaradas por valor. Estilo de componente mora em
+   `Componente.module.css` e consome os tokens por `var(--token)` — nunca
+   repete hex.
+
+   Regras do sistema, sem exceção permitida:
+   - raio zero e sombra zero, em qualquer elemento (papel não tem canto
+     arredondado);
+   - desligar o contorno de foco é proibido no projeto inteiro;
+   - nenhuma fonte externa: as duas famílias são de sistema (UX-DR2).
+   ========================================================================== */
+
+:root {
+  /* ---- cores ------------------------------------------------------------
+     Preto quente de tinta, nunca preto puro. Branco quente de papel, nunca
+     branco puro. Âmbar é o acento único: se algo precisa de destaque e não é
+     erro nem sucesso, é âmbar.                                            */
+  --breu: #0e0d0c;     /* fundo de toda a aplicação                          */
+  --breu2: #151311;    /* superfície elevada: resumo, campo, fila em hover   */
+  --cal: #ede8dc;      /* texto principal                                    */
+  --fumaca: #8f877a;   /* texto secundário, etiquetas, kickers               */
+  --ambar: #f2a413;    /* acento único: ação primária, item ativo, escassez  */
+  --brasa: #d93b2b;    /* erro, esgotado, pagamento recusado                 */
+  --verde: #3fa96b;    /* só o veredito VÁLIDO e a confirmação de pagamento  */
+  --fio: #2a2622;      /* todos os fios, filetes e bordas                    */
+  --fio2: #3a352f;     /* fio sobre superfície elevada; medidor esgotado     */
+
+  /* ---- tipografia -------------------------------------------------------
+     Serifada é a voz do jornal: nome de artista, título, valor, corpo.
+     Monoespaçada é tudo que é máquina ou etiqueta: código, kicker, rótulo,
+     hora, estado — sempre em versalete com entreletra larga.
+     Nunca serifada em etiqueta, nunca monoespaçada em nome próprio.        */
+  --serif: Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ---- reset -------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--breu);
+  color: var(--cal);
+  font: 16px/1.55 var(--serif);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---- acessibilidade -----------------------------------------------------
+   Foco visível em âmbar em tudo que é focável, herdado por toda tela criada
+   daqui em diante (UX-DR9). Ninguém desliga esse contorno: quem navega por
+   teclado precisa enxergar onde está.                                     */
+
+:focus-visible {
+  outline: 2px solid var(--ambar);
+  outline-offset: 2px;
+}
+
+/* Quem pediu menos movimento não recebe movimento nenhum. A identidade não
+   depende de animação — o único movimento previsto no sistema é mudança de
+   cor em hover, até 120ms.                                                */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- utilitários tipográficos ------------------------------------------- */
+
+/* Etiqueta que abre um bloco. Sempre acima do conteúdo que nomeia. */
+.kicker {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+/* ---- medida do texto ----------------------------------------------------
+   Largura única da aplicação. O masthead e o conteúdo compartilham a mesma
+   coluna para que os fios se alinhem de ponta a ponta.                     */
+.conteudo {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 18px;
+}

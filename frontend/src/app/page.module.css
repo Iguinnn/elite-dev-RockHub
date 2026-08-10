@@ -1,0 +1,11 @@
+/* Estado vazio (EXPERIENCE.md#State Patterns/Vazio): kicker, frase, fim. */
+
+.vazio {
+  padding: 40px 0 96px;
+}
+
+.frase {
+  max-width: 46ch;
+  margin-top: 12px;
+  font: 19px/1.5 var(--serif);
+}

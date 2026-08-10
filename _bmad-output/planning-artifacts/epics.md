@@ -127,6 +127,12 @@ Do par `DESIGN.md` + `EXPERIENCE.md` (direção **"jornal noturno"**), com prot�
 - **UX-DR11:** QR sempre renderizado sobre fundo claro (`cal`), nunca sobre o breu — legibilidade
   de leitor óptico
 
+**Responsividade — onde ela mora.** O corte é **900px** (`EXPERIENCE.md#Responsive & Platform`).
+Cliente e organizador são desktop-first e **colapsam** abaixo disso; a portaria é mobile-first e é
+coluna única sempre. Cada story que cria tela carrega o seu próprio critério de aceite para isso —
+**não existe uma story de "deixar responsivo" no fim**, porque o breakpoint só faz sentido escrito
+junto da grade que ele colapsa, e trabalho de layout adiado para o último dia é onde o prazo morre.
+
 ### FR Coverage Map
 
 | FR | Epic | Onde é entregue |
@@ -494,6 +500,11 @@ para colocá-lo à venda.
 **When** eu a uso
 **Then** vejo os passos numerados e os números exatos de capacidade — UX-DR7
 
+**Given** uma tela abaixo de 900px
+**When** eu preencho o formulário
+**Then** os campos ocupam a largura inteira, um por linha
+**And** nada transborda na horizontal
+
 ### Story 2.5: Escalar quem valida na porta
 
 Como organizador,
@@ -571,6 +582,12 @@ para descobrir o que está em cartaz.
 **When** eu procuro contagem de ingressos
 **Then** nenhum número absoluto de estoque aparece — UX-DR7
 
+**Given** uma tela abaixo de 900px
+**When** abro a programação
+**Then** a fila colapsa de quatro para duas colunas — data à esquerda, o resto num bloco
+**And** nada transborda na horizontal
+**And** os fios continuam alinhados de ponta a ponta
+
 ### Story 3.2: Buscar e filtrar a programação
 
 Como visitante,
@@ -613,6 +630,11 @@ standfirst em itálico e ficha de três dados — UX-DR4
 **When** abro a programação
 **Then** a chamada não é renderizada e vejo o estado vazio
 
+**Given** uma tela abaixo de 900px
+**When** eu vejo a chamada principal
+**Then** arte e texto empilham numa coluna só, a arte acima — UX-DR6
+**And** a ficha de três dados quebra em linha sem cortar nenhum valor
+
 ### Story 3.4: Ver o evento e seus setores
 
 Como cliente,
@@ -637,6 +659,11 @@ de proporção — nunca número absoluto (UX-DR7, AD-13)
 **Given** o stepper
 **When** eu ajusto a quantidade
 **Then** o total recalcula no rodapé fixo, sem confirmação
+
+**Given** uma tela abaixo de 900px
+**When** abro a página do evento
+**Then** a ficha do evento e a lista de setores empilham
+**And** o rodapé de compra continua fixo na base e legível
 
 ### Story 3.5: Modelo de reserva
 
@@ -810,6 +837,11 @@ para apresentar na entrada.
 **Given** o conteúdo do QR
 **When** eu o decodifico
 **Then** é exatamente o código assinado do ingresso
+
+**Given** uma tela abaixo de 900px
+**When** abro o canhoto
+**Then** corpo e talão empilham, e o picote tracejado vira linha horizontal
+**And** o QR continua sobre fundo `cal`, do tamanho que dá para escanear — UX-DR11
 
 ### Story 4.3: Compartilhar o ingresso por link
 

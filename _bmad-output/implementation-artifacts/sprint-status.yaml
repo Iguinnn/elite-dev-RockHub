@@ -1,5 +1,5 @@
 # generated: 2026-08-10
-# last_updated: 2026-08-10 (story 1.1 criada)
+# last_updated: 2026-08-10 (story 1.2 criada)
 # project: elite-dev-RockHub
 # project_key: NOKEY
 # tracking_system: file-system
@@ -50,7 +50,7 @@ development_status:
   # ---------- Epic 1: Fundação, acesso e primeiro deploy ----------
   epic-1: in-progress
   1-1-esqueleto-do-backend-que-responde: review
-  1-2-esqueleto-do-frontend-com-a-identidade-aplicada: backlog
+  1-2-esqueleto-do-frontend-com-a-identidade-aplicada: review
   1-3-modelo-de-usuario-e-primeira-migracao: backlog
   1-4-entrar-com-e-mail-e-senha: backlog
   1-5-cadastro-de-cliente: backlog

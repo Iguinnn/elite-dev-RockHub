@@ -172,8 +172,11 @@ Versões conferidas na web em 09/08/2026.
 | Alembic | 1.19.1 |
 | argon2-cffi | 25.1.0 |
 | PostgreSQL | 16 |
+| Node.js | 20.9+ (máquina de desenvolvimento: 24.14) |
+| npm | 11.9 — gerenciador do frontend, `package-lock.json` versionado |
 | Next.js | 16.3.0 |
 | React | 19 |
+| TypeScript | 5.1+ (mínimo exigido pelo Next 16) |
 | qrcode.react | 4.2.0 |
 | @yudiel/react-qr-scanner | 2.6.0 |
 
@@ -271,6 +274,7 @@ frontend/
 | Refresh token | JWT de 8 horas basta para o cenário avaliado (AD-15) |
 | Camada de repositórios | A `Session` do SQLAlchemy já cumpre o papel; interpor repasse só adicionaria código neste tamanho de projeto |
 | Worker de expiração de reservas | Substituído por expiração preguiçosa (AD-4), que não exige processo rodando |
+| Teste automatizado de frontend | Não é exigido pelo desafio. As invariantes que valem ponto — estoque, assinatura do QR, validação idempotente — estão no backend, que tem `pytest`. **Deve constar no README** |
 | Recuperação de senha, e-mail, nota fiscal, revenda | O enunciado dispensa explicitamente |
 
 ## A registrar no README
