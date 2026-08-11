@@ -1,5 +1,21 @@
 # Decisões técnicas
 
+> ## ⚠️ Documento congelado — fase de planejamento
+>
+> **Escrevi isto em 2026-08-09, junto da arquitetura, antes de existir código.** Ele descreve em
+> tempo presente coisas que **ainda não foram implementadas** — a reserva com validade de 10
+> minutos, o HMAC do QR, o link de compartilhamento e o cartão de teste do pagamento simulado são
+> todos das Epics 3 a 5, que não começaram.
+>
+> **Congelei o arquivo em 2026-08-11 e parei de atualizá-lo.** Ele fica no repositório porque
+> registra o raciocínio como ele era no dia do planejamento, e isso tem valor — mas não é fonte de
+> verdade sobre o que existe hoje.
+>
+> **Para o que está no ar agora, leia o [README da raiz](../README.md):** as decisões vivas, com a
+> alternativa descartada de cada uma, estão em
+> [Decisões: por que isso e não aquilo](../README.md#decisões-por-que-isso-e-não-aquilo), e o que
+> ficou de fora está em [O que não está pronto](../README.md#o-que-não-está-pronto).
+
 Rascunho da seção do README voltada a quem vai avaliar o projeto. Explica **por que** as coisas
 são como são. O contrato técnico completo está em
 [ARCHITECTURE-SPINE.md](../_bmad-output/planning-artifacts/architecture/architecture-elite-dev-RockHub-2026-08-09/ARCHITECTURE-SPINE.md);

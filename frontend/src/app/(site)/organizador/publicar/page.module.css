@@ -1,0 +1,515 @@
+/* Passo 1 do fluxo de publicação: título de seção, barra de busca, filas sem
+   card — UX-DR3. Grade e espaçamento são provisórios (DESIGN.md#Como usar
+   este documento); a ausência de card, sombra e raio é duradoura.
+   [Fonte: proto-jornal-noturno.html:545-570, :227-234] */
+
+.pagina {
+  padding: 40px 0 96px;
+}
+
+.secTitulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTitulo h1,
+.secTitulo h2 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+/* O passo 2 abre longe da última fila do catálogo: são duas etapas, não uma
+   lista que continua. */
+.secTituloPasso2 {
+  margin-top: 52px;
+  /* Alvo do `#passo-2`: sem esta margem o título encosta na borda de cima da
+     janela e o formulário parece começar cortado. */
+  scroll-margin-top: 24px;
+}
+
+.busca {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.campoBusca {
+  flex: 1;
+}
+
+.botaoBusca {
+  flex-shrink: 0;
+  width: 160px;
+  /* `Campo` traz `margin-bottom: 20px` do rótulo — sem isso o botão fica
+     mais alto que a entrada, porque ele não tem rótulo acima. */
+  margin-bottom: 20px;
+}
+
+/* Estado vazio (EXPERIENCE.md#Vazio): kicker (o da seção, acima), frase, fim.
+   Sem ilustração e sem botão grande — vale para os três estados: sem busca
+   ainda, busca sem resultado, catálogo indisponível. */
+.aviso {
+  max-width: 46ch;
+  margin-top: 28px;
+  font: 19px/1.5 var(--serif);
+}
+
+.catalogo {
+  margin-top: 10px;
+  border-top: 1px solid var(--fio);
+}
+
+/* Desde a Story 2.4 a fila é um `<a>`: escolher a atração é navegação, não
+   estado. Daí o `color: inherit` e o `text-decoration: none` — o elemento
+   mudou, a aparência não podia mudar junto. */
+.item {
+  display: grid;
+  grid-template-columns: 70px 1fr auto;
+  gap: 20px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--fio);
+  color: inherit;
+  text-decoration: none;
+  /* Compensa o fio de 3px que a fila escolhida ganha à esquerda: sem isto, o
+     texto de todas as outras filas daria um pulo lateral ao selecionar. */
+  padding-left: 17px;
+}
+
+.item:hover {
+  background: var(--breu2);
+}
+
+.itemEscolhido {
+  border-left: 3px solid var(--ambar);
+  padding-left: 14px;
+}
+
+.estado {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+  text-align: right;
+}
+
+.itemEscolhido .estado {
+  color: var(--ambar);
+}
+
+.miniatura {
+  width: 70px;
+  height: 70px;
+  aspect-ratio: 1;
+  object-fit: cover;
+  /* Bloco vazio do mesmo tamanho quando não há `imagem_url` — a grade não
+     pode dançar entre uma fila e outra. */
+  background: var(--breu2);
+}
+
+.nome {
+  font: 400 20px/1.2 var(--serif);
+}
+
+.origem {
+  margin-top: 5px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* ---- passo 2: data, local e setores (Story 2.4) -------------------------- */
+
+.formulario {
+  margin-top: 26px;
+}
+
+/* A atração escolhida, travada. Texto, não campo desabilitado: campo que
+   ninguém pode editar é campo que não deveria ser campo. */
+.atracao {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 20px;
+  align-items: center;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.colunas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 44px;
+  padding-top: 26px;
+}
+
+.duasColunas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.tituloSetores {
+  margin-bottom: 12px;
+}
+
+.colunasDoSetor,
+.linhaSetor {
+  display: grid;
+  grid-template-columns: 1fr 120px 130px 44px;
+  gap: 12px;
+  align-items: center;
+}
+
+.colunasDoSetor {
+  padding-bottom: 9px;
+}
+
+.linhaSetor {
+  padding: 11px 0;
+  border-top: 1px solid var(--fio);
+}
+
+/* Mesmos valores da entrada do `Campo`, com o `padding` menor que a linha de
+   quatro colunas pede. Não é o `Campo` porque aqui o rótulo é oculto e a
+   grade é da linha, não do campo. */
+.entrada {
+  width: 100%;
+  background: var(--breu2);
+  border: 1px solid var(--fio);
+  color: var(--cal);
+  padding: 11px;
+  font: 14px/1 var(--mono);
+}
+
+.entrada:focus {
+  border-color: var(--ambar);
+}
+
+/* "Visually hidden" clássico. Nunca `display: none`, que tira o rótulo da
+   árvore de acessibilidade — e rótulo ausente é o que o UX-DR9 proíbe.
+   Abaixo de 900px ele volta a ser visível: ver a media query. */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.remover {
+  height: 44px;
+  background: none;
+  border: none;
+  color: var(--fumaca);
+  font: 20px/1 var(--mono);
+  cursor: pointer;
+}
+
+.remover:hover {
+  color: var(--brasa);
+}
+
+.acrescentar {
+  margin-top: 14px;
+  padding: 11px 18px;
+  background: none;
+  border: 1px solid var(--fio2);
+  color: var(--cal);
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.acrescentar:hover {
+  border-color: var(--ambar);
+  color: var(--ambar);
+}
+
+.rodape {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid var(--fio);
+}
+
+/* ---- passo 3: escalar a portaria (Story 2.5) ---------------------------- */
+
+.passo3 {
+  margin-top: 46px;
+}
+
+/* Mesma anatomia do `.secTitulo` da página — título e kicker nas pontas, fio
+   embaixo. Repetido em vez de reusado porque este vive dentro da ilha: o
+   título do passo 3 some junto com o formulário, e os da página não. */
+.secTituloPasso3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTituloPasso3 h3 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.explicacaoEscala {
+  max-width: 52ch;
+  margin-top: 16px;
+  font: 17px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.filtroPortaria {
+  max-width: 420px;
+  margin-top: 20px;
+}
+
+.listaPortarias {
+  border-top: 1px solid var(--fio);
+}
+
+/* Marcação à esquerda, rótulo ocupando o resto: a linha inteira é alvo, e o
+   alvo tem 44px de altura no mínimo. Sem caixa, sem sombra, sem raio —
+   UX-DR3; o que separa uma linha da outra é o fio. */
+.linhaPortaria {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--fio);
+}
+
+.marcacao {
+  width: 17px;
+  height: 17px;
+  /* O âmbar da identidade na marcação, em vez do azul do sistema. */
+  accent-color: var(--ambar);
+  cursor: pointer;
+}
+
+.alvo {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 13px 0;
+  cursor: pointer;
+}
+
+.nomeDaConta {
+  font: 400 18px/1.2 var(--serif);
+}
+
+.emailDaConta {
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.contagemEscalados {
+  margin-top: 12px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ambar);
+}
+
+/* ---- a confirmação, no lugar do formulário ------------------------------ */
+
+.confirmacao {
+  margin-top: 26px;
+}
+
+.nomePublicado {
+  margin-top: 12px;
+  font: 400 30px/1.15 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.linhaDoShow {
+  margin-top: 8px;
+  font: 18px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.inventario {
+  margin-top: 28px;
+  border-top: 1px solid var(--fio);
+}
+
+/* Números exatos, alinhados à direita para as casas baterem entre si —
+   organizador vê inventário, não medidor (UX-DR7). */
+.linhaInventario {
+  display: grid;
+  grid-template-columns: 1fr 140px 140px;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+.setorPublicado {
+  font: 600 10px/1.6 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.numero {
+  font: 14px/1.15 var(--mono);
+  text-align: right;
+}
+
+/* Quem ficou com a porta, logo abaixo do inventário de setores. */
+.naPorta {
+  margin-top: 26px;
+}
+
+.nomesEscalados {
+  margin-top: 7px;
+  font: 18px/1.5 var(--serif);
+}
+
+/* As duas saídas da confirmação, lado a lado: publicar o próximo ou ir ver o
+   que já está no ar (Story 2.6). `flex-wrap` porque abaixo de 560px os dois
+   não cabem numa linha só. */
+.saidas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin-top: 26px;
+}
+
+.saida {
+  color: var(--ambar);
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+/* Um campo por linha, e nada rolando na horizontal (AC14). A linha de setor
+   perde as quatro colunas — e é aqui que o rótulo oculto volta a aparecer:
+   sem a faixa de kickers acima, "Pista" e "800" empilhados não diriam qual é
+   qual para quem enxerga. */
+@media (max-width: 900px) {
+  .colunas,
+  .duasColunas,
+  .linhaSetor {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .colunas {
+    gap: 38px;
+  }
+
+  .colunasDoSetor {
+    display: none;
+  }
+
+  .linhaSetor {
+    padding: 18px 0;
+  }
+
+  .oculto {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0 0 7px;
+    overflow: visible;
+    clip-path: none;
+    display: block;
+    font: 600 10px/1 var(--mono);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--fumaca);
+  }
+
+  .remover {
+    justify-self: end;
+  }
+
+  /* Passo 3: campo de busca e lista ocupam a largura inteira, um por linha, e
+     o e-mail desce para baixo do nome em vez de espremer os dois. */
+  .filtroPortaria {
+    max-width: none;
+  }
+
+  .alvo {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    align-items: start;
+  }
+
+  .linhaPortaria {
+    align-items: start;
+  }
+
+  .marcacao {
+    margin-top: 15px;
+  }
+
+  .linhaInventario {
+    grid-template-columns: 1fr auto;
+  }
+
+  .setorPublicado {
+    grid-column: 1 / -1;
+  }
+
+  .numero {
+    text-align: left;
+  }
+
+  .numero:last-child {
+    text-align: right;
+  }
+}
+
+@media (max-width: 560px) {
+  .busca {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .botaoBusca {
+    width: auto;
+    margin-bottom: 0;
+  }
+
+  .item,
+  .atracao {
+    grid-template-columns: 56px 1fr;
+  }
+
+  /* Sem a terceira coluna, o estado da fila desce para baixo do nome em vez
+     de abrir uma linha própria à esquerda da miniatura. */
+  .estado {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .miniatura {
+    width: 56px;
+    height: 56px;
+  }
+
+  .nomePublicado {
+    font-size: 25px;
+  }
+}

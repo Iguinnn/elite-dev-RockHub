@@ -2,7 +2,7 @@
 
 **Nenhum teste daqui chama `main()`.** `main()` abre `SessaoLocal`, que aponta
 para `DATABASE_URL` — o banco de **desenvolvimento**. Um teste que o chamasse
-gravaria quatro contas fora do banco de teste, passaria verde, e ninguém
+gravaria as contas fora do banco de teste, passaria verde, e ninguém
 descobriria até estranhar contas repetidas em `rockhub`. Por isso `semear()`
 recebe a `Session` por parâmetro: é o que permite exercitá-lo aqui dentro, na
 transação revertida da fixture `sessao`. Mesma trava que a Story 1.3 pôs na
@@ -11,8 +11,14 @@ configuração do Alembic.
 A maior parte destes testes afirma sobre o que o seed **não** faz. É o ponto da
 story: este é o primeiro código do repositório escrito para rodar contra o banco
 de produção, repetidamente, sem ninguém olhando.
+
+⚠️ **Nenhuma contagem é literal.** Elas derivam de `CONTAS`, desde a Story 2.5:
+a quinta conta semeada quebrou seis testes que tinham `4` escrito na mão, e
+nenhum deles tinha qualquer relação com quantas contas existem. Acrescentar a
+sexta agora não custa nada.
 """
 
+from collections import Counter
 from collections.abc import Callable
 
 import pytest
@@ -39,21 +45,29 @@ def _contar_usuarios(sessao: Session) -> int:
     return sessao.scalar(select(func.count()).select_from(Usuario)) or 0
 
 
-def test_uma_execucao_cria_as_quatro_contas_do_nfr2(sessao: Session) -> None:
+def test_uma_execucao_cria_todas_as_contas_do_nfr2(sessao: Session) -> None:
+    """Uma conta por entrada de `CONTAS`, com os papéis que `CONTAS` declara.
+
+    A comparação é contra o próprio `CONTAS`, e não contra números escritos
+    aqui: o que este teste prova é que o seed grava o que a lista diz — não que
+    a lista tem um tamanho específico, que é decisão de produto e muda.
+    """
     semear(sessao)
 
-    papeis = sessao.scalars(select(Usuario.papel)).all()
+    papeis_gravados = Counter(sessao.scalars(select(Usuario.papel)).all())
+    papeis_esperados = Counter(conta.papel.value for conta in CONTAS)
 
-    assert _contar_usuarios(sessao) == 4
-    assert papeis.count(PapelUsuario.ORGANIZADOR.value) == 1
-    assert papeis.count(PapelUsuario.CLIENTE.value) == 2
-    assert papeis.count(PapelUsuario.PORTARIA.value) == 1
+    assert _contar_usuarios(sessao) == len(CONTAS)
+    assert papeis_gravados == papeis_esperados
+    # A partir da Story 2.5 são **duas** portarias, e é isso que torna
+    # demonstrável o AD-7: a portaria A não valida o evento da portaria B.
+    assert papeis_esperados[PapelUsuario.PORTARIA.value] == 2
 
 
-def test_primeira_execucao_devolve_criada_nas_quatro(sessao: Session) -> None:
+def test_primeira_execucao_devolve_criada_em_todas(sessao: Session) -> None:
     resultado = semear(sessao)
 
-    assert [situacao for _, situacao in resultado] == [CRIADA] * 4
+    assert [situacao for _, situacao in resultado] == [CRIADA] * len(CONTAS)
 
 
 def test_segunda_execucao_nao_duplica_e_devolve_mantida(sessao: Session) -> None:
@@ -62,8 +76,8 @@ def test_segunda_execucao_nao_duplica_e_devolve_mantida(sessao: Session) -> None
 
     resultado = semear(sessao)
 
-    assert [situacao for _, situacao in resultado] == [MANTIDA] * 4
-    assert _contar_usuarios(sessao) == total_depois_da_primeira == 4
+    assert [situacao for _, situacao in resultado] == [MANTIDA] * len(CONTAS)
+    assert _contar_usuarios(sessao) == total_depois_da_primeira == len(CONTAS)
 
 
 def test_segunda_execucao_nao_levanta_excecao(sessao: Session) -> None:
@@ -104,10 +118,11 @@ def test_conta_criada_por_avaliador_continua_no_banco_depois_do_seed(
     semear(sessao)
 
     assert sessao.get(Usuario, id_do_avaliador) is not None
-    assert _contar_usuarios(sessao) == 5
+    # As semeadas mais a do avaliador, que continua lá.
+    assert _contar_usuarios(sessao) == len(CONTAS) + 1
 
 
-def test_senha_semeada_autentica_nas_quatro_contas(sessao: Session) -> None:
+def test_senha_semeada_autentica_em_todas_as_contas(sessao: Session) -> None:
     """AC5: prova que o `senha_hash` gravado é Argon2id de verdade.
 
     Um seed que grava conta que não loga é pior que seed nenhum — a falha

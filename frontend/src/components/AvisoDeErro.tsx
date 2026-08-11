@@ -16,7 +16,13 @@ import estilos from "./AvisoDeErro.module.css";
  * leitor de tela (UX-DR9). Componente é onde uma regra dessas se protege
  * sozinha.
  */
-export default function AvisoDeErro({ mensagem }: { mensagem: string | null }) {
+/**
+ * `ReactNode` e não `string`: desde o code review da Epic 2 um dos avisos leva
+ * `<Link>` dentro — "sua sessão expirou, entre de novo" sem o caminho para
+ * entrar é um beco sem saída. A regra do `role="alert"` acima vale igual para
+ * texto e para JSX.
+ */
+export default function AvisoDeErro({ mensagem }: { mensagem: React.ReactNode }) {
   return (
     <div role="alert">
       {mensagem && <p className={estilos.erro}>{mensagem}</p>}

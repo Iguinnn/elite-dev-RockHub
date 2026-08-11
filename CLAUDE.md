@@ -26,19 +26,27 @@ exatamente o "AI slop" que o enunciado penaliza.
 
 Apresentar trade-offs, alternativas e consequências é bem-vindo. Escolher no lugar dele, não.
 
-### Os READMEs são atualizados ao fim de toda story — obrigatório
+### Os READMEs — só a camada que a story tocou, e só o que passa na régua
 
-Terminou uma story, **antes de considerá-la concluída**, atualize os três READMEs:
+Terminou uma story, **antes de considerá-la concluída**, atualize **o README da camada que a story
+tocou**. Story que só mexe no backend não encosta no `frontend/README.md`. Se nenhum arquivo daquela
+camada mudou, não há o que escrever ali.
 
-- `README.md` (raiz) — visão geral da aplicação
-- `frontend/README.md`
-- `backend/README.md`
+O `README.md` da raiz só é tocado quando a story produz uma **decisão que muda o produto ou a
+arquitetura** — o que é raro, e deve continuar raro.
 
-Cada um recebe o que mudou na sua camada: o que foi implementado, o que mudou de decisão, o
-histórico e **o porquê** — não só o que, sempre o motivo.
+**A régua da raiz, aplicada em 2026-08-11:** entra na seção *Decisões* se, tivesse eu escolhido a
+alternativa, quem avalia veria **um sistema diferente**. Não entra: detalhe de UI, nome de
+componente, ordem de campo, escolha de biblioteca menor, bug corrigido, decisão de processo. Essas
+moram no README da camada, ao lado do código que elas afetam — ou em lugar nenhum.
 
-**O `README.md` da raiz é o histórico de decisões do projeto.** Não é changelog de funcionalidade:
-é o registro de *por que isso e não aquilo*. Toda decisão relevante entra com três partes:
+**Por que a régua existe:** os três READMEs chegaram a 5.093 linhas e 54 mil palavras, com a mesma
+decisão escrita três e quatro vezes (raiz + seção temática da camada + histórico da camada + notas
+da story). Ninguém lê 1.900 linhas de README, e 66 subseções de decisão enterram as 20 que importam
+— inclusive *O que não está pronto*, que é o único requisito do enunciado com penalidade escrita.
+Um README que não é lido não pontua, por melhor que seja.
+
+Cada decisão que passa na régua entra com três partes:
 
 1. **O que foi decidido**
 2. **Por quê** — o problema que essa escolha resolve
@@ -50,26 +58,44 @@ alternativa descartada parece que não houve escolha — que é exatamente a acu
 Matéria-prima pronta para isso: os `.memlog.md` do brainstorming, da arquitetura e do UX registram,
 em ordem, tudo que foi considerado e recusado ao longo do processo.
 
-Os READMEs de `frontend/` e `backend/` ficam com o que é específico da camada: como rodar, estrutura
-de pastas, convenções e decisões locais.
+**Não existe mais seção `## Histórico desta camada`.** Ela foi removida dos dois READMEs de camada
+em 2026-08-11: era duplicata literal das seções temáticas do mesmo arquivo. O que a story mudou vai
+para a seção temática do assunto (`## Publicar evento`, `## O sistema visual`), não para uma linha
+do tempo paralela. Não recrie a seção.
+
+**A régua da camada, definida em 2026-08-11: no máximo cinco parágrafos por story ou review.**
+Sem tabela nova, sem subseção nova, sem "a lição que fica". Escreva o que mudou e por quê, na
+seção temática que já existe, e pare. Se não couber em cinco parágrafos, provavelmente é decisão
+de raiz — aí aplique a régua da raiz — ou é detalhe que já está no comentário do código.
+
+**Por quê:** o code review da Epic 2 gastou mais tempo escrevendo README do que revisando código.
+A raiz tinha régua e as camadas não, e foi exatamente onde o texto inchou. Documentação não pode
+bloquear o commit: aplique o código, rode a suíte, mostre o resultado — **depois** escreva.
 
 **Mas README não é só explicação.** A parte operacional vem primeiro, porque é o que alguém precisa
 em dez segundos. Estrutura do `README.md` da raiz, nesta ordem:
 
 1. **O que é** — dois parágrafos
-2. **Como executar** — pré-requisitos, variáveis de ambiente, subir o banco, migrar, semear, rodar
+2. **No ar** — as URLs publicadas (vale +1 ponto no enunciado)
+3. **Como executar** — pré-requisitos, variáveis de ambiente, subir o banco, migrar, semear, rodar
    backend, rodar frontend. Comandos copiáveis, sem passo implícito
-3. **Contas semeadas** — os quatro usuários e suas senhas
-4. **Roteiro de avaliação** — o caminho de ponta a ponta, numerado, incluindo como provocar a
+4. **Contas semeadas** — os cinco usuários e suas senhas
+5. **Roteiro de avaliação** — o caminho de ponta a ponta, numerado, incluindo como provocar a
    recusa de pagamento
-5. **Stack e estrutura** — o que é cada pasta
-6. **Decisões: por que isso e não aquilo** — o histórico, com alternativas descartadas
-7. **O que não está pronto** — limitações assumidas
+6. **Stack e estrutura** — o que é cada pasta
+7. **Decisões: por que isso e não aquilo** — só as que passam na régua, com alternativas descartadas
+8. **O que não está pronto** — cortes conscientes. **Obrigatória**, e não some no fim do projeto: o
+   enunciado exige que o que não estiver pronto seja dito, e mapa de assentos, TMDb, editar evento,
+   cancelamento e teste de frontend continuam fora por escolha
+9. **Uso de IA** — ferramentas, onde entraram, e o que foi feito sem IA. O enunciado pede
 
-**Construção incremental, revisão no fim.** As seções 1 a 5 nascem e crescem junto com o código:
+Estrutura dos READMEs de camada: como rodar, variáveis, estrutura de pastas, convenções, seções
+temáticas por assunto, armadilhas reais e deploy. Sem linha do tempo.
+
+**Construção incremental, revisão no fim.** As seções 1 a 6 nascem e crescem junto com o código:
 a story que adiciona migração adiciona o comando de migração no mesmo commit; a que cria o seed
-documenta as credenciais ali. A seção 6 ganha uma entrada sempre que uma decisão é tomada, enquanto
-o motivo ainda está fresco.
+documenta as credenciais ali. A seção 7 ganha uma entrada quando — e só quando — uma decisão passa
+na régua, enquanto o motivo ainda está fresco.
 
 As stories da Epic 6 **não escrevem o README do zero** — elas fazem a passagem final: conferir se o
 passo a passo realmente funciona numa máquina limpa, ordenar o histórico, fechar as lacunas.
@@ -114,7 +140,7 @@ Sequência (comprimida por causa do prazo — PRD foi cortado de propósito):
    `docs/desafio-elite-dev.md` com outras palavras
 3. ~~`bmad-architecture`~~ ✅ **concluído** — `_bmad-output/planning-artifacts/architecture/architecture-elite-dev-RockHub-2026-08-09/ARCHITECTURE-SPINE.md`
    contém 14 decisões (AD-1 a AD-14). **São vinculantes** — código que as contraria está errado.
-   Versão em linguagem de gente para o README: `docs/decisoes-tecnicas.md`
+   Saiu junto `docs/decisoes-tecnicas.md`, hoje **congelado** (ver *Documentos congelados* abaixo)
 3b. ~~`bmad-ux`~~ ✅ **concluído** — `_bmad-output/planning-artifacts/ux-designs/ux-elite-dev-RockHub-2026-08-09/`
    `DESIGN.md` (identidade "jornal noturno") + `EXPERIENCE.md` (comportamento) +
    `mockups/proto-jornal-noturno.html` (protótipo navegável de 11 telas).
@@ -132,6 +158,12 @@ Sequência (comprimida por causa do prazo — PRD foi cortado de propósito):
 As correções do review já estão aplicadas; a mais relevante está registrada como decisão
 no README da raiz.
 
+**Epic 2 com o código fechado.** As seis stories (2.1 a 2.6) estão implementadas — cliente da
+Ticketmaster, busca no catálogo, modelo de evento e setor, publicação com setores, escala da
+portaria e `Meus eventos`. Fora da numeração, um commit `feat` avulso acrescentou o filtro de
+classificação do catálogo (spec em `docs/techspec-filtro-do-catalogo.md`). **Falta o
+`bmad-code-review` da epic**, e é o próximo passo.
+
 **As duas metades estão no ar:** frontend em <https://elite-dev-rock-hub.vercel.app> (Vercel)
 e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), **os dois
 publicando a `main`** desde o merge da Epic 1. Da Epic 2 em diante o fluxo é: branch da epic →
@@ -140,15 +172,32 @@ novo — nem `Root Directory`, nem Production Branch, nem variável de ambiente 
 `TICKETMASTER_API_KEY` já está definida na Railway desde a 1.8, só falta a `Settings` declará-la
 na Story 2.1).
 
-O que existe hoje: backend FastAPI com migração Alembic e a tabela `usuario`; cadastro, login,
-logout e `/auth/eu` com senha em Argon2id e sessão em cookie `httpOnly` de 8h; autorização por
-papel como dependência de rota; seed das quatro contas de avaliação; frontend Next.js com a
-identidade "jornal noturno" aplicada, telas de acesso, `/conta` protegida e masthead que reage
-à sessão.
+O que existe hoje: backend FastAPI com Alembic e as tabelas `usuario`, `evento`, `setor` e
+`evento_portaria`; cadastro, login, logout e `/auth/eu` com senha em Argon2id e sessão em cookie
+`httpOnly` de 8h; autorização por papel como dependência de rota; integração com a Ticketmaster
+Discovery; publicação de evento com setores e escala de portaria na mesma transação; leitura de
+`Meus eventos` com lista e detalhe; seed das cinco contas de avaliação; frontend Next.js com a
+identidade "jornal noturno" aplicada, telas de acesso, `/conta` protegida, `/organizador/publicar`
+e `/organizador/eventos`, e masthead que reage à sessão e ao papel.
 
-**Próximo passo: Epic 2** — publicação de eventos pelo organizador, começando pela Story 2.1
-(cliente da Ticketmaster com a chave protegida). O `sprint-status.yaml` é a fonte da verdade
-sobre o andamento — consulte-o antes de assumir o que está pronto.
+**Próximo passo: code review da Epic 2**, e depois a Epic 3 (descoberta e compra). O
+`sprint-status.yaml` é a fonte da verdade sobre o andamento — consulte-o antes de assumir o que
+está pronto.
+
+### Documentos congelados — não atualize
+
+Estes existem, continuam versionados e **não recebem mais manutenção**. Não os edite ao terminar
+uma story, e não os cite como se estivessem em dia:
+
+- **`docs/decisoes-tecnicas.md`** — rascunho da fase de arquitetura. Descreve em tempo presente
+  coisas que ainda não existem (reserva de 10 min, HMAC do QR, link de compartilhamento, cartão de
+  teste). Congelado em 2026-08-11, com aviso no topo do próprio arquivo. As decisões vivas moram no
+  `README.md` da raiz
+- **`_bmad-output/planning-artifacts/`** — brainstorm, arquitetura, UX e `epics.md` são artefatos de
+  **planejamento**, escritos antes da implementação. Eles registram o plano como ele foi feito; não
+  os reescreva para casar com o que o código virou
+- **Arquivos de story já implementados** — o `Dev Agent Record` é preenchido pela story em
+  andamento e não se volta nela depois
 
 ## Decisões já travadas
 

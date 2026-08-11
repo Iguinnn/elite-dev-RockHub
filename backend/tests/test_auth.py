@@ -83,6 +83,10 @@ def test_cookie_e_secure_apenas_em_producao(
         _env_file=None,
         ambiente="producao",
         jwt_secret="um-segredo-de-teste-com-trinta-e-dois-bytes",
+        # Desde a Story 2.1 a chave da Ticketmaster também é obrigatória em
+        # produção — sem isto, a `Settings` nem chega a existir para este
+        # teste, que não tem nada a ver com catálogo.
+        ticketmaster_api_key="chave-de-teste-nao-vaze-isto",
     )
     monkeypatch.setattr(auth_router, "obter_settings", lambda: settings_producao)
 

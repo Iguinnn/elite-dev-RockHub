@@ -16,8 +16,10 @@ import NavLink from "./NavLink";
  * da pessoa são o conteúdo da `/conta`.
  *
  * Server Component `async`: lê a sessão para decidir entre `Entrar` e `Minha
- * conta`. Isso torna dinâmica toda rota do grupo `(site)`, e é correto —
- * cabeçalho que depende de quem pediu não pode ser pré-renderizado.
+ * conta`, e agora também por papel — `Publicar evento` só aparece para quem
+ * está logado como `ORGANIZADOR`. Isso torna dinâmica toda rota do grupo
+ * `(site)`, e é correto — cabeçalho que depende de quem pediu não pode ser
+ * pré-renderizado.
  *
  * A única ilha de cliente continua sendo o `NavLink`, que precisa do caminho
  * atual para marcar o item ativo.
@@ -33,8 +35,17 @@ export default async function Masthead() {
 
       <nav className={estilos.navbar} aria-label="Navegação principal">
         <NavLink href="/">Início</NavLink>
-        {/* `Meus ingressos` saiu daqui até a Epic 4 criar a tela: link que cai
-            no 404 não fica no repositório (precedente da Story 1.4). */}
+        {/* `Meus ingressos` sai daqui até a Story 4.1 criar a tela: link que
+            cai no 404 não fica no repositório (precedente da Story 1.4).
+            `Meus eventos` entrou na 2.6, quando a tela dele passou a existir —
+            e vem **antes** de `Publicar evento`, porque acompanhar o que está
+            no ar é o que o organizador faz todo dia; publicar é eventual. */}
+        {usuario?.papel === "ORGANIZADOR" && (
+          <>
+            <NavLink href="/organizador/eventos">Meus eventos</NavLink>
+            <NavLink href="/organizador/publicar">Publicar evento</NavLink>
+          </>
+        )}
         {usuario ? (
           <NavLink href="/conta">Minha conta</NavLink>
         ) : (

@@ -5,10 +5,12 @@ shows, a compra, o ingresso com QR e a tela de validação da portaria. A API vi
 [`../backend`](../backend/README.md) e este projeto só a consome.
 
 Hoje está de pé a casca — o sistema visual "jornal noturno" aplicado, o masthead, a raiz em estado
-vazio e um 404 com a cara do projeto —, as **duas telas de acesso**, login e cadastro, e o **ciclo
+vazio e um 404 com a cara do projeto —, as **duas telas de acesso**, login e cadastro, o **ciclo
 de sessão fechado**: o masthead sabe quem está do outro lado, existe uma `/conta` com os dados e o
 botão de sair, e quem abre uma página protegida sem sessão é levado ao login e devolvido ao destino
-depois de entrar.
+depois de entrar — e a primeira tela **restrita por papel**: `/organizador/publicar`, onde o
+organizador busca a atração no catálogo da Ticketmaster para publicar um evento (passo 1 de 3; os
+outros dois chegam nas Stories 2.4 e 2.5).
 
 **E está publicado:** <https://elite-dev-rock-hub.vercel.app> — dá para entrar por lá, com as contas
 de avaliação, sem instalar nada. Como o projeto foi configurado no painel, campo por campo, está em
@@ -204,7 +206,7 @@ Em ordem de probabilidade, com o sintoma que cada uma produz:
 |---|---|
 | Build morre em "No framework detected", ou não acha `package.json` | Falta `Root Directory = frontend` |
 | Build verde mas o site é de um commit velho, ou o build lista a raiz do monorepo | A Production Branch é a errada |
-| `Module not found` em vários arquivos de uma vez, sempre no mesmo import | Uma pasta existe na sua máquina e **não no repositório**. Foi o que aconteceu comigo — ver [Histórico](#story-19--frontend-no-ar-na-vercel) |
+| `Module not found` em vários arquivos de uma vez, sempre no mesmo import | Uma pasta existe na sua máquina e **não no repositório**. Aconteceu comigo na Story 1.9: o `.gitignore` da raiz veio do template Python, que traz `lib/` — e padrão sem barra inicial casa em **qualquer profundidade**, então ele ignorava `frontend/src/lib/` desde a 1.2. Nada local pega isso (`npm run build` e `tsc` leem o disco, não o índice do git); só um clone limpo revela. O conserto foi ancorar o padrão (`/lib/`), não abrir exceção |
 | A URL pede login da Vercel | É a URL gerada por deploy, não o domínio de produção |
 | A tela abre, o login envia e nada acontece; Network mostra `500`/`502` em `/api/auth/login` | `API_URL` ausente, com `http://`, com barra no fim, ou definida **depois** do build. Nos quatro casos o conserto termina em **redeploy** |
 | Login responde `200` mas a página continua deslogada | O cookie não foi aceito. Confira `Secure` no `Set-Cookie` (vem do `AMBIENTE=producao` da Story 1.8) e que **não** há `Domain=` |
@@ -306,12 +308,20 @@ Dois detalhes que já estão tratados e que é fácil quebrar sem querer:
   genérica — sem isso a tela quebra em branco quando a API cai, que é o primeiro estado que alguém
   encontra ao subir só o frontend
 
-### E o caminho do servidor: `src/lib/sessao.ts`
+### E o caminho do servidor: `src/lib/servidor.ts` e `sessao.ts`
 
-`api.ts` é o caminho do **navegador**. A leitura da sessão a partir de um Server Component é outro
+`api.ts` é o caminho do **navegador**. A leitura de dado a partir de um Server Component é outro
 arquivo, e a separação não é organização — é obrigatória: `api.ts` é importado pelos formulários,
 que são `"use client"`, e `next/headers` num módulo que chega ao bundle do cliente **quebra o
 build**. A fronteira aqui é física.
+
+**`src/lib/servidor.ts` nasceu na Story 2.2**, quando `catalogo.ts` se tornou o segundo consumidor
+do que até então era detalhe interno do `sessao.ts`: `API_URL`, o aviso de `API_URL` ausente em
+produção, o nome do cookie e `cabecalhoDeSessao()` — a função que devolve `{ Cookie: string } |
+null` a partir do cookie da requisição. O corpo de `obterUsuarioDaSessao` não mudou de
+comportamento ao ser extraído — o `cache()`, o curto-circuito sem cookie e o `console.error` do
+`catch` são exatamente os que o code review da Epic 1 conquistou, só que agora chamando
+`cabecalhoDeSessao()` em vez de repetir a leitura do cookie.
 
 ```ts
 const usuario = await obterUsuarioDaSessao();   // UsuarioDaSessao | null
@@ -379,6 +389,15 @@ frontend/
         conta/
           page.tsx            # Server Component com a guarda de sessão
           page.module.css
+        organizador/
+          publicar/
+            page.tsx          # Server Component — passos 1 (2.2), 2 (2.4) e 3 (2.5); a escolha vem da URL
+            page.module.css   # classes dos três passos, da linha de setor e da confirmação
+          eventos/            # "Meus eventos" (Story 2.6) — só leitura, sem uma linha de "use client"
+            page.tsx          # a lista, partida em "Em cartaz" e "Já aconteceram"
+            page.module.css   # compartilhado com o detalhe: mesmo vocabulário de fila e inventário
+            [id]/
+              page.tsx        # o detalhe: inventário setor a setor e quem está na porta
       (entrada)/              # casca sem masthead: só a marca
         layout.tsx
         layout.module.css
@@ -402,10 +421,16 @@ frontend/
       AvisoDeErro.module.css
       FormularioLogin.tsx     # "use client"
       FormularioCadastro.tsx  # "use client"
+      FormularioPublicacao.tsx # "use client" — a primeira ilha fora das telas de acesso (2.4/2.5)
       BotaoSair.tsx           # "use client" — logout + router.refresh()
     lib/
       api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
+      servidor.ts             # API_URL + cabecalhoDeSessao() — o que os três módulos de servidor compartilham
       sessao.ts               # obterUsuarioDaSessao() — só servidor
+      catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
+      portarias.ts            # listarPortarias() — só servidor (Story 2.5)
+      eventos.ts              # listarMeusEventos() e obterMeuEvento() — só servidor (Story 2.6)
+      formato.ts              # data, hora e dinheiro em pt-BR — módulo puro, os dois lados o usam (2.6)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
 
@@ -550,15 +575,23 @@ está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
 
 ### O masthead sabe quem está do outro lado
 
-Ele virou Server Component `async`: lê a sessão e monta a navegação a partir dela.
+Ele virou Server Component `async`: lê a sessão e monta a navegação a partir dela — e, desde a
+Story 2.2, também a partir do **papel**.
 
 | Estado | Navegação |
 |---|---|
 | Sem sessão | `Início` · `Entrar` |
-| Com sessão | `Início` · `Minha conta` |
+| Com sessão, papel `CLIENTE` ou `PORTARIA` | `Início` · `Minha conta` |
+| Com sessão, papel `ORGANIZADOR` | `Início` · `Publicar evento` · `Minha conta` |
 
-**`Meus ingressos` saiu do masthead** até a Epic 4 criar a tela. É o precedente que firmei na 1.4:
-link que cai no 404 não fica no repositório.
+**`Meus ingressos` e `Meus eventos` saíram do masthead** até as Stories 4.1 e 2.6 criarem as telas.
+É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório — e ele valeu de novo
+na 2.2, quando fiquei tentado a incluir `Meus eventos` "já que estava ali".
+
+`Publicar evento` é a primeira entrada do masthead condicionada a **papel**, não só a sessão existir
+ou não. O `usuario?.papel === "ORGANIZADOR"` mora no próprio `Masthead.tsx`: entrando como cliente
+ou portaria o link **não existe no HTML**, nem escondido por CSS — a decisão é do servidor, antes de
+qualquer coisa chegar ao navegador.
 
 **E o nome de quem entrou não aparece ali**, mesmo agora que o componente o conhece. O
 `DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio duplo, e nada mais —, e o
@@ -629,6 +662,478 @@ formulário. `useSearchParams()` no Client Component funcionaria e exigiria fron
 
 **Convenção:** parâmetro de URL que vira navegação passa por `caminhoInternoSeguro`. Vale para o
 retorno depois do checkout (Epic 3) e para o link compartilhado (Epic 4).
+
+## A tela do organizador: `/organizador/publicar`
+
+Três passos, na mesma tela: buscar a atração no catálogo da Ticketmaster (Story 2.2), preencher
+data, local e setores (Story 2.4) e escalar quem valida na porta (Story 2.5).
+
+### A escolha da atração vive na URL, como a busca
+
+Clicar numa fila do catálogo não muda estado: **segue um `<Link>`**. O destino é a mesma página com
+um parâmetro a mais — `?q=baco&escolhido=G5vYZ9a1kd` —, o Next re-renderiza no servidor, a fila
+escolhida ganha o fio âmbar e o passo 2 aparece abaixo.
+
+É a mesma decisão da busca da 2.2, estendida em vez de contradita, e ela paga três coisas de graça:
+recarregar mantém a escolha, o botão voltar a desfaz, e o link abre no mesmo lugar para outra
+pessoa. A alternativa — `onClick` guardando a escolha em `useState` — mostraria o passo 2 sem
+recarregar, e é o que qualquer formulário moderno faria; caiu porque tiraria a escolha da URL e
+transformaria a página **inteira** em ilha de cliente, contra a convenção *"Server Component por
+padrão"*. O motivo completo, com a terceira alternativa que também caiu (uma rota
+`/organizador/publicar/[id]`), está no [README da
+raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+```tsx
+const parametros = new URLSearchParams();
+if (termoLimpo) parametros.set("q", termoLimpo);
+parametros.set("escolhido", idExterno);
+return `/organizador/publicar?${parametros}#passo-2`;
+```
+
+⚠️ **O `#passo-2` no fim do destino não é enfeite, e ele veio de um defeito real.** Sem a âncora,
+escolher uma atração deixava a pessoa exatamente onde estava, com o passo 2 nascendo abaixo da
+dobra — clicar na fila parecia **não fazer nada**, e o formulário só era encontrado por quem
+rolasse a página até o rodapé. A âncora resolve isso pela **navegação**: o `<Link>` leva até o passo
+2 porque o destino é o passo 2. Nenhum `onClick`, nenhum `useEffect`, nenhuma linha de
+`"use client"` a mais — e o link continua compartilhável, agora apontando para o lugar certo da
+página. O `scroll-behavior: smooth` fica no `html` do `globals.css`, e o bloco de
+`prefers-reduced-motion` que já existia lá o desliga para quem pediu menos movimento.
+
+⚠️ **`URLSearchParams` e para por aí.** `q` chega na `page.tsx` já decodificado pelo Next, e
+concatenar um `encodeURIComponent` à mão em cima disso produz `%2520` e uma busca que não acha nada.
+
+⚠️ **`?escolhido=` sobrevive à troca do termo**, e o comportamento certo é o passo 2 sumir. Buscar
+"baco", escolher e depois buscar "rosalia" deixa na URL um id que não está mais na lista; o `find`
+devolve `undefined` e a tela volta a ter só o passo 1 — sem erro, sem aviso, sem nada quebrado. É
+por isso que **nunca** uso `!` para calar o TypeScript aqui: `undefined` é um estado real da tela,
+não um caso impossível.
+
+### `FormularioPublicacao` é a primeira ilha `"use client"` fora das telas de acesso
+
+Login e cadastro são ilhas porque são formulários. Esta é a primeira vez que um formulário convive
+na **mesma página** com conteúdo renderizado no servidor, e a fronteira entre os dois é a prop
+`item`, que atravessa serializada.
+
+A ilha existe por um motivo que dá para apontar com o dedo: `+ Adicionar setor` e o `×` de remover
+mudam a quantidade de campos na tela a cada clique, e isso é interação que exige o navegador. O que
+**não** está na ilha continua no servidor: masthead, busca, catálogo, e a página que decide qual
+atração foi escolhida.
+
+Dentro dela, só os setores têm `useState`. Os campos do evento — data, horário, casa de show, cidade
+— são lidos por `FormData` no envio, sem estado, exatamente como no `FormularioCadastro`: eles não
+mudam de quantidade, então não precisam ser controlados.
+
+Nome e imagem da atração aparecem **travados**, e são texto, não `<input readOnly>`: campo que
+ninguém pode editar é campo que não deveria ser campo. `local` e `cidade` chegam pré-preenchidos do
+catálogo e **são editáveis** — o porquê disso (turnê) está no README da raiz.
+
+### A conversão de reais para centavos mora aqui, na fronteira
+
+A API só conhece `preco_centavos: int` (AD-11). O organizador digita `120,00`, e a conversão
+acontece no cliente, antes do `POST`:
+
+```ts
+const normalizado = bruto.includes(",")
+  ? bruto.replace(/\./g, "").replace(",", ".")   // "1.234,50" → "1234.50"
+  : bruto;                                        // "120.50" já está pronto
+if (!/^\d+(\.\d{1,2})?$/.test(normalizado)) return null;
+return Math.round(Number(normalizado) * 100);
+```
+
+A regra evita adivinhar: **com vírgula**, ela é o decimal e o ponto é milhar; **sem vírgula**, o
+ponto é o decimal. Assim `"1.234"` não vira 123.400 por chute — ele falha no teste da regex, devolve
+`null` e vira erro na tela **antes** de qualquer ida à rede. Mesma disciplina das duas validações
+locais do `FormularioCadastro`.
+
+Ela mora no cliente porque a alternativa é pior: aceitar decimal na API poria ponto flutuante no
+contrato, que é exatamente o que o AD-11 existe para impedir. O motivo completo está no README da
+raiz.
+
+⚠️ **A junção de data com hora não é estética.** `new Date("2026-08-14")` — data sozinha — é lida
+como **UTC** pela especificação; `new Date("2026-08-14T21:00")` — data com hora, sem offset — é lida
+como **hora local**. Mandar só a data faria um show das 21h em São Paulo virar 18h na tela de quem
+compra, e o sintoma só apareceria em produção, porque quem testa costuma olhar a resposta da API e
+não o horário renderizado. O `toISOString()` do resultado é o que vira `data_hora` no corpo.
+
+### Publicar não leva a lugar nenhum, e é de propósito
+
+Deu certo, a confirmação toma o lugar do formulário na mesma tela: nome, data por extenso, local,
+cidade e a lista de setores com **capacidade e preço exatos**. Números exatos e nenhum medidor —
+proporção é para quem compra; organizador vê inventário (UX-DR7).
+
+Sem `router.push` e sem `router.refresh` — e desde a Story 2.6 **por outro motivo**. Na 2.4 era "não
+há para onde mandar alguém": `Meus eventos` não existia, e a raiz era o estado vazio da programação.
+Agora existe para onde ir, e eu decidi continuar sem redirecionar: esta confirmação é o recibo da
+publicação, e é a **única** vez que o organizador vê o inventário e quem ficou com a porta. Não há
+tela de editar evento onde conferir depois. Saltar para a lista assim que o `POST` responde apagaria
+justamente isso — a lista mostra os totais, não a escala.
+
+Os caminhos de saída são dois, e nenhum é obrigatório: `Publicar outro →`, que leva à URL limpa, e
+`Ver meus eventos →`, que entrou na 2.6 junto com a tela para onde aponta.
+
+Desde a Story 2.5 a confirmação também lista, **por nome**, quem ficou com a porta — abaixo do
+inventário de setores, sob o kicker `Na porta`. É a única confirmação da escala que o organizador
+recebe: não há tela de editar evento, e descobrir depois que escalou a pessoa errada não teria
+conserto.
+
+O erro vem pelo `codigo`, nunca pela `mensagem` do servidor — convenção desde a Story 1.4. Os
+códigos desta tela são `EVENTO_SEM_SETOR`, `SETOR_DUPLICADO` (2.4), `EVENTO_SEM_PORTARIA` e
+`PORTARIA_INVALIDA` (2.5). O texto de `PORTARIA_INVALIDA` **não diz qual** conta falhou, porque o
+backend não distingue "não existe" de "não é portaria", de propósito — a tela não inventa uma
+precisão que a resposta não tem, e manda recarregar, que é o conserto real.
+
+### O passo 3: escalar a portaria (Story 2.5)
+
+O bloco fica **dentro do mesmo `<form>` do passo 2**, e isso é a decisão inteira: é uma publicação
+só, um `POST` só, e a escala nasce atômica com o evento. Dois formulários dariam a impressão de duas
+ações independentes, e a primeira poderia terminar sem a segunda — que é exatamente o evento sem
+portaria que o AD-7 existe para impedir.
+
+**O título do passo 3 mora na ilha, não na `page.tsx`.** Os títulos dos passos 1 e 2 são da página, e
+continuam de pé o tempo todo. O do passo 3 pertence ao formulário e precisa **desaparecer junto com
+ele** quando a confirmação toma o lugar: um "3 · Escale a portaria" sozinho, acima de um recibo de
+evento publicado, é uma instrução para fazer o que já foi feito.
+
+**A busca por nome acontece em memória, não como `?q=` na rota.** A lista inteira já viaja para a
+tela (são poucas contas de portaria), e filtrar no cliente responde a cada tecla sem ida à rede. Um
+`q` no endpoint seria a saída se a lista crescesse, e aí o filtro passaria a ser estado de servidor
+dentro de uma ilha que já é cliente. Trocar depois é barato; começar assim é o que custa menos hoje.
+
+⚠️ **Filtrar é ver menos, não desmarcar.** A fonte da verdade é um `Set` de ids; a lista filtrada é só
+a vista. Se a marcação fosse derivada da lista visível — por índice, por exemplo —, digitar no campo
+de busca apagaria a escala. Marcar "Ana", procurar "jonas", marcar "Jonas" e publicar grava **os
+dois**.
+
+⚠️ **Enter no campo de busca não publica o evento.** Um campo de texto dentro de um `<form>` envia o
+formulário quando alguém aperta Enter, e aqui isso publicaria no meio de uma consulta. O campo filtra
+a cada tecla, então não há nada para confirmar — o `onKeyDown` chama `preventDefault` e pronto.
+
+O rótulo é **"Consulte pelo nome da conta"**, visível, e não um `placeholder`: `placeholder` não
+conta como rótulo (UX-DR9), e aqui ele carrega informação que ninguém adivinha — que se digita o
+nome, não o e-mail. A quantidade de escalados aparece em **texto** (`2 escalados`), e não só pelo
+estado visual das marcações, pela mesma regra: nenhuma informação só por cor ou só por forma. Cada
+linha tem `<label htmlFor>` e 44px de alvo.
+
+**Sem nenhuma conta de portaria, ou com a lista indisponível, a tela não quebra.** `listarPortarias`
+nunca levanta (ver abaixo), e o passo 3 vira uma frase explicando que não há quem escalar e que sem
+isso o evento não pode ser publicado — kicker, frase, fim, sem ilustração e sem botão grande
+(UX-DR8). O formulário continua de pé.
+
+E a recusa por não ter escalado ninguém acontece **antes** da ida à rede, com a mesma disciplina de
+validação local do `FormularioCadastro`: o servidor recusaria igual, e evitar a viagem é retorno
+imediato.
+
+### Rótulo oculto não é rótulo ausente
+
+A linha de setor tem quatro colunas no desktop e uma faixa de kickers acima nomeando cada uma. Essa
+faixa é decoração: ela é `aria-hidden` e serve a quem enxerga. Quem serve a quem **não** enxerga é
+um `<label htmlFor>` em cada entrada, escondido pelo padrão "visually hidden" (`position:absolute;
+width:1px; clip-path: inset(50%)`) — nunca `display:none`, que tiraria o rótulo da árvore de
+acessibilidade e é exatamente o que o UX-DR9 proíbe. `placeholder` não conta como rótulo.
+
+Abaixo de 900px a grade vira uma coluna e a faixa de kickers some — e **o rótulo oculto volta a
+ser visível**, na mesma media query. Sem a faixa acima, "Pista" e "800" empilhados não diriam qual é
+qual para quem enxerga; o `<label>` já estava lá, e só precisou deixar de estar escondido.
+
+### A busca é `<form method="get">`, sem uma linha de `"use client"`
+
+```tsx
+<form method="get">
+  <input name="q" defaultValue={termo} />
+  <Botao type="submit">Buscar</Botao>
+</form>
+```
+
+Sem `action`: o formulário envia para a própria URL, o navegador monta `?q=…` sozinho, o Next
+re-renderiza no servidor com o termo novo. A busca inteira é `zero JavaScript, zero estado`. Foi a
+decisão que mais pesei nesta story, contra um `Client Component` com `chamarApi` — que reusaria mais
+código (`AvisoDeErro`, o tratamento por `codigo`), mas tiraria a busca da URL (nada de recarregar,
+compartilhar ou voltar), transformaria a tela inteira em ilha de cliente contra a convenção *"Server
+Component por padrão"*, e faria o estado do resultado morar em dois lugares quando a Story 2.4
+acrescentar os passos 2 e 3. A alternativa completa, com o motivo de cada peça descartada, está no
+[README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+`defaultValue`, nunca `value`: com `value` sem `onChange` o campo vira somente-leitura e o React
+avisa no console. `defaultValue` é o certo para campo não controlado, que é exatamente o que este é
+— o servidor manda o valor inicial, o navegador cuida do resto.
+
+### A tela busca sempre — não existe mais um "ninguém buscou ainda"
+
+⚠️ **Revisado no mesmo dia, depois do primeiro corte da story.** A primeira versão tinha um terceiro
+estado — "ninguém buscou ainda", com um convite curto e nenhuma chamada à Ticketmaster — igual ao
+padrão de estado vazio do resto do site. Testando a tela, o Igor pediu o contrário: que ela já
+chegue mostrando exemplos reais do catálogo, para o organizador ver do que se trata sem precisar
+digitar nada primeiro. `page.tsx` agora chama `buscarNoCatalogo(termoLimpo)` sempre, mesmo com
+`termoLimpo` vazio — e é `catalogo.ts` → a rota do backend quem decide o que "sem termo" significa
+(ver [Catálogo da Ticketmaster](../backend/README.md#catálogo-da-ticketmaster) no README do
+backend: sem termo, sem `keyword`, com `sort=date,asc`).
+
+Restaram dois estados vazios, e `itens.length === 0` continua verdadeiro nos dois — achatá-los
+continua sendo o defeito mais fácil de cometer:
+
+| Situação | O que a tela diz |
+|---|---|
+| Sem resultado, sem termo (listagem padrão vazia) | "Não há shows no catálogo agora." |
+| Buscou um termo, não achou | "Nenhum show encontrado para essa busca." — literal do `EXPERIENCE.md#Vazio` |
+| Catálogo fora do ar (com ou sem termo) | "O catálogo da Ticketmaster não respondeu. Tente de novo em instantes." |
+
+O terceiro é escolhido pelo **estado** que `buscarNoCatalogo` devolve
+(`{ estado: "ok" | "indisponivel" }`), nunca por uma exceção pega no meio do caminho — não existe
+`error.tsx` neste projeto, e uma exceção não capturada num Server Component derruba a página
+inteira, não só esta seção. É por isso que `catalogo.ts` **nunca levanta**: `try/catch` em volta do
+`fetch`, e `!resposta.ok` também vira `"indisponivel"`.
+
+**O que caiu:** uma fileira de termos sugeridos e clicáveis ("chips") — Metallica, Baco Exu do
+Blues — que só disparariam a busca de verdade ao clicar. Preservaria a cota de quem só abre a tela
+para olhar, mas exigiria manter uma lista de sugestões própria (fixa no código, ou vinda de algum
+outro lugar — escopo novo) e não mostraria nada real antes do clique. A alternativa completa está
+no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+### `src/lib/catalogo.ts` reusa a armadilha que `sessao.ts` já tinha resolvido
+
+O `fetch` do servidor não herda o cookie do pedido que está sendo atendido — é a mesma armadilha que
+o `sessao.ts` resolve desde a Story 1.9, e `catalogo.ts` precisava resolver de novo. Daí
+`servidor.ts` ter ganhado `cabecalhoDeSessao()` nesta story, em vez de `catalogo.ts` reimplementar a
+leitura do cookie por conta própria: sem o cabeçalho repassado à mão, o backend responde `401`, o
+`!resposta.ok` vira `"indisponivel"`, e a tela diz "o catálogo não respondeu" quando o catálogo
+respondeu perfeitamente — o sintoma aponta para o lugar errado, e é o motivo de esta ser a armadilha
+mais cara da story.
+
+A segunda: `encodeURIComponent(termo)` ao montar a query. Sem ele, buscar `AC/DC & Guns` monta
+`?q=AC/DC & Guns`, o `&` encerra o parâmetro `q`, e o backend recebe `q=AC/DC ` mais um parâmetro
+`Guns` que ninguém pediu.
+
+`src/lib/portarias.ts` (Story 2.5) nasceu no **molde exato** deste arquivo: resultado discriminado
+(`{ estado: "ok" | "indisponivel" }`), `try/catch` que nunca levanta, `cache: "no-store"` e o
+`cabecalhoDeSessao()` repassado à mão. A disciplina é a mesma e o motivo também: não existe
+`error.tsx` neste projeto, e uma exceção não capturada num Server Component derrubaria a página
+inteira — aqui, o formulário de publicação junto com a lista.
+
+A `page.tsx` só chama `listarPortarias()` **quando há atração escolhida**. Sem ela não existe passo 3
+na tela, e buscar a lista a cada busca no catálogo seria uma chamada por consulta que ninguém lê.
+
+#### Nem todo `!resposta.ok` é "o fornecedor não respondeu"
+
+Correção do code review da Epic 2, e ela é a continuação exata do parágrafo acima. Eu tinha
+resolvido o **sintoma** (repassar o cookie) e deixado a **causa** de pé: qualquer status não-ok
+virava `indisponivel`, então a tela seguia capaz de acusar a Ticketmaster por erro que não era dela.
+
+| Status | Era | É | Por quê |
+|---|---|---|---|
+| `401`, `403` | `indisponivel` | `sem-sessao` | A sessão morreu. "Tente de novo em instantes" nunca se cumpre — o conserto é entrar de novo, e a tela agora oferece o link |
+| `422` | `indisponivel` | `busca-invalida` | O termo passou dos 120 caracteres da rota. A Discovery **nem chegou a ser chamada** |
+| Demais | `indisponivel` | `indisponivel` | Aí sim é o fornecedor |
+
+O `src/lib/eventos.ts` já fazia essa separação desde a 2.6 (ele distingue `nao-encontrado` de
+`indisponivel`); foram `catalogo.ts` e `portarias.ts` que ficaram para trás. O campo de busca também
+ganhou `maxLength={120}`, para o `422` deixar de ser alcançável pela interface.
+
+**A mesma raiz aparecia no envio do formulário**, e ali era pior. `mensagemParaCodigo` não conhecia
+`NAO_AUTENTICADO` nem `SEM_PERMISSAO`, então um `POST` com sessão expirada caía na mensagem genérica
+"tente de novo em instantes" — e tentar de novo dava `401` outra vez, para sempre, com todos os
+setores digitados na tela e nenhum caminho para o login. As guardas da `page.tsx` rodam na
+**renderização**, não no envio, e a sessão dura 8 horas contra uma tela longa (catálogo → data e
+local → N setores → escala).
+
+O aviso agora leva um `<Link>` com `target="_blank"`, e o alvo em nova aba não é detalhe: sair da
+página descartaria o formulário inteiro, que é justamente o que a correção existe para evitar. Foi
+por isso que o `AvisoDeErro` passou a aceitar `ReactNode` em vez de `string`.
+
+**Outras cinco do mesmo review, todas de "a tela deixa fazer o que a API recusa":** `max` na
+capacidade e `Number.isSafeInteger` no preço (acima do inteiro seguro o `Math.round` arredondava
+errado e enviava valor diferente do digitado); `min` de hoje no seletor de data, junto com o
+`EVENTO_NO_PASSADO` novo do backend; o botão `+ Adicionar setor` some no vigésimo, e marcar a 21ª
+portaria avisa em vez de deixar publicar e receber `422`; `if (enviando) return` em `aoEnviar`,
+porque o `disabled` do botão só vale depois do próximo render e não segura `Enter` mantido
+pressionado; e o kicker que faltava no cabeçalho de `Meus eventos` — é ele que aparece no estado
+vazio, quando nenhuma seção é renderizada (AC14).
+
+### A imagem é `<img>`, não `next/image`
+
+A Discovery serve imagem de mais de um host (`s1.ticketm.net`, `media.ticketmaster.com`), e
+`next/image` exige `remotePatterns` declarado por host — errar um produz erro em tempo de execução,
+na tela do organizador. `<img loading="lazy">` com dimensão fixa no CSS (70×70px, `object-fit:
+cover`) resolve sem essa dependência, com o
+`// eslint-disable-next-line @next/next/no-img-element` acompanhado do motivo, no próprio código.
+Sem `imagem_url`, o bloco fica com o fundo `--breu2` do mesmo tamanho — a grade não pode dançar
+entre uma fila e outra.
+
+A linha de origem (`Ticketmaster · <local> · <cidade>`) monta só o que existe: `local` e `cidade`
+podem ser `null`, e um `.filter(Boolean).join(" · ")` evita o `Ticketmaster ·  · ` cheio de buracos
+que sobraria de concatenar direto.
+
+⚠️ **O `id_externo` já esteve nessa linha, e saiu** — num commit avulso, fora da numeração das
+stories, junto do filtro de classificação do catálogo
+([techspec](../docs/techspec-filtro-do-catalogo.md)). Ela era
+`Ticketmaster · ZFIMVHTNMZ17KBX_ · Qualistage · Rio de Janeiro`. Aquele código identifica o show
+para o **código**, não para quem escolhe o que publicar: quem olha reconhece pelo nome, pela casa e
+pela cidade, que já estão do lado. O id não sumiu do sistema — continua vindo da API, continua sendo
+a `key` de React da lista e continua indo para `origem_externa_id` na publicação; só não aparece
+mais. A alternativa era mantê-lo por rastreabilidade — dá para conferir o evento direto na Discovery
+se a publicação sair errada —, e caiu porque ninguém no fluxo avaliado faz isso, e um hash de API
+atravessado numa tela que imita jornal impresso é ruído na parte que carrega a identidade.
+
+### Duas guardas, e por que a segunda não é `notFound()`
+
+```ts
+if (!usuario) redirect("/login?voltar=%2Forganizador%2Fpublicar");
+if (usuario.papel !== "ORGANIZADOR") redirect("/");
+```
+
+O padrão da guarda é o mesmo da `/conta` (ler a sessão, `redirect` na página, sem `middleware` — ver
+[A guarda mora na página](#a-guarda-mora-na-página-não-em-middleware)). O que é novo aqui é a
+segunda linha: **papel errado vai para a raiz, não para um 404.** Um cliente que digitar
+`/organizador/publicar` na barra é mandado para a programação, não para `notFound()`. Cogitei o
+404 — reusaria o `not-found.tsx` que já existe e não revelaria que a rota existe —, mas mandar
+alguém **logado** para um 404 parece defeito de navegação, e a rota não é segredo nenhum: a API
+responde `403`, que é público por natureza. Fica registrado como suposição minha, não decisão de
+produto — é uma linha para trocar se eu discordar depois de ver a tela no ar.
+
+## Meus eventos: `/organizador/eventos` e `/organizador/eventos/[id]`
+
+As duas telas da Story 2.6, e as **primeiras telas de leitura de domínio** do projeto — todas as
+anteriores ou eram formulário (login, cadastro, publicar) ou eram vista de um dado externo (o
+catálogo). Nenhuma das duas tem uma linha de `"use client"`: não há interação nenhuma aqui, só
+leitura e navegação.
+
+As guardas são as mesmas duas de `/organizador/publicar`, com o `?voltar=` trocado. O papel errado
+continua indo para a raiz, e não para `notFound()`, pelo motivo já registrado acima.
+
+### `src/lib/formato.ts`, e por que ele precisou existir
+
+Esta é a terceira vez que uma função sai de onde nasceu para virar módulo compartilhado, e a primeira
+em que o motivo é **físico**, não estético.
+
+`dataPorExtenso`, `momentoDaPublicacao` e `centavosParaReais` moravam dentro do
+`FormularioPublicacao.tsx`, que é uma ilha `"use client"`. Quando as telas novas precisaram das
+mesmas formatações, importá-las de lá não era uma opção ruim — era **impossível**: o Next transforma
+cada export de um módulo `"use client"` numa *client reference*, e chamá-la de um Server Component
+estoura em tempo de execução, não em build. (Elas nem eram exportadas, para começo de conversa.)
+
+As duas saídas erradas eram copiar as três funções para as telas novas — segunda fonte para o mesmo
+formato de data, e no dia em que uma mudasse ninguém saberia qual está certa — e marcar as telas
+novas como `"use client"`, que é jogar fora o Server Component por causa de um `Intl.DateTimeFormat`.
+
+O `formato.ts` é um **módulo puro**: nenhum `"use client"`, nenhum import de `next/headers`. É isso
+que o deixa rodar dos dois lados da fronteira — ele não depende de nenhum dos dois. É o oposto exato
+do `servidor.ts`, cujo import de `next/headers` é justamente o que o prende ao servidor.
+
+`reaisParaCentavos` **ficou onde estava**: ela converte o que uma pessoa digitou, é do formulário e
+não tem consumidor de servidor. Mover tudo "já que estou aqui" é escopo que ninguém pediu.
+
+#### O fuso é fixo, e sem isso a mesma publicação aparecia com duas datas
+
+O bug mais sério que o code review da Epic 2 encontrou, e um que **não dava para ver aqui na minha
+máquina**.
+
+`Intl.DateTimeFormat` sem `timeZone` usa o fuso **do runtime**. As telas de `Meus eventos` são
+Server Components, e o runtime delas é o container da Vercel, cujo `TZ` é **UTC** — enquanto a
+confirmação da publicação renderiza no navegador, em `America/Sao_Paulo`. Um show às 21h de 14/08:
+
+| Tela | Onde renderiza | Mostrava |
+|---|---|---|
+| Confirmação da publicação | Client Component | 14 de agosto, 21h00 |
+| Lista de `Meus eventos` | Server Component | **15 AGO** |
+| Detalhe do evento | Server Component | **15 de agosto, 00h00** |
+
+O dado estava **certo** no banco: o `FormularioPublicacao` monta `new Date("2026-08-14T21:00")` no
+fuso do navegador e envia `2026-08-15T00:00:00Z`, que é o instante correto. O erro era todo na
+leitura. Em desenvolvimento os dois lados concordam, porque a máquina e o "servidor" são o mesmo
+fuso — o defeito só nascia no deploy.
+
+A saída é uma constante `FUSO = "America/Sao_Paulo"` em `formato.ts`, aplicada em todas as
+formatações do módulo. **Ela contraria a letra do AD-11** ("a conversão para o fuso do usuário
+acontece só na renderização"), e é uma contradição que a regra não previu: num Server Component não
+existe "o usuário" no momento de formatar — não há navegador do outro lado. As duas alternativas
+eram renderizar a data num componente `"use client"` só para isso (e conviver com divergência de
+hidratação, ou com a data piscando) ou fixar. Fixei, porque o catálogo já é `countryCode=BR` e todo
+show deste produto acontece no Brasil. O dia em que não acontecer, `FUSO` é o único lugar a mudar.
+
+⚠️ **As três formatações da fila de `Meus eventos` eram inline na `page.tsx`** — dia, mês e ano, cada
+um com tipografia própria — e foram justamente as que passaram despercebidas quando o `timeZone`
+entrou no resto do módulo. Viraram `partesDaData(iso)`, exportada daqui. Uma cópia da regra é uma
+chance de a próxima tela repetir o erro.
+
+O que **não** estava errado, apesar de parecer: o corte `Em cartaz / Já aconteceram` logo abaixo. Ele
+compara `getTime()` contra `getTime()`, que são instantes absolutos — fuso nenhum entra na conta.
+Errado estava só o que a tela **escrevia**, nunca em que seção o evento caía.
+
+### O corte "Em cartaz / Já aconteceram" mora na tela, não na API
+
+A API responde uma pergunta só — "quais são os meus eventos" —, em ordem crescente de data. Quem
+decide o que é passado e o que é futuro é o relógio de **quem está lendo**, e por isso o corte
+acontece aqui, com uma comparação de `Date` contra `Date`:
+
+```ts
+const agora = instanteDaRequisicao();
+const emCartaz = itens.filter((e) => new Date(e.data_hora).getTime() >= agora);
+const jaAconteceram = itens.filter((e) => new Date(e.data_hora).getTime() < agora).reverse();
+```
+
+⚠️ **`Date` contra `Date`, nunca texto contra texto.** Comparar as strings ISO funciona por acidente
+enquanto todos os offsets forem `Z`, e para de funcionar no primeiro `-03:00`.
+
+⚠️ **E o relógio vem de um `cache()` do React, não de um `Date.now()` solto no corpo do componente.**
+Ler o relógio no meio da renderização é uma chamada impura — o lint do React reprova, e com razão:
+duas leituras podem devolver valores diferentes, e um evento que começa exatamente agora cairia numa
+seção no primeiro filtro e na outra no segundo. Com `cache()` o valor nasce uma vez por requisição e
+vale para a página inteira. É a mesma mecânica que o `obterUsuarioDaSessao` usa para consultar a
+sessão uma vez só.
+
+Seção sem nenhum evento **não é renderizada**: bloco vazio com título é pior que ausência.
+
+### `src/lib/eventos.ts` tem três estados, e não dois
+
+`listarMeusEventos()` segue o molde exato do `catalogo.ts` e do `portarias.ts` — só servidor,
+`cache: "no-store"`, cookie repassado à mão, `try/catch` que **nunca levanta** — e devolve `ok` ou
+`indisponivel`.
+
+`obterMeuEvento(id)` devolve **três**: `ok`, `nao-encontrado` e `indisponivel`. O terceiro estado
+existe porque a tela precisa distinguir "esse evento não é seu" de "a API não respondeu": o primeiro
+é `notFound()`, o segundo é uma frase. Só o `404` separa os dois, e achatá-los faria a tela mentir —
+um evento alheio apareceria como instabilidade do servidor.
+
+```ts
+if (resposta.status === 404 || resposta.status === 422) return { estado: "nao-encontrado" };
+if (!resposta.ok) return { estado: "indisponivel" };
+```
+
+⚠️ A ordem importa: o `404` é conferido **antes** do `!resposta.ok` genérico.
+
+⚠️ **`notFound()` levanta, como o `redirect()`.** Ele não pode ficar dentro de um `try/catch` — e não
+fica: o `try` mora dentro do `lib/eventos.ts`, e o que sobra na página é um `if`.
+
+### A fila, o inventário e o que não tem
+
+A lista é uma **fila de jornal**: data à esquerda (dia e mês em mono versalete), nome em serifada,
+`local · cidade` abaixo, e `vendidos/capacidade` à direita. A fila **inteira** é o `<Link>`, não só o
+nome — padrão `fila-listagem`, o mesmo do catálogo do passo 1.
+
+**Números exatos, sem medidor e sem proporção.** É o inventário de quem é dono da informação
+(UX-DR7); medidor é da tela de quem compra, na Epic 3. E o par de números não fica sem nome: o rótulo
+`vendidos` é visível ao lado, porque `12/860` sozinho é ambíguo para quem chega de leitor de tela.
+
+O detalhe abre os setores um a um, com `vendidos/capacidade` e preço, e traz o bloco `Na porta` com
+nome e e-mail de quem foi escalado. **Evento sem ninguém escalado mostra uma frase e não quebra** —
+existem eventos assim no banco, publicados na janela em que a 2.4 já publicava e a 2.5 ainda não
+exigia a escala.
+
+**Não há botão de editar, cancelar ou trocar a escala**, e é decisão, não esquecimento: "gerenciar"
+aqui é acompanhar. Botão que não faz nada é pior que botão ausente. O porquê completo, com as
+alternativas descartadas, está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+**Um `page.module.css` para as duas telas**, em `eventos/`, importado pelo detalhe como
+`../page.module.css`. Elas compartilham o vocabulário de fila e de inventário, e dois arquivos quase
+iguais divergiriam na primeira mudança. Precedente: o `FormularioPublicacao` já importa o módulo da
+página que o hospeda.
+
+### O masthead ganhou `Meus eventos`
+
+A navegação do organizador passou a ser `Início · Meus eventos · Publicar evento · Minha conta`.
+`Meus eventos` vem **antes** de `Publicar evento` porque acompanhar o que está no ar é o que se faz
+todo dia; publicar é eventual. Ele só aparece para `ORGANIZADOR` — cliente, portaria e visitante não
+o veem —, e só entrou agora porque link que cai em 404 não fica no repositório (precedente da Story
+1.4). Sobrou `Meus ingressos`, que espera a Story 4.1.
 
 ## O sistema visual
 
@@ -836,6 +1341,78 @@ E a lista original das telas de acesso:
 - **`Tab` percorre** nome → e-mail → senha → repetir → botão → link, com contorno âmbar em todos, e os
   links levam de uma tela à outra sem digitar URL
 
+A lista da Story 2.2, `/organizador/publicar`:
+
+- **`organizador@rockhub.dev`** → `Publicar evento` aparece no masthead, e a tela abre
+- **`cliente@rockhub.dev`** → o link **não** aparece; digitar `/organizador/publicar` na barra
+  manda para a raiz
+- **Sem sessão**, abrir `/organizador/publicar` → cai no login, e entrar leva de volta para a tela
+- **Abrir a tela sem digitar nada** → já vêm exemplos reais do catálogo, ordenados por data, sem
+  precisar buscar primeiro — e **só show de música**, nenhuma feira de negócios ou evento
+  corporativo (é o filtro de classificação; ver a
+  [techspec](../docs/techspec-filtro-do-catalogo.md))
+- **Buscar `rosalia`** → acha. É a contraprova do filtro híbrido: se voltar vazio, o `genreId`
+  vazou do `else` e passou a valer também na busca por termo
+- **Buscar `baco`** → filas com fio, sem card, origem em versalete monoespaçada
+  (`Ticketmaster · <local> · <cidade>`)
+- **Derrubar a Ticketmaster de propósito** (`TICKETMASTER_API_KEY` errada no `.env` do backend) →
+  a tela mostra o aviso de indisponível e **não quebra**, com ou sem termo digitado
+
+A lista da Story 2.4, o passo 2 da mesma tela:
+
+- **Clicar numa fila** → a URL ganha `escolhido=…#passo-2`, a fila fica com o fio âmbar e a etiqueta
+  `Selecionado`, e a página **leva você até** o passo **2 · Data, local e setores**. Se ele aparecer
+  mas a página não se mexer, a âncora quebrou — é o defeito que motivou o `#passo-2`
+- **Recarregar** → a escolha continua. **Botão voltar** → a escolha some, e a tela volta ao passo 1
+- **Buscar outro termo com a escolha na URL** → o passo 2 some, sem erro e sem aviso. É o `find`
+  devolvendo `undefined`, e é o comportamento certo
+- **Publicar com um setor** → o formulário dá lugar à confirmação, com nome, data por extenso,
+  capacidade e preço exatos. **Sem redirect**
+- **Publicar com dois setores de mesmo nome** (`Pista` e ` pista `) → a tela diz o que aconteceu e
+  **não** quebra: é o `SETOR_DUPLICADO`. Se aparecer "erro interno", a verificação do service caiu
+- **Preço `abc`** → recusa **antes** de ir à rede. Se aparecer chamada no Network, a validação local
+  vazou
+- **`+ Adicionar setor` e o `×`** → o `×` só aparece a partir da segunda linha
+- **Abaixo de 900px** → um campo por linha, os rótulos dos setores ficam **visíveis**, e nada rola na
+  horizontal
+
+A lista da Story 2.5, o passo 3:
+
+- **Escolher uma atração** → o passo **3 · Escale a portaria** aparece com as **duas** contas
+  semeadas, `Ana Sampaio` e `Jonas Ribeiro`, e a contagem lendo `0 escalados`
+- **Digitar `ana` na busca** → só uma linha; apagar → as duas voltam. Sem nenhuma chamada no
+  Network: o filtro é em memória
+- **Marcar Ana, filtrar por `jonas`, marcar Jonas, limpar o filtro** → **as duas** continuam
+  marcadas. É a verificação de que filtrar não desmarca ninguém, e é a que mais importa aqui
+- **Apertar Enter no campo de busca** → não acontece nada. Se o evento for publicado, o
+  `preventDefault` sumiu
+- **Publicar sem marcar ninguém** → recusa **sem** ida à rede. Se aparecer chamada no Network, a
+  validação local vazou
+- **Publicar com duas pessoas marcadas** → a confirmação lista os dois nomes sob `Na porta`, e o
+  Postgres tem duas linhas (`select * from evento_portaria;`)
+- **Abaixo de 900px** → busca e lista ocupam a largura inteira, o e-mail desce para baixo do nome, e
+  nada rola na horizontal
+- **`Tab`** → cada marcação recebe foco visível em âmbar, e o rótulo é lido junto
+
+A lista da Story 2.6, `/organizador/eventos`:
+
+- **`organizador@rockhub.dev`** → o masthead mostra `Início · Meus eventos · Publicar evento ·
+  Minha conta`, nessa ordem
+- **Abrir a lista** → os eventos publicados nas 2.4/2.5 aparecem com `vendidos/capacidade` à direita,
+  e um evento com data passada cai em **Já aconteceram**, separado dos que estão **Em cartaz**
+- **Clicar numa fila em qualquer ponto dela**, não só no nome → o detalhe abre. Se só o nome
+  responder, a fila deixou de ser o `<Link>`
+- **Detalhe de um evento publicado antes da 2.5** → `Na porta` mostra a frase de "ninguém escalado" e
+  a tela **não** quebra
+- **Publicar um evento novo** → a confirmação mostra `Ver meus eventos →` ao lado de `Publicar
+  outro →`, **sem redirect**, e o evento aparece na lista
+- **`cliente@rockhub.dev`** → `Meus eventos` não aparece no masthead, e digitar `/organizador/eventos`
+  na barra manda para a raiz
+- **`/organizador/eventos/<uuid-que-não-existe>`** → a 404 do projeto, com a casca. O mesmo vale para
+  o id de um evento de outro organizador: a resposta é idêntica, de propósito
+- **Abaixo de 900px** → um bloco por linha, a data da fila vira uma linha só acima do nome, e nada
+  rola na horizontal
+
 ### E a mesma lista, em produção
 
 Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. Contra
@@ -853,49 +1430,5 @@ Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. 
 - **A `/conta` sem sessão cai em `/login?voltar=%2Fconta`** e devolve para a `/conta` depois de
   entrar — o mesmo comportamento de `localhost`, agora atravessando dois fornecedores
 
-O que o `curl` cobre — raiz, 404 com a casca, `401` sem cookie, login nas quatro contas e os
+O que o `curl` cobre — raiz, 404 com a casca, `401` sem cookie, login nas contas semeadas e os
 atributos do `Set-Cookie` — está em [Como saber que deu certo](#4--como-saber-que-deu-certo).
-
-## Histórico desta camada
-
-Até a Story 1.8 o histórico desta camada morava dentro de cada seção, junto do assunto — é onde ele
-é mais útil de ler. Abro a seção aqui porque a Story 1.9 não cabe em nenhuma delas: ela não mudou
-comportamento nenhum do frontend, e ainda assim é a story mais importante desta pasta até agora.
-
-### Story 1.9 — frontend no ar na Vercel
-
-**Não escrevi uma linha de `src/` nesta story, e esse era o ponto.** O proxy `/api/*` foi escrito na
-Story 1.4 exatamente para o dia em que as duas metades ficassem em fornecedores diferentes; a Story
-1.9 só deu a ele o endereço de produção, numa variável de painel. O login funcionou na primeira
-tentativa em que o build estava correto — o cookie atravessou `vercel.app` → `up.railway.app` sem
-ajuste nenhum, que é o retorno daquela decisão pagando com juros.
-
-O que essa story **não** foi: um dia de depurar cookie entre domínios. Está registrado assim de
-propósito, porque era o desfecho provável se eu tivesse deixado o `SameSite` cru para resolver no
-deploy — e eu cheguei a considerar isso na 1.4.
-
-**O tropeço real veio de onde eu não estava olhando: o `.gitignore`.** O primeiro build com a branch
-e o Root Directory já corretos falhou com `Module not found` em sete arquivos — `BotaoSair`, os dois
-formulários, as três páginas e o `Masthead`. O denominador comum era exato: **os sete importam de
-`@/lib`**, e nenhum import de `@/components` aparecia no rastro.
-
-A causa: o `.gitignore` da raiz veio do template Python do GitHub, e ele traz `lib/` na seção de
-empacotamento. Padrão sem barra no início **casa em qualquer profundidade** — então ele estava
-ignorando `frontend/src/lib/` desde a Story 1.2. Os três arquivos (`api.ts`, `sessao.ts`,
-`caminho.ts`) existiam na minha máquina e **nunca entraram no repositório**.
-
-Duas coisas que eu levo daqui:
-
-- **Nada na minha máquina podia ter pego isso.** `npm run build`, `tsc --noEmit`, ESLint e os 85
-  testes do backend passam todos, porque os arquivos estão no disco. Só um clone limpo revela — e o
-  primeiro clone limpo deste projeto foi o da Vercel. Foi o deploy fazendo trabalho de teste
-- **O conserto foi ancorar, não abrir exceção.** Troquei `lib/` e `lib64/` por `/lib/` e `/lib64/`,
-  com a barra inicial prendendo o padrão à raiz do repositório. Descartei o `!frontend/src/lib/`,
-  que consertaria este caso e deixaria a armadilha armada para a próxima pasta `lib/` aninhada, em
-  qualquer camada — e o motivo está escrito em comentário no próprio `.gitignore`, para ninguém
-  "limpar" a barra depois
-
-Os dois campos do painel que eu já sabia que iam morder morderam, os dois — `Root Directory` em `./`
-e Production Branch em `main` —, e os dois estavam previstos porque a Story 1.8 já tinha cometido os
-mesmos dois erros no painel da Railway. Estão documentados em [Deploy na Vercel](#deploy-na-vercel)
-com o sintoma de cada um. Dois fornecedores diferentes, as mesmas duas armadilhas.

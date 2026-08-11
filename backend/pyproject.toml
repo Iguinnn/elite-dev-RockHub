@@ -13,12 +13,16 @@ dependencies = [
     "psycopg[binary]==3.3.4",
     "argon2-cffi==25.1.0",
     "pyjwt==2.13.0",
+    # Runtime, não dev: a Story 2.1 usa o httpx para chamar a Ticketmaster em
+    # produção. O build da Railway instala com `--no-dev`, e um pacote só em
+    # `dev` some da imagem — o `import` funcionaria na máquina de quem
+    # desenvolve e estouraria `ModuleNotFoundError` só no primeiro deploy.
+    "httpx==0.28.1",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.4",
-    "httpx>=0.28",
 ]
 
 [tool.pytest.ini_options]
