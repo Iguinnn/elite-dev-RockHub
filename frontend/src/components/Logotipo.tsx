@@ -19,7 +19,7 @@ import estilos from "./Logotipo.module.css";
  * clicável.
  *
  * O `className` fica no `<a>`, não num elemento por dentro: o `globals.css` já
- * zera cor e sublinhado de link, e o `:focus-visible` âmbar (UX-DR9) precisa
+ * zera cor e sublinhado de link, e o `:focus-visible` neon (UX-DR9) precisa
  * contornar a palavra inteira.
  */
 export default function Logotipo() {

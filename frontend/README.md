@@ -1151,19 +1151,31 @@ um hex dentro de um `.module.css`, está errado.
 
 | Token | Uso |
 |---|---|
-| `--breu` `#0E0D0C` | Fundo de toda a aplicação |
-| `--breu2` `#151311` | Superfície elevada: resumo, campo, fila em hover |
-| `--cal` `#EDE8DC` | Texto principal |
-| `--fumaca` `#8F877A` | Texto secundário, etiquetas, kickers |
-| `--ambar` `#F2A413` | Acento único: ação primária, item ativo, escassez |
-| `--brasa` `#D93B2B` | Erro, esgotado, pagamento recusado, ingresso inválido |
-| `--verde` `#3FA96B` | Só o veredito `VÁLIDO` e a confirmação de pagamento |
-| `--fio` `#2A2622` | Todos os fios, filetes e bordas |
-| `--fio2` `#3A352F` | Fio sobre superfície elevada; medidor esgotado |
+| `--breu` `#0B1618` | Fundo de toda a aplicação |
+| `--breu2` `#112124` | Superfície elevada: resumo, campo, fila em hover |
+| `--cal` `#E4EBEA` | Texto principal |
+| `--fumaca` `#7E9295` | Texto secundário, etiquetas, kickers |
+| `--neon` `#FF4F9A` | Acento único: ação primária, item ativo, escassez |
+| `--brasa` `#E4574A` | Erro, esgotado, pagamento recusado, ingresso inválido |
+| `--verde` `#9BE04A` | Só o veredito `VÁLIDO` e a confirmação de pagamento |
+| `--fio` `#1E3134` | Todos os fios, filetes e bordas |
+| `--fio2` `#2B4247` | Fio sobre superfície elevada; medidor esgotado |
 
-Preto quente de tinta, **nunca `#000`**. Branco quente de papel, **nunca `#FFF`**. E o âmbar é o
-acento único: se algo precisa de destaque e não é erro nem sucesso, é âmbar. Não introduza um
-segundo acento decorativo, nem "só para esta tela".
+Chão de petróleo, **nunca `#000`**. Papel frio, **nunca `#FFF`**. E o neon é o acento único: se algo
+precisa de destaque e não é erro nem sucesso, é neon. Não introduza um segundo acento decorativo,
+nem "só para esta tela".
+
+**Troquei a paleta em 2026-08-11**, depois da Epic 2: o âmbar `#F2A413` era quase o `amber-500` do
+Tailwind sobre preto quente, e essa combinação é a receita de todo tema escuro gerado — o
+`brainstorm-intent.md` chama isso de AI slop, e ele estava na minha própria tela. As duas tintas de
+hoje são as de um pôster serigrafado. Três coisas vieram junto e não são cosméticas: o `--brasa`
+subiu porque `#D93B2B` dava **4,26:1**, abaixo do piso de 4,5:1, na cor de toda mensagem de erro; o
+`--verde` virou limão porque o verde-mata era vizinho de matiz do chão novo e o bloco `VÁLIDO`
+deixava de saltar; e `--ambar` virou `--neon` porque o nome ficaria mentindo em quinze arquivos.
+
+⚠️ **`src/app/icon.svg` carrega os dois hexes literais** e é o único lugar do frontend fora do
+`globals.css` onde isso acontece — SVG não lê `var(--token)`. Trocar a paleta obriga a abrir esse
+arquivo à mão; um `grep` por `var(--` não o encontra.
 
 ### Tipografia
 

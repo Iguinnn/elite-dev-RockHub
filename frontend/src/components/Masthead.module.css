@@ -1,8 +1,8 @@
 /* Anatomia do masthead — DESIGN.md#Components/masthead.
 
-   RockHub                      ← serifada 44px, "Hub" itálico âmbar
+   RockHub                      ← serifada 44px, "Hub" itálico neon
    ────────────────────────────  ← fio simples
-   INÍCIO  MEUS INGRESSOS  ...   ← mono versalete, ativo com fio âmbar embaixo
+   INÍCIO  MEUS INGRESSOS  ...   ← mono versalete, ativo com fio neon embaixo
    ════════════════════════════  ← fio duplo, fecha o bloco                  */
 
 .masthead {
@@ -32,7 +32,7 @@
   padding: 9px 0;
 }
 
-/* A borda transparente já ocupa o espaço do fio âmbar do item ativo: a linha
+/* A borda transparente já ocupa o espaço do fio neon do item ativo: a linha
    não muda de altura quando a navegação troca de página. */
 .navLink {
   padding-bottom: 3px;
@@ -50,5 +50,5 @@
 
 .ativo {
   color: var(--cal);
-  border-bottom-color: var(--ambar);
+  border-bottom-color: var(--neon);
 }

@@ -26,8 +26,8 @@
   font: 16px/1 var(--mono);
 }
 
-/* ALÉM do :focus-visible global âmbar, nunca em vez dele: o contorno de foco
+/* ALÉM do :focus-visible global neon, nunca em vez dele: o contorno de foco
    não é desligado em lugar nenhum do projeto. */
 .entrada:focus {
-  border-color: var(--ambar);
+  border-color: var(--neon);
 }

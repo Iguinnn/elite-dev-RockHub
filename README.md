@@ -621,8 +621,8 @@ escala** para facilitar a depuração: o ganho é meu, no console, e o custo é 
 ### A interface é um jornal noturno, e não um catálogo de e-commerce
 
 **Decidi** que a listagem de shows não tem card: são filas separadas por fio, com a data na margem
-esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Fundo preto quente,
-âmbar como acento único, raio zero e sombra zero em todo o sistema.
+esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Chão de petróleo, rosa
+neon como acento único, raio zero e sombra zero em todo o sistema.
 
 **Por quê:** ingresso não é produto de prateleira — é o direito de entrar num lugar, numa hora. Card
 com imagem, preço e botão é vocabulário de e-commerce, e carrega junto a promessa errada. A estrutura
@@ -639,6 +639,13 @@ a linha de contexto decorativa no cabeçalho — essa última eu cheguei a monta
 porque soava gerada. Duas direções competiram antes: um jornal de eventos londrino, editorial e
 claro, e uma parede de cartazes noturna. Nenhuma resolvia sozinha; a identidade final é a fusão —
 estrutura de impresso, cor de madrugada.
+
+**A cor mudou depois da Epic 2, e a estrutura não.** O primeiro acento era âmbar `#F2A413` sobre
+preto quente — quase o `amber-500` do Tailwind, que é a receita exata do tema escuro gerado que eu
+tinha acabado de listar como anti-padrão. Troquei pelas duas tintas de um pôster serigrafado:
+petróleo `#0B1618` e rosa neon `#FF4F9A`. **Descartei** vermelho de jornal (é a cor mais fiel ao
+conceito, mas colide com o vermelho de erro e com o `INVÁLIDO` da portaria) e roxo sobre cinza (que
+é o dark mode padrão de metade das ferramentas — trocaria um default por outro pior).
 
 ### CSS escrito à mão, sem biblioteca de componentes
 

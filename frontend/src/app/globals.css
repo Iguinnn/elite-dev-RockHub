@@ -1,5 +1,6 @@
 /* ==========================================================================
    RockHub — base do sistema visual "jornal noturno".
+   Duas tintas de pôster: chão de petróleo e neon rosa (trocado em 2026-08-11).
 
    Este arquivo é o único lugar do frontend onde cor e família tipográfica
    são declaradas por valor. Estilo de componente mora em
@@ -15,18 +16,37 @@
 
 :root {
   /* ---- cores ------------------------------------------------------------
-     Preto quente de tinta, nunca preto puro. Branco quente de papel, nunca
-     branco puro. Âmbar é o acento único: se algo precisa de destaque e não é
-     erro nem sucesso, é âmbar.                                            */
-  --breu: #0e0d0c;     /* fundo de toda a aplicação                          */
-  --breu2: #151311;    /* superfície elevada: resumo, campo, fila em hover   */
-  --cal: #ede8dc;      /* texto principal                                    */
-  --fumaca: #8f877a;   /* texto secundário, etiquetas, kickers               */
-  --ambar: #f2a413;    /* acento único: ação primária, item ativo, escassez  */
-  --brasa: #d93b2b;    /* erro, esgotado, pagamento recusado                 */
-  --verde: #3fa96b;    /* só o veredito VÁLIDO e a confirmação de pagamento  */
-  --fio: #2a2622;      /* todos os fios, filetes e bordas                    */
-  --fio2: #3a352f;     /* fio sobre superfície elevada; medidor esgotado     */
+     Duas tintas, como pôster de show serigrafado: um chão de petróleo e um
+     rosa fluorescente. Nunca preto puro, nunca branco puro.
+
+     `--neon` é o acento único: se algo precisa de destaque e não é erro nem
+     sucesso, é neon. Não existe um segundo acento decorativo.
+
+     ⚠️ Os nomes descrevem **material**, não função — piche, cal de parede,
+     fumaça, brasa, fio. Foi por isso que o acento virou `--neon` e não
+     `--acento` quando deixou de ser âmbar: um token nomeado por função no
+     meio de oito nomeados por material quebra a leitura do conjunto. E
+     `--breu` sobreviveu à troca sem uma linha de mudança — piche é escuro e
+     mineral, e continua dizendo a verdade sobre um chão de petróleo.       */
+  --breu: #0b1618;     /* fundo de toda a aplicação                          */
+  --breu2: #112124;    /* superfície elevada: resumo, campo, fila em hover   */
+  --cal: #e4ebea;      /* texto principal                                    */
+  --fumaca: #7e9295;   /* texto secundário, etiquetas, kickers               */
+  --neon: #ff4f9a;     /* acento único: ação primária, item ativo, escassez  */
+  /* Era `#d93b2b`, que dava 4,26:1 sobre o breu antigo e 4,04:1 sobre este —
+     os dois **abaixo** do piso de 4,5:1, na cor de toda mensagem de erro do
+     sistema. `#e4574a` dá 5,0:1 e é o mesmo vermelho, um passo mais claro. */
+  --brasa: #e4574a;    /* erro, esgotado, pagamento recusado                 */
+  /* Limão, e não o verde-mata de antes: sobre um chão de petróleo — que é
+     azul-esverdeado — o verde anterior era vizinho de matiz do próprio fundo
+     e deixava de saltar. O ganho maior não é a matiz, é a **luminância**:
+     `VÁLIDO` fica em 11,5:1 e `INVÁLIDO` em 5,0:1, e é essa distância que faz
+     os dois se separarem para quem tem daltonismo vermelho-verde. Verde e
+     vermelho na mesma luminosidade viram o mesmo marrom, e a portaria lê isso
+     a três metros, no escuro, com pressa (Epic 5).                         */
+  --verde: #9be04a;    /* só o veredito VÁLIDO e a confirmação de pagamento  */
+  --fio: #1e3134;      /* todos os fios, filetes e bordas                    */
+  --fio2: #2b4247;     /* fio sobre superfície elevada; medidor esgotado     */
 
   /* ---- tipografia -------------------------------------------------------
      Serifada é a voz do jornal: nome de artista, título, valor, corpo.
@@ -67,12 +87,12 @@ a {
 }
 
 /* ---- acessibilidade -----------------------------------------------------
-   Foco visível em âmbar em tudo que é focável, herdado por toda tela criada
+   Foco visível em neon em tudo que é focável, herdado por toda tela criada
    daqui em diante (UX-DR9). Ninguém desliga esse contorno: quem navega por
    teclado precisa enxergar onde está.                                     */
 
 :focus-visible {
-  outline: 2px solid var(--ambar);
+  outline: 2px solid var(--neon);
   outline-offset: 2px;
 }
 

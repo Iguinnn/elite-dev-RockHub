@@ -1,4 +1,4 @@
-/* DESIGN.md#Components/masthead — serifada 44px, "Hub" em itálico âmbar. */
+/* DESIGN.md#Components/masthead — serifada 44px, "Hub" em itálico neon. */
 
 .logo {
   font: 400 44px/0.86 var(--serif);
@@ -7,5 +7,5 @@
 
 .logo em {
   font-style: italic;
-  color: var(--ambar);
+  color: var(--neon);
 }

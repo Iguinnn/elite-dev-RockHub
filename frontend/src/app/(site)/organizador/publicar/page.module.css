@@ -86,7 +86,7 @@
 }
 
 .itemEscolhido {
-  border-left: 3px solid var(--ambar);
+  border-left: 3px solid var(--neon);
   padding-left: 14px;
 }
 
@@ -99,7 +99,7 @@
 }
 
 .itemEscolhido .estado {
-  color: var(--ambar);
+  color: var(--neon);
 }
 
 .miniatura {
@@ -188,7 +188,7 @@
 }
 
 .entrada:focus {
-  border-color: var(--ambar);
+  border-color: var(--neon);
 }
 
 /* "Visually hidden" clássico. Nunca `display: none`, que tira o rótulo da
@@ -231,8 +231,8 @@
 }
 
 .acrescentar:hover {
-  border-color: var(--ambar);
-  color: var(--ambar);
+  border-color: var(--neon);
+  color: var(--neon);
 }
 
 .rodape {
@@ -296,8 +296,8 @@
 .marcacao {
   width: 17px;
   height: 17px;
-  /* O âmbar da identidade na marcação, em vez do azul do sistema. */
-  accent-color: var(--ambar);
+  /* O neon da identidade na marcação, em vez do azul do sistema. */
+  accent-color: var(--neon);
   cursor: pointer;
 }
 
@@ -327,7 +327,7 @@
   font: 600 10px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ambar);
+  color: var(--neon);
 }
 
 /* ---- a confirmação, no lugar do formulário ------------------------------ */
@@ -395,7 +395,7 @@
 }
 
 .saida {
-  color: var(--ambar);
+  color: var(--neon);
   font: 600 10px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;

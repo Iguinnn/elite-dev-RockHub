@@ -1,7 +1,7 @@
 import estilos from "./Botao.module.css";
 
 /**
- * Ação primária: âmbar sobre breu, mono 700 em versalete.
+ * Ação primária: neon sobre breu, mono 700 em versalete.
  *
  * **Só o primário.** O `DESIGN.md` descreve também um secundário e um
  * destrutivo, e nenhum dos dois tem consumidor ainda — uma prop `variante` com
