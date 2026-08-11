@@ -73,6 +73,17 @@ proxy (seção abaixo) o navegador não precisa mais saber o endereço da API �
 viva seria manter dois caminhos para alcançar a mesma API, e é o tipo de coisa que produz um bug
 que só aparece em um dos dois.
 
+**Em produção, `API_URL` vai apontar para a Railway — e isso ainda não aconteceu.** A API está
+publicada desde a Story 1.8 em `https://elite-dev-rockhub-production.up.railway.app`, mas **esta
+camada não foi tocada por aquela story**: o `.env.example` continua com `localhost:8000`, e é assim
+que deve ficar, porque é o valor de desenvolvimento. O endereço de produção entra como variável de
+ambiente na Vercel, na Story 1.9, junto do deploy do frontend.
+
+Um detalhe dessa variável que vai importar naquele dia: o `rewrites()` é avaliado em **tempo de
+build**, e a Vercel compila as rotas no `next build`. Trocar `API_URL` no painel depois **não** muda
+o proxy sem um redeploy — o valor fica congelado na build. Está escrito também no `next.config.ts`,
+ao lado da linha que a lê.
+
 **Nenhuma variável `NEXT_PUBLIC_` carrega credencial.** Tudo que tem esse prefixo vai embutido no
 bundle e fica visível para qualquer visitante — é endereço público, nada mais. A chave da
 Ticketmaster e o segredo que assina os ingressos moram no backend e nunca atravessam para cá

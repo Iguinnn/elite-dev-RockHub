@@ -70,6 +70,18 @@ Ticketmaster mais adiante.
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
+Em produção, duas variáveis a mais existem no ambiente da Railway e **não são campos da `Settings`**:
+
+| Variável | Estado hoje | Quem vai lê-la |
+|---|---|---|
+| `TICKET_SIGNING_SECRET` | definida no ambiente, ninguém lê | Story 3.9 (assinatura do QR) |
+| `TICKETMASTER_API_KEY` | definida no ambiente, ninguém lê | Story 2.1 (cliente do catálogo) |
+
+O `extra="ignore"` da `Settings` as aceita sem declará-las. **Campo só nasce quando alguém for
+consumir o valor** — declarar agora seria código que ninguém lê, com um validador ativo capaz de
+derrubar a aplicação por causa de uma funcionalidade que ainda não existe. O que já vale desde hoje
+é o lugar delas: ambiente do backend, nunca repositório (AD-2).
+
 **Com `AMBIENTE=producao`, o valor de exemplo do `JWT_SECRET` derruba a aplicação na
 inicialização**, com a mensagem dizendo o comando acima. Isso é de propósito: o ponto mais provável
 de um segredo vazar não é alguém colar a chave no código — é o valor de exemplo continuar
@@ -572,6 +584,175 @@ variável de ambiente — e um teste (`test_banco_de_teste_e_o_rockhub_teste`) c
 contra o banco de desenvolvimento apaga dados; essa é a garantia de que isso não acontece pela
 suíte de testes.
 
+## Deploy na Railway
+
+A API está no ar em <https://elite-dev-rockhub-production.up.railway.app>, com o PostgreSQL no
+mesmo projeto da Railway. **Não existe `railway.json`, `Dockerfile` nem `Procfile` neste
+repositório** — a configuração mora no painel, e esta seção é onde ela está escrita. É de propósito,
+e o motivo está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+Se você for subir a sua própria cópia, é isto, na ordem:
+
+### 1 · O serviço
+
+O backend e o Postgres precisam ficar **no mesmo projeto e ambiente** da Railway. A rede privada não
+atravessa projetos, e é por ela que um alcança o outro sem passar pela internet.
+
+| Onde | Campo | Valor |
+|---|---|---|
+| `Create` → `GitHub Repo` | repositório | `elite-dev-RockHub` |
+| Settings → Source | **Root Directory** | `backend` |
+| Settings → Source | **Branch** | a branch que você quer publicar |
+| Settings → Build | Builder | `Railpack` (é o padrão; não precisa mexer) |
+
+⚠️ **O `Root Directory` é o passo que ninguém encontra de primeira** — ele fica escondido no meio de
+Settings → Source. Sem ele a Railway olha a raiz do monorepo, onde não há `pyproject.toml` nem
+`package.json`, não detecta linguagem nenhuma e o build morre num `railpack process exited with an
+error` que não diz o que faltou. Foi exatamente assim que o meu primeiro build falhou.
+
+E confira a **branch**: a Railway assume a branch padrão do repositório, que pode não ser a que tem
+o código.
+
+### 2 · As variáveis
+
+| Variável | Valor | Por quê |
+|---|---|---|
+| `AMBIENTE` | `producao` | Ativa o `Secure` no cookie e a recusa do `JWT_SECRET` de exemplo |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Referência ao serviço Postgres |
+| `JWT_SECRET` | um valor gerado | Sem ele a aplicação não sobe, de propósito |
+| `TICKET_SIGNING_SECRET` | outro valor gerado | Ainda não lido — Story 3.9 |
+| `TICKETMASTER_API_KEY` | a chave do portal da Ticketmaster | Ainda não lida — Story 2.1 |
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Rode duas vezes: os dois segredos precisam ser **diferentes**, senão trocar um obriga a trocar o
+outro.
+
+`${{Postgres.DATABASE_URL}}` vai **literal**, com as chaves duplas — é a sintaxe de referência da
+Railway, e `Postgres` é o nome do serviço de banco. Ela resolve para o host interno
+`postgres.railway.internal`. Quando a referência bate, o canvas do projeto desenha uma seta de um
+serviço para o outro; se ficar sem seta, o nome não corresponde a serviço nenhum.
+
+A URL chega como `postgresql://…` e a `Settings` a normaliza para `postgresql+psycopg://`. Esse
+validador existe desde a Story 1.4, escrito para este dia — sem ele o erro seria um
+`ModuleNotFoundError: psycopg2` que não aponta para a URL como causa.
+
+⚠️ **Defina as variáveis antes do primeiro deploy.** O Pre-deploy Command importa
+`app.core.config`, e a `Settings` recusa o `JWT_SECRET` de exemplo com `AMBIENTE=producao`. Se
+faltar `JWT_SECRET`, o deploy falha na *migração*, com uma mensagem sobre segredo — e você vai
+procurar o problema no banco.
+
+`CORS_ORIGENS` fica no padrão, e isso é deliberado: desde o proxy da Story 1.4 o navegador não fala
+com a Railway diretamente. A URL do frontend entra ali na Story 1.9.
+
+### 3 · Os comandos e o health check
+
+| Campo | Valor |
+|---|---|
+| **Pre-deploy Command** | `alembic upgrade head && python -m seeds.semear` |
+| **Custom Start Command** | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| **Healthcheck Path** | `/saude` |
+
+Depois do primeiro deploy verde: Settings → Networking → **Generate Domain**. Ele pergunta a porta
+em que a aplicação escuta — a Railway detecta e preenche (aqui foi `8080`, e confere com a linha
+`Uvicorn running on http://0.0.0.0:8080` do log). Porta alvo errada dá `502` **com o deploy verde**,
+que é o sintoma mais enganoso da plataforma.
+
+#### Por que os comandos não usam `uv run`
+
+Porque o `uv` não existe na imagem final. O Railpack instala o `uv` só na fase de build; o que ele
+entrega para o contêiner de execução é a virtualenv, com `/app/.venv/bin` no `PATH`. Ali dentro
+`alembic`, `uvicorn` e `python` são chamáveis diretamente, e `uv run alembic …` falha com
+`uv: not found`.
+
+É a mesma virtualenv que o `uv run` usaria localmente — alcançada por outro caminho. **Não
+"corrija" esses comandos para `uv run`**: é o primeiro erro que quem conhece o projeto pelo
+desenvolvimento local vai cometer.
+
+Dois detalhes do Start Command que não são enfeite: **`--host 0.0.0.0`**, porque o proxy da Railway
+não alcança quem escuta em `127.0.0.1`, e **`--port $PORT`**, porque a porta é injetada por ela. Os
+dois erros produzem o mesmo `502 Application failed to respond`.
+
+E o `-m` do `python -m seeds.semear` é a armadilha da Story 1.7, agora em produção: executar o
+arquivo direto põe `/app/seeds` no caminho de import em vez de `/app`, e `import app` para de
+resolver.
+
+#### Por que Pre-deploy e não encadeado no start
+
+O Pre-deploy Command roda **num contêiner separado**, depois do build e antes de o tráfego ser
+trocado para a versão nova, com as variáveis de ambiente do serviço. Se ele sair diferente de zero,
+não é repetido e **o deploy não prossegue** — a versão anterior continua atendendo.
+
+Encadear `alembic … && seed && uvicorn` no Start Command funcionaria em qualquer plataforma, mas
+roda uma vez por réplica e outra a cada reinício automático, e uma migração quebrada tiraria do ar
+a versão que estava funcionando, em vez de barrar a nova.
+
+Isso também explica por que o seed da Story 1.7 sai em `0` mesmo quando avisa sobre papel
+divergente: um `exit(1)` por causa de um aviso derrubaria o deploy inteiro. E por que ele **não
+imprime a senha** — o que ele escreve vai para o log de deploy da Railway.
+
+### 4 · Como saber que deu certo
+
+No log do **Pre-deploy**, nesta ordem: as migrações do Alembic, e logo depois quatro linhas do seed.
+Na primeira vez elas dizem `criada`; **em todo redeploy seguinte, `mantida`** — que é a prova, em
+produção, de que o seed não recria nem sobrescreve nada.
+
+De fora, com `curl`:
+
+```bash
+URL=https://elite-dev-rockhub-production.up.railway.app
+
+curl -i $URL/saude          # 200 {"status":"ok"}
+curl -i -X POST $URL/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"organizador@rockhub.dev","senha":"rockhub123"}'
+```
+
+O login é a verificação que mais paga: ele só devolve `200` se a migração criou a tabela **e** o
+seed gravou a conta **e** o `DATABASE_URL` aponta mesmo para o Postgres da Railway. Três coisas
+provadas numa chamada.
+
+E confira o `Set-Cookie`: ele precisa vir com **`Secure`**. É o único sintoma observável de fora de
+que `AMBIENTE=producao` chegou até a aplicação, porque `cookie_secure` é derivado do ambiente e não
+é campo configurável.
+
+### 5 · Quando falhar, onde olhar
+
+| Sintoma | Causa |
+|---|---|
+| `railpack process exited with an error`, com a raiz do repositório listada no log | Falta `Root Directory = backend` |
+| `uv: not found` | Alguém escreveu `uv run` nos comandos |
+| Deploy verde e URL respondendo `502` | `--host 0.0.0.0` ou `--port $PORT` ausentes, ou porta alvo errada no domínio |
+| Deploy falha na migração com mensagem sobre `JWT_SECRET` | Variáveis não definidas antes do primeiro deploy. Não é problema de banco |
+| `could not translate host name "postgres.railway.internal"` | O Postgres está em outro projeto, ou o nome na referência não existe. Use `DATABASE_PUBLIC_URL` ou mova o banco |
+| `ModuleNotFoundError: No module named 'psycopg2'` | A normalização de URL da `Settings` foi removida |
+| `uv sync --locked` falha no build | O `uv.lock` divergiu do `pyproject.toml`. Rode `uv sync` e comite o lockfile |
+| Health check falhando com a aplicação de pé | O caminho é `/saude`; a raiz da API responde `404` de propósito |
+
+### O que o Railpack faz com este projeto
+
+Lido no provider Python dele, não deduzido:
+
+| Fase | O que acontece |
+|---|---|
+| Detecção | Acha `pyproject.toml`; identifica `uv` pelo `uv.lock` |
+| Versão do Python | Lê o `.python-version` → **3.12** (sem esse arquivo, cairia no 3.13) |
+| Install / build | `uv sync --locked --no-dev --no-install-project`, depois `uv sync --locked --no-dev --no-editable` |
+| Ambiente | `VIRTUAL_ENV=/app/.venv`, `PATH` com `/app/.venv/bin`, `PYTHONUNBUFFERED=1` |
+| Imagem final | Contém a virtualenv. **Não contém o `uv`** |
+| Workdir | `/app` — com `Root Directory = backend`, é o conteúdo de `backend/` |
+
+Três consequências que valem no dia a dia:
+
+- **`--no-dev`**: `pytest` e `httpx` não sobem para produção. A suíte não roda lá, e não deve — a
+  fixture de banco derruba e recria o schema pelo Alembic
+- **`--locked`**: o build **falha** se o lockfile divergir do `pyproject.toml`. A versão que sobe é
+  literalmente a travada no repositório
+- **workdir `/app`**: o `uvicorn` insere o diretório corrente no `sys.path` (é o `--app-dir`, que já
+  vem como `.`), o Alembic tem `prepend_sys_path = .` no `alembic.ini`, e `python -m` põe o corrente
+  no caminho. Os três comandos acham `app` e `seeds` sem variável de ambiente nenhuma
+
 ## Histórico desta camada
 
 ### Story 1.1 — esqueleto que responde
@@ -769,5 +950,45 @@ realmente importa.
 
 As três decisões desta story — script idempotente em vez de migração de dados, idempotência por
 consulta em vez de limpeza da tabela, e senha única publicada no README — estão no
+[README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
+descartei.
+
+### Story 1.8 — backend e banco no ar na Railway
+
+A primeira story em que **o entregável não está no repositório**: ele está numa conta de fornecedor.
+Nenhuma linha de `app/`, `migrations/`, `seeds/` ou `tests/` mudou, e é a quarta seguida sem
+`uv sync`. O que este README ganhou foi a seção [Deploy na Railway](#deploy-na-railway), que descreve
+campo por campo o que eu configurei — porque configuração que só existe num painel some junto com o
+serviço, e quem avalia precisa poder refazer.
+
+O que me deixou confortável nesta story foi descobrir que **três decisões anteriores foram tomadas
+exatamente para hoje, e as três pagaram**:
+
+- O `/saude` da 1.1 não toca banco de propósito. Health check que consulta o Postgres derrubaria o
+  deploy por indisponibilidade que não é dele
+- A normalização de `postgres://` na `Settings`, escrita na 1.4, traduziu a URL que a Railway injeta.
+  O comentário no código dizia "sem esta normalização, o erro na Story 1.8 seria um
+  `ModuleNotFoundError` que não aponta para a URL como causa" — não precisei descobrir isso no dia
+- O seed da 1.7 nunca apaga linha nenhuma. É ele que roda a cada deploy, e a decisão de idempotência
+  por consulta em vez de limpeza deixou de ser hipótese e virou a garantia que segura o dado de quem
+  estiver avaliando
+
+A descoberta que custou pesquisa foi a do `uv`: o Railpack o instala só para construir e não o deixa
+na imagem final. Os comandos que eu ia escrever usavam `uv run`, como no desenvolvimento local, e
+teriam falhado com `uv: not found` — um erro que não sugere causa nenhuma para quem conhece o projeto
+pelos comandos daqui. Está registrado em
+[Por que os comandos não usam `uv run`](#por-que-os-comandos-não-usam-uv-run), que é o lugar em que
+alguém vai procurar antes de "corrigir".
+
+Dois tropeços reais, que deixei documentados porque vão acontecer com quem repetir:
+
+- **O primeiro build falhou** porque o `Root Directory` fica escondido em Settings → Source, e sem
+  ele a Railway constrói a raiz do monorepo. O log lista os arquivos da raiz e morre num
+  `railpack process exited with an error` que não diz o que faltou
+- **O deploy pegou a `main`** por ser a branch padrão do repositório — que ainda não tinha o backend.
+  Duas causas empilhadas no mesmo build vermelho
+
+As três decisões desta story — Railpack em vez de `Dockerfile`, migração no Pre-deploy em vez de
+encadeada no start, e configuração no painel em vez de `railway.json` versionado — estão no
 [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
 descartei.

@@ -11,7 +11,10 @@ de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no cami
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
 camada.
 
-> **Estado atual:** em construção. **O acesso está fechado pelos dois lados:** dá para criar conta em
+> **Estado atual:** em construção, e **a API já está publicada** —
+> <https://elite-dev-rockhub-production.up.railway.app/docs> responde agora, com o PostgreSQL da
+> Railway migrado e semeado. O frontend ainda roda só na sua máquina; publicá-lo na Vercel é o
+> próximo passo. **O acesso está fechado pelos dois lados:** dá para criar conta em
 > `/cadastro` e entrar em `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o
 > navegador falando só com o domínio do frontend. Rota protegida já tem guarda por papel, e um
 > comando semeia as quatro contas de avaliação (abaixo, em
@@ -19,6 +22,33 @@ camada.
 > `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado
 > vazio. Ainda não há evento nenhum para descobrir ou comprar — isso começa na Epic 2. A seção
 > [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
+
+## No ar
+
+A API está publicada na Railway, com o banco no mesmo projeto:
+
+**<https://elite-dev-rockhub-production.up.railway.app>**
+
+Dá para conferir sem instalar nada:
+
+- **[`/saude`](https://elite-dev-rockhub-production.up.railway.app/saude)** → `{"status": "ok"}`
+- **[`/docs`](https://elite-dev-rockhub-production.up.railway.app/docs)** → a documentação
+  automática, com as quatro rotas de autenticação. Dá para entrar por ali mesmo, com qualquer uma
+  das credenciais de [Contas semeadas](#contas-semeadas)
+
+```bash
+curl -X POST https://elite-dev-rockhub-production.up.railway.app/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"organizador@rockhub.dev","senha":"rockhub123"}'
+```
+
+Essa chamada é a verificação que mais paga num comando só: ela só devolve `200` se as migrações
+rodaram, **e** o seed gravou as contas, **e** o banco em uso é o da Railway.
+
+**Interface publicada ainda não há** — a Vercel entra na próxima etapa. Por enquanto, para ver as
+telas, rode o frontend localmente pelos passos abaixo. O passo a passo de como o serviço da Railway
+foi configurado, campo por campo, está no
+[README do backend](backend/README.md#deploy-na-railway).
 
 ## Como executar
 
@@ -117,6 +147,10 @@ uv run python -m seeds.semear
 cliente só deixaria no ar: que o ingresso de um não aparece na conta do outro (Epic 4) e que duas
 pessoas disputando o último ingresso de um setor produzem uma venda e uma recusa (Epic 3).
 
+**As mesmas quatro contas existem no banco da Railway**, criadas por este mesmo comando: ele roda a
+cada deploy, logo depois das migrações. Então dá para entrar com elas tanto no seu ambiente local
+quanto na [API publicada](#no-ar), com as mesmas senhas.
+
 O comando imprime uma linha por conta — `criada` na primeira execução, `mantida` nas seguintes — e
 **rodar de novo é seguro**: ele não duplica conta, não apaga nem sobrescreve nada. Se você já tinha
 criado contas pela interface, elas continuam exatamente onde estão.
@@ -149,6 +183,13 @@ pelas contas semeadas (rode `uv run python -m seeds.semear` se ainda não rodou)
    cada deploy
 4. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
    `/auth/login`, `/auth/logout` e `/auth/eu`
+
+E sem instalar nada, direto no navegador:
+
+4b. Abrir <https://elite-dev-rockhub-production.up.railway.app/docs> e entrar pelo `POST /auth/login`
+    com `organizador@rockhub.dev` / `rockhub123` → `200`, com `"papel": "ORGANIZADOR"`. É a mesma
+    aplicação, contra o PostgreSQL da Railway. **Tela publicada ainda não há** — ela chega junto do
+    deploy na Vercel
 5. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
    caracteres) → **cai na raiz já logado**, sem precisar entrar de novo. Rodar o seed mais uma vez
    depois disso **não mexe nessa conta**: ela continua lá e continua entrando
@@ -189,7 +230,7 @@ E o ciclo da sessão, que fecha na Story 1.6:
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
 | Catálogo externo | Ticketmaster Discovery v2 *(Epic 2)* |
-| Deploy | Railway (API e banco) · Vercel (frontend) *(Stories 1.8 e 1.9)* |
+| Deploy | Railway (API e banco), **no ar** · Vercel (frontend) *(Story 1.9)* |
 
 ```text
 docker-compose.yml   # Postgres 16 local — infraestrutura do projeto inteiro, por isso na raiz
@@ -819,6 +860,73 @@ só no ambiente, fora do repositório. Pelo mesmo raciocínio o comando **não i
 terminal: ele roda no deploy da Railway, e o que ele imprime vai para o log — credencial em log é
 hábito que se leva junto para o dia em que a credencial importa.
 
+### A Railway constrói pelo Railpack, sem `Dockerfile` meu
+
+**Decidi** deixar a Railway detectar e construir o backend com o builder dela, o Railpack, em vez de
+escrever um `Dockerfile`. Não há arquivo de build neste repositório.
+
+**Por quê:** o Railpack lê exatamente os três arquivos que já existem em `backend/` desde a Story
+1.1 — `pyproject.toml`, `uv.lock` e `.python-version` — e monta a imagem com o Python 3.12 e as
+versões travadas do lockfile. Ele ainda instala com `--no-dev` e `--locked`, o que me dá duas
+garantias de graça: `pytest` não sobe para produção, e o build **falha** se o lockfile divergir do
+`pyproject.toml`. Escrever um `Dockerfile` seria reimplementar isso à mão, com uma chance a mais de
+errar a versão do Python ou esquecer o `--frozen`.
+
+**O que caiu:** o **`Dockerfile` próprio** a partir da imagem oficial do `uv`. Ele é a escolha mais
+defensável em projeto de vida longa, porque o build fica idêntico na minha máquina e no servidor e
+imune a mudança de heurística do fornecedor — perdeu por ser mais um arquivo para manter e explicar
+num projeto de sete dias, com ganho zero enquanto o Railpack acerta. Caiu também o **Nixpacks
+explícito**, o builder anterior da Railway: mais congelado, com suporte a `uv` mais frágil, e já
+fora do padrão.
+
+**O que isso me custou:** uma pesquisa que eu não teria feito com `Dockerfile`. O Railpack instala o
+`uv` só na fase de build e **não o deixa na imagem final** — os comandos de produção precisam chamar
+`alembic`, `uvicorn` e `python` direto, e um `uv run` ali falha com `uv: not found`. Está escrito no
+[README do backend](backend/README.md#por-que-os-comandos-não-usam-uv-run), porque é a primeira
+"correção" que alguém tentaria fazer.
+
+### Migração e seed rodam no Pre-deploy, não junto com a aplicação
+
+**Decidi** que `alembic upgrade head && python -m seeds.semear` é o **Pre-deploy Command** do
+serviço, separado do comando que sobe o `uvicorn`.
+
+**Por quê:** o Pre-deploy roda num contêiner à parte, depois do build e **antes** de o tráfego ser
+trocado para a versão nova. Se ele falhar, o deploy não prossegue e a versão anterior continua
+atendendo. É exatamente a garantia que eu queria: migração quebrada **impede** a subida, em vez de
+subir com o schema errado. E ele roda uma vez por deploy, não uma vez por réplica.
+
+**O que caiu:** encadear tudo no comando de partida (`sh -c "alembic … && seed && uvicorn"`). É mais
+portátil — funciona em qualquer plataforma, sem depender de um recurso da Railway — e foi por pouco.
+Perdeu porque roda a cada réplica e a cada reinício automático, e porque migração quebrada ali vira
+contêiner em ciclo de reinício: em vez de barrar a versão nova, **derruba a que estava funcionando**.
+Caiu também um script de release versionado chamado pelo Pre-deploy, que deixaria o conteúdo legível
+no repositório ao custo de duplicar o que o painel já mostra.
+
+**A consequência que veio de graça:** duas decisões da Story 1.7 deixaram de ser precaução teórica.
+O seed sair em `0` mesmo quando avisa sobre papel divergente é o que impede um aviso de derrubar o
+deploy inteiro; e ele não imprimir a senha é o que impede credencial de cair no log de deploy da
+Railway. As duas foram escritas prevendo este uso, e é aqui que elas passam a valer.
+
+### A configuração do deploy mora no painel, e o README a descreve
+
+**Decidi** não versionar `railway.json` nem `railway.toml`. Builder, `Root Directory`, branch,
+variáveis, os dois comandos e o health check estão configurados no painel da Railway, e descritos
+campo por campo em [Deploy na Railway](backend/README.md#deploy-na-railway).
+
+**Por quê:** o painel **sobrescreve** o arquivo quando alguém edita por lá, e é por lá que se edita
+no meio de um deploy que falhou, às pressas. Duas fontes para a mesma verdade divergem em silêncio, e
+a desatualizada é sempre a que fica no repositório — parecendo documentação correta.
+
+**O que caiu:** o **`railway.json` versionado**, que é a escolha de infraestrutura-como-código e teria
+uma vantagem real — recriar o serviço viraria reimportar o repositório, e quem avalia leria a
+configuração do deploy junto do código.
+
+**O custo que aceitei, e como o cobri:** a configuração some se o serviço for apagado, e não aparece
+em nenhum diff. É precisamente por isso que a seção do README do backend não é um resumo — ela tem os
+nomes exatos dos campos, os valores, a ordem e os erros que cada omissão produz. Documentação
+substituindo arquivo só funciona se for detalhada a ponto de ser executável por quem nunca viu o
+painel; menos que isso, eu teria escolhido errado.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -839,4 +947,6 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. Pelo mesmo motivo não há `Meus eventos` para organizador nem `Turnos` para portaria — navegação diferente por papel nasce nas Epics 2 e 5, com as telas |
 | **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
+| **Frontend publicado** | A API está no ar na Railway, mas a interface ainda roda só localmente — a Vercel é o passo seguinte. Até lá, o que dá para ver publicado é o `/docs` da API. Foi assim de propósito: publicar as duas metades no mesmo dia significaria depurar CORS, cookie entre domínios e build de frontend ao mesmo tempo, sem saber qual metade quebrou |
+| **Integração contínua** | Não há GitHub Actions nem suíte rodando antes do deploy. Um push na branch publicada dispara o build direto, e quem garante que os testes passam sou eu, na minha máquina. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade desde a Story 1.3 — é infraestrutura que não se paga em sete dias. O que existe no lugar: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender, então schema errado não entra no ar |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |
