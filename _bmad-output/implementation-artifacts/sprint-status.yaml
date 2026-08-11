@@ -1,5 +1,5 @@
 # generated: 2026-08-10
-# last_updated: 2026-08-10 (story 1.8 criada)
+# last_updated: 2026-08-10 (story 1.9 criada)
 # project: elite-dev-RockHub
 # project_key: NOKEY
 # tracking_system: file-system
@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-10 (story 1.8 pronta para review)
+last_updated: 2026-08-10 (story 1.9 em implementação)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -57,7 +57,7 @@ development_status:
   1-6-cada-papel-so-acessa-o-que-lhe-cabe: review
   1-7-dados-semeados-para-avaliacao: review
   1-8-backend-e-banco-no-ar-na-railway: review
-  1-9-frontend-no-ar-na-vercel: backlog
+  1-9-frontend-no-ar-na-vercel: in-progress
   epic-1-retrospective: optional
 
   # ---------- Epic 2: Publicação de eventos pelo organizador ----------
