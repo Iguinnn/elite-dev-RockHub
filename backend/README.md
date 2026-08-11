@@ -219,9 +219,10 @@ backend/
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
-      organizador.py  # GET /organizador/catalogo — exceção ao paradigma, ver abaixo
+      organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · POST /organizador/eventos
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
+      evento.py       # publicar() — evento e setores na mesma transação (Story 2.4)
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
@@ -229,6 +230,7 @@ backend/
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
+      evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
       ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
@@ -246,6 +248,7 @@ backend/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
     test_evento.py     # invariantes de evento e setor que o banco garante
     test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
+    test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
   alembic.ini
   pyproject.toml
   uv.lock
@@ -497,9 +500,14 @@ faria: `.strip()` no termo, curto-circuito de termo vazio antes de qualquer I/O,
 para `ItemDoCatalogo` e tradução de toda falha em `ErroDeDominio`. Interpor um módulo cujo corpo
 inteiro seria `return ticketmaster.buscar_eventos(termo)` é a "camada de repasse" que este próprio
 parágrafo rejeita para `repositories/` — seria inconsistente aceitar aqui o que recuso ali só porque
-o nome da pasta é outro. **A exceção vale só para o catálogo.** A Story 2.4 grava evento e setor no
-banco: tem transação e invariante, então tem service, sem discussão — o critério que separa os dois
-casos é justamente esse.
+o nome da pasta é outro. **A exceção vale só para o catálogo.**
+
+Desde a Story 2.4 o mesmo arquivo tem o **outro lado do par**, e é o que torna o critério
+verificável em vez de retórico. `POST /organizador/eventos` grava evento e setores no banco: tem
+transação (os dois juntos ou nada) e tem invariante (nenhum setor, setor repetido), então tem
+service — `app/services/evento.py` —, e o corpo do endpoint é uma linha só. Duas rotas no mesmo
+router, uma com service e outra sem, e a pergunta que separa as duas escrita entre elas: *existe
+transação ou invariante?*
 
 ## Catálogo da Ticketmaster
 
@@ -610,9 +618,10 @@ de produção, com a query string montada por ele — em vez de um `monkeypatch`
 Duas tabelas, criadas juntas na Story 2.3 pela migração `b91316d771ae` — a primeira desde a
 `usuario`, e a primeira do projeto com chave estrangeira e relacionamento no ORM.
 
-⚠️ **Nada na aplicação lê ou escreve nessas tabelas ainda.** Não há rota, service, schema Pydantic
-nem tela que as toque: publicar evento é a Story 2.4. O que existe aqui é só o schema, e é
-intencional — o formato do banco nasce antes do comportamento que o consome.
+Desde a Story 2.4 elas têm gente dentro: `POST /organizador/eventos` grava as duas, e a seção
+[Publicar evento](#publicar-evento) logo abaixo é a rota que faz isso. Até a 2.3 o schema existiu
+sozinho, sem rota, service nem tela — de propósito: o formato do banco nasce antes do comportamento
+que o consome.
 
 **`evento`** — o show, com os campos do catálogo já **copiados** para dentro (AD-1: a Ticketmaster
 é consultada uma vez, na publicação, e nunca mais):
@@ -696,6 +705,104 @@ setores: Mapped[list["Setor"]] = relationship(
 O teste disso apaga **pela sessão** (`sessao.delete(evento)`) e confere a contagem por SQL cru.
 Apagar por SQL cru provaria só a metade que já se sabe.
 
+## Publicar evento
+
+Uma rota, criada na Story 2.4. É a **primeira rota de escrita do domínio**: `/auth/cadastro` também
+grava, mas grava a conta de quem chamou; aqui alguém autenticado cria um objeto que outras pessoas
+vão ver e comprar.
+
+```
+POST /organizador/eventos     → 201, o evento gravado com seus setores
+```
+
+```bash
+curl -i -X POST http://localhost:8000/organizador/eventos \
+  -b cookies.txt -H 'Content-Type: application/json' \
+  -d '{
+    "origem_externa_id": "ZFIMVHtnMZ17kbx_",
+    "nome": "Sticky Fingers - Rio de Janeiro",
+    "imagem_url": "https://s1.ticketm.net/dam/a/....jpg",
+    "data_hora": "2026-08-15T00:00:00Z",
+    "local": "Qualistage",
+    "cidade": "Rio de Janeiro",
+    "setores": [
+      {"nome": "Pista", "capacidade": 800, "preco_centavos": 12000},
+      {"nome": "Camarote", "capacidade": 60, "preco_centavos": 42000}
+    ]
+  }'
+```
+
+**Três coisas estão fechadas por construção, não por validação.** É a diferença entre "o service
+confere" e "não existe caminho":
+
+| O que | Como | Por que assim |
+|---|---|---|
+| O dono | `organizador_id` vem do `Usuario` da dependência de papel | Não há parâmetro por onde um id do corpo pudesse entrar. Publicar em nome de outra pessoa não é uma chamada que o service recusa — é uma chamada que não existe |
+| O papel | `Depends(exigir_papel(PapelUsuario.ORGANIZADOR))` na assinatura (AD-9) | Sem sessão é `401`, com papel errado é `403`, e a restrição aparece no `/docs` |
+| O estoque | `vendidos` não é passado ao construir `Setor`; quem responde é o `server_default` da 2.3 | `vendidos` não existe no schema de entrada, então mandá-lo no corpo não faz nada (AD-13) |
+
+**Nenhuma chamada à Ticketmaster acontece na publicação** (AD-1). O catálogo já foi copiado pelo
+cliente na busca, e daqui em diante o dado vive no banco: publicar não pode depender de a Discovery
+estar no ar, e ingresso vendido não pode mudar de nome porque alguém editou um registro lá fora. O
+teste prova isso instalando um transporte HTTP que **falha** se alguém o chamar.
+
+### Dois códigos de erro novos
+
+| Código | Status | Quando |
+|---|---|---|
+| `EVENTO_SEM_SETOR` | `422` | Lista de setores vazia **ou ausente** |
+| `SETOR_DUPLICADO` | `422` | Dois setores com o mesmo nome no mesmo corpo, ignorando caixa e espaços em volta |
+
+Os dois são `ErroDeDominio`, então saem no formato único da API sem handler novo.
+
+### Por que "lista vazia" não é validação do Pydantic
+
+Esta é a parte que parece um detalhe e não é. A correção óbvia seria `Field(min_length=1)` no
+`setores` — o campo exige ao menos um item, então põe o mínimo no schema. Não fiz, e o motivo é o
+`codigo`: `min_length` produz `422` com `DADOS_INVALIDOS`, que é o código genérico de "algum campo
+está errado". A tela não teria como dizer **o que** faltou, porque o contrato do frontend é o
+código, nunca a mensagem.
+
+O critério que uso é esse: **validação de estrutura é do Pydantic; regra de negócio é do service.**
+"O corpo tem uma lista de setores" é estrutura. "Um evento precisa de ao menos um setor à venda" é
+regra — e regra tem nome próprio. Pelo mesmo motivo o campo tem `default_factory=list`: sem ele, o
+campo **ausente** viraria "field required" do Pydantic, e a mesma situação teria duas respostas
+diferentes dependendo de o cliente ter mandado `[]` ou não ter mandado nada.
+
+O teste que segura isso afirma `resposta.json()["erro"]["codigo"] == "EVENTO_SEM_SETOR"`, não o
+status: com `min_length` o status continuaria `422` e o teste passaria sem querer.
+
+### Nome de setor repetido seria um `500` se ninguém tratasse
+
+A `uq_setor_evento_id_nome` nasceu na Story 2.3 e é o banco quem a aplica. Dois "Pista" no mesmo
+corpo estouram `IntegrityError` no `commit`, que sobe até o handler genérico de `Exception` e volta
+como `ERRO_INTERNO`. Um erro de digitação do organizador viraria "erro interno do servidor" — a pior
+resposta possível para quem só quer corrigir uma linha.
+
+Por isso o service compara os nomes **antes** de qualquer `add`, com `nome.casefold()` depois do
+`.strip()` que o schema já aplicou. `casefold()` e não `lower()`: é a normalização correta para
+comparação insensível a caixa fora do ASCII.
+
+A ordem das duas recusas é o que garante que **nada** fica no banco quando o corpo é inválido —
+nem um evento órfão, nem o primeiro setor antes de o segundo estourar.
+
+E é também o motivo de **não** haver `try/except IntegrityError` aqui, ao contrário do `cadastrar()`.
+Lá o `UNIQUE` do e-mail é a regra, e conferir antes seria uma corrida entre duas requisições. Aqui as
+violações possíveis chegam todas do mesmo corpo, num instante só, sem ninguém concorrendo: dá para
+conferi-las na memória, com certeza. Um `except` genérico neste ponto só serviria para transformar
+bug de verdade em `422` bonito.
+
+### `publicado_em` é carimbado no ato
+
+Publicar é o ato desta rota, não um passo posterior. `NULL` (rascunho) continua sendo um estado
+possível no banco e continua sem tela que o produza — é o que torna verificável o AC da Story 3.1,
+"evento não publicado não aparece na programação".
+
+⚠️ **O AD-7 ainda não vale nesta rota.** A arquitetura diz que publicar exige ao menos um usuário de
+portaria escalado, e a Story 2.5 é quem acrescenta o `EVENTO_SEM_PORTARIA` aqui. Entre a 2.4 e a 2.5
+é possível publicar um evento sem ninguém autorizado a validar ingresso nele. A decisão e o custo
+estão no [README da raiz](../README.md#o-que-não-está-pronto).
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -766,13 +873,23 @@ cd backend
 uv run pytest
 ```
 
-São **140 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **164 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
 [Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
-classificação) e a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
-também offline).
+classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
+também offline) e a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Story 2.4).
+
+`test_organizador_eventos.py` (Story 2.4) é o primeiro arquivo que prova **escrita** de domínio, e
+por isso quase todo teste ali lê do **banco** depois da resposta: a resposta prova o schema de
+saída, só o `sessao.get(Evento, id)` prova que a linha existe do jeito que deveria. Cobre os campos
+do catálogo copiados, `vendidos` nascendo zero, `publicado_em` carimbado, o dono vindo da sessão com
+**dois** organizadores no mesmo teste, um `organizador_id` no corpo sendo ignorado, os dois códigos
+de erro novos sem deixar nada gravado, a data sem fuso recusada e a com offset gravada em UTC, e os
+três papéis batendo na porta (`401` sem cookie, `403` para cliente e portaria). Um deles instala um
+transporte HTTP que chama `pytest.fail` se for tocado — é assim que "publicar não fala com a
+Ticketmaster" vira um teste em vez de uma promessa.
 
 `test_evento.py` (Story 2.3) prova as invariantes que **o banco** garante, não o Python: as quatro
 constraints do `setor` recusando cada estado proibido com `IntegrityError`, o `CASCADE` levando os
@@ -1509,3 +1626,41 @@ Quinze testes novos (onze em `test_evento.py`, quatro em `test_migracoes.py`), a
 para **140**. Nenhuma dependência entrou — `pyproject.toml` e `uv.lock` não mudaram. E o
 `frontend/` não foi tocado em nenhum arquivo, o que é o motivo de o README dele não mudar nesta
 story: precedente literal da 1.3.
+
+### Story 2.4 — publicar um evento com seus setores
+
+A story em que as tabelas da 2.3 ganham gente dentro. Três arquivos no backend: `schemas/evento.py`,
+`services/evento.py` e o `POST /organizador/eventos` no router que já existia. **Nenhuma migração** —
+o schema nasceu pronto na story anterior, e essa era a aposta.
+
+**É a primeira rota de escrita do domínio, e isso mudou como escrevi.** Nas rotas anteriores o pior
+caso de um corpo malicioso era um `422`. Aqui alguém autenticado cria um objeto que outras pessoas
+vão ver e comprar, então as três coisas que um corpo tentaria influenciar — o dono, o papel e o
+estoque — estão fechadas **por construção**, não por validação: o dono vem do `Usuario` da
+dependência, o papel vem da assinatura, e `vendidos` vem do `server_default` do banco. Não é que o
+service recuse um `organizador_id` no corpo; é que não existe parâmetro por onde ele entre. A tabela
+com os três está em [Publicar evento](#publicar-evento).
+
+**A decisão que mais me custou pensar foi a do `EVENTO_SEM_SETOR`.** `Field(min_length=1)` no
+`setores` é a linha que qualquer um escreveria, e ela responde o código errado — `DADOS_INVALIDOS`,
+genérico, com a tela sem saber o que faltou. Escrevi a regra no service e deixei o schema aceitar
+lista vazia de propósito. O critério ficou registrado porque vale para as Epics 3 a 5 inteiras:
+**estrutura é do Pydantic, regra de negócio é do service** — e regra de negócio tem nome próprio.
+
+**O `SETOR_DUPLICADO` existe porque a `uq_setor_evento_id_nome` da 2.3, sozinha, transformaria um
+erro de digitação em `500`.** Dois "Pista" no mesmo corpo estouram `IntegrityError` no `commit`, que
+sobe até o handler genérico. Comparo os nomes com `casefold()` antes de qualquer `add` — e é a mesma
+ordem que garante que nenhum evento órfão sobra quando o corpo é recusado.
+
+**Não pus `try/except IntegrityError`, e é o oposto do que fiz no `cadastrar()`.** Lá a corrida entre
+duas requisições é real e o banco é quem tem que responder. Aqui todas as violações possíveis chegam
+no mesmo corpo, num instante só: dá para conferi-las na memória, com certeza. Um `except` genérico
+neste ponto viraria uma máquina de esconder bug de verdade atrás de um `422` bonito.
+
+⚠️ **Esta story contraria o AD-7 por uma story de distância**, e está escrito em vez de escondido:
+publicar ainda não exige portaria escalada, e a 2.5 é quem acrescenta o `EVENTO_SEM_PORTARIA` a esta
+mesma rota. O motivo da janela e o custo dela estão no [README da
+raiz](../README.md#o-que-não-está-pronto).
+
+Vinte e quatro testes novos em `test_organizador_eventos.py`, a suíte foi de 140 para **164**.
+Nenhuma dependência entrou.

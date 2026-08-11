@@ -227,8 +227,9 @@ mesmo assim não existe requisição entre domínios nem cookie de terceiro. O m
 [Proxy `/api/*` no Next](#proxy-api-no-next-não-samesitenone-em-produção).
 
 **O que ainda não dá para fazer por lá:** descobrir evento, comprar ingresso, receber o QR ou validar
-na portaria. Nada disso existe ainda — a Epic 2 começa a publicação de eventos. O que está pronto é o
-acesso, e é ele que este roteiro percorre.
+na portaria. Nada disso existe ainda. **Publicar evento já existe** desde a Story 2.4 — o roteiro
+dela está logo abaixo, em *Na sua máquina*, porque publicar em produção criaria um evento no banco
+real que ninguém pediu.
 
 ### Na sua máquina
 
@@ -284,6 +285,27 @@ E o ciclo da sessão, que fecha na Story 1.6:
     `?voltar=javascript:alert(1)`) e entrar → você cai em `/`. **Nunca fora do site**
 21. `curl -i http://127.0.0.1:8000/rota-que-nao-existe` responde `404` no mesmo formato
     `{"erro": {...}}` das rotas de verdade, e com a mensagem em português
+
+E a publicação de eventos, que fecha na Story 2.4 — é o primeiro fluxo do produto que existe de
+ponta a ponta, do catálogo externo até uma linha no banco:
+
+22. Entrar como `organizador@rockhub.dev` → o masthead ganha `Publicar evento`. A tela já abre
+    mostrando shows reais do catálogo da Ticketmaster, sem precisar buscar nada primeiro
+23. **Clicar numa fila** → a URL ganha `?escolhido=…`, a fila fica marcada com o fio âmbar e o passo
+    **2 · Data, local e setores** aparece abaixo. Recarregar mantém a escolha; o botão voltar a
+    desfaz
+24. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`) → `Publicar evento`
+    devolve a confirmação **na própria tela**, com capacidade e preço exatos
+25. Conferir no banco que a linha existe de verdade:
+    `docker compose exec db psql -U rockhub -d rockhub -c "select nome, data_hora, local from evento;"`
+26. Repetir com **dois setores de mesmo nome** (`Pista` e `pista`) → a tela diz que há setores
+    repetidos, e a API responde `422 SETOR_DUPLICADO`. Nunca um `500`, e nada fica gravado
+27. Apagar o único setor não é possível — o `×` só aparece a partir da segunda linha. Pela API,
+    `"setores": []` responde `422 EVENTO_SEM_SETOR`
+28. Digitar `abc` no preço → a recusa acontece **sem nenhuma requisição no Network**
+
+⚠️ **Nesta altura o evento publicado ainda não tem portaria escalada** — é a dívida datada da Story
+2.4, registrada em [O que não está pronto](#o-que-não-está-pronto), e a Story 2.5 é quem a fecha.
 
 ## Stack e estrutura
 
@@ -1528,6 +1550,152 @@ preços diferentes) — caiu porque a tela do cliente na Story 3.4 mostraria doi
 idêntico e ele escolheria no escuro. Se um dia lotes existirem, eles vão precisar de nome próprio
 de qualquer jeito.
 
+### A atração escolhida viaja pela URL, não em estado do cliente
+
+**Decidi** que clicar numa fila do catálogo é seguir um `<Link>`: a escolha vai para a URL
+(`?q=baco&escolhido=G5vYZ9a1kd`), a página re-renderiza no servidor e o passo 2 aparece.
+
+**Por quê:** é a mesma decisão que já tomei para a busca da Story 2.2, e ela paga as mesmas três
+coisas de graça — recarregar mantém a escolha, o botão voltar a desfaz, e o link abre no mesmo lugar
+para outra pessoa. Estender a decisão que já está tomada custa zero; contradizê-la na tela seguinte
+custaria explicar por que a busca é recarregável e a escolha não é.
+
+**Uma correção que veio de usar a tela:** na primeira versão, escolher uma atração fazia o passo 2
+nascer **abaixo da dobra**, e clicar na fila parecia não fazer nada — o formulário só era encontrado
+por quem rolasse a página até o fim. O destino do link passou a terminar em `#passo-2`. Repare que a
+correção **não** foi um `onClick` rolando a página com JavaScript: como a escolha é navegação, bastou
+dizer para onde a navegação vai. Foi a decisão de manter tudo na URL que deixou o conserto ser uma
+âncora em vez de uma ilha de cliente.
+
+**O que caiu:** **estado no cliente com `onClick`** — mostraria o passo 2 sem recarregar, e é o que
+qualquer formulário moderno faria. Caiu por duas coisas: tiraria a escolha da URL (recarregar perde,
+voltar não desfaz, o link não abre no mesmo lugar) e transformaria a tela **inteira** numa ilha de
+cliente, contra a convenção "Server Component por padrão" — a busca, o catálogo e a guarda de sessão
+iriam junto, sem nenhum deles precisar do navegador. E **uma rota própria,
+`/organizador/publicar/[id_externo]`** — mais limpa de ler e a mais parecida com um wizard de
+verdade; caiu porque a atração precisaria ser buscada de novo por id na Discovery, o que significa um
+endpoint novo na integração e mais uma chamada de cota por publicação, ou então ter todos os campos
+repassados pela URL, que é a mesma coisa com mais barulho.
+
+### O formulário de publicação é a primeira ilha `"use client"` do organizador
+
+**Decidi** que o passo 2 é um Client Component que chama a API por `chamarApi`, dentro de uma página
+que continua sendo Server Component.
+
+**Por quê:** linha de setor que aparece e some ao clicar é interação que exige o navegador — é
+exatamente o caso que a arquitetura reserva para `"use client"`. E o desenho que sai daqui vale para
+as Epics 3 a 5, que vão ter mais disso (stepper de quantidade, câmera da portaria): ilha pequena
+dentro de página de servidor, com a prop serializada como fronteira.
+
+**O que caiu:** **Server Action do Next** — manteria a tela sem JavaScript nenhum e é o idiomático da
+versão instalada; caiu por ser mecanismo novo no projeto (nenhuma story usou até aqui) e por não
+resolver o problema que motivou a ilha: o setor dinâmico continuaria exigindo número fixo de linhas.
+E **cinco linhas de setor fixas, sem JavaScript** — o mais simples de tudo; caiu porque ainda
+precisaria de Server Action ou route handler para o `POST`, e mataria o `+ Adicionar setor` que o
+protótipo desenha.
+
+### A rota publica de fato, mesmo com o AD-7 chegando só na story seguinte
+
+**Decidi** que `POST /organizador/eventos` carimba `publicado_em` no ato, e que a exigência de
+portaria escalada (AD-7) entra na Story 2.5, na mesma rota.
+
+**Por quê:** feito assim o risco real é baixo, então é melhor fazer agora para não sobrar trabalho
+nas próximas stories. A janela dura **uma** story, dentro de uma branch que só eu publico — não
+existe ninguém de fora criando evento nesse intervalo, e o pior caso é um evento de teste sem
+portaria, que eu mesmo apago. Segurar o carimbo até a 2.5 pagaria essa janela com retrabalho
+garantido: a 2.5 teria que reabrir o service, a rota e a tela de confirmação que a 2.4 acabou de
+escrever, só para mudar um carimbo de lugar.
+
+**O que caiu:** **gravar rascunho e deixar a 2.5 publicar** — o AD-7 valeria desde o primeiro minuto
+e nunca existiria evento publicado sem alguém autorizado a validar. Caiu pelo motivo acima, e porque
+a 2.4 terminaria sem nada visível no produto: um botão "Publicar evento" que não publica. **O custo
+continua real e está registrado** em [O que não está pronto](#o-que-não-está-pronto): entre a 2.4 e
+a 2.5 dá para publicar sem portaria, e os eventos criados nessa janela ficam sem vínculo. Preferi
+uma dívida datada a uma omissão.
+
+### Publicar termina numa confirmação na própria tela, sem redirecionar
+
+**Decidi** que a resposta de sucesso substitui o formulário por uma confirmação com os números
+exatos do que foi gravado — nome, data por extenso, local, cidade e cada setor com capacidade e
+preço. O caminho de volta é um `Publicar outro →`.
+
+**Por quê:** o organizador acabou de digitar quinze números e precisa conferir o que foi parar no
+banco. Mostrar o que **o servidor devolveu**, e não o que ele digitou, é a única forma de a
+confirmação valer alguma coisa.
+
+**O que caiu:** **`redirect("/")`** — uma linha, e é o padrão de todo formulário. Caiu porque a raiz
+é o estado vazio da programação até a Story 3.1: publicar para cair numa tela que diz "a programação
+entra no ar quando os primeiros eventos forem publicados" pareceria defeito, logo depois de
+justamente publicar um. E **adiantar `/organizador/meus-eventos`** — resolveria o destino de vez;
+caiu porque invade a Story 2.6 inteira, que tem AC próprio (não mostrar evento de outro organizador)
+e estouraria o recorte de um commit por story.
+
+### Preço digitado em reais, convertido para centavos antes do `POST`
+
+**Decidi** que o campo aceita `120,00` e o cliente converte para `12000` antes de enviar. A API só
+conhece `preco_centavos: int`.
+
+**Por quê:** o AD-11 existe para manter dinheiro longe de ponto flutuante, e a fronteira é o lugar
+certo para a conversão acontecer. Do lado de fora, quem digita escreve como escreveria num cartaz;
+do lado de dentro, todo valor monetário do projeto é inteiro, sem exceção.
+
+**O que caiu:** **aceitar reais na API e converter no backend** — tiraria o parsing do cliente; caiu
+porque põe ponto flutuante no contrato, que é exatamente o que o AD-11 impede, e criaria dois campos
+monetários com unidades diferentes no mesmo projeto. E **pedir centavos direto ao organizador** —
+zero conversão e zero ambiguidade, ao custo de ele fazer a conta de cabeça a cada setor. A regra da
+conversão evita adivinhar: com vírgula, ela é o decimal e o ponto é milhar; sem vírgula, o ponto é o
+decimal — e `"1.234"`, que é ambíguo, é recusado em vez de virar 123.400 por chute.
+
+### Data e horário são dois campos, não um `datetime-local`
+
+**Decidi** dois campos com rótulos próprios, como o protótipo desenha, juntados em um instante ISO
+com offset antes do envio.
+
+**Por quê:** é o que o protótipo mostra, e o horário fica legível em tela pequena.
+
+**O que caiu:** **um `<input type="datetime-local">`** — um campo a menos e uma junção a menos; caiu
+porque o widget nativo varia bastante entre navegadores, e eu perderia o controle de como o campo
+mais importante do formulário aparece. A junção que sobrou tem uma armadilha que registrei porque
+ela só apareceria em produção: `new Date("2026-08-14")` é lido como **UTC** e
+`new Date("2026-08-14T21:00")` como **hora local** — mandar só a data faria um show das 21h em São
+Paulo virar 18h na tela de quem compra.
+
+### Nome e imagem travados; casa de show e cidade pré-preenchidas e editáveis
+
+**Decidi** que o passo 2 mostra nome e imagem do catálogo como **texto travado**, e que `local` e
+`cidade` chegam preenchidos com o que o catálogo trouxe, mas podem ser trocados.
+
+**Por quê:** turnê. A mesma atração do catálogo vira várias datas, em casas e cidades diferentes — o
+registro da Discovery traz a casa de *uma* data, que não é necessariamente a que o organizador está
+publicando. Quem sabe onde o show dele acontece é ele, não a Ticketmaster. É o mesmo raciocínio que
+fez `origem_externa_id` nascer **sem** `UNIQUE` na Story 2.3.
+
+**O que caiu:** **tudo editável, inclusive o nome** — o catálogo viraria sugestão de preenchimento e
+cobriria mais casos; caiu porque esvazia a decisão que já está registrada aqui em [Publicação exige
+atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento): com o
+nome livre, o cadastro manual volta pela porta dos fundos, e o ingresso emitido poderia dizer um nome
+que a listagem não diz. E **nada pré-preenchido** — evitaria que um dado errado do catálogo passasse
+despercebido, ao custo de redigitar o que a Ticketmaster já informou certo na maioria das vezes.
+
+### "Evento sem setor" é regra do service, não `min_length` do Pydantic
+
+**Decidi** que a lista de setores chega ao schema **sem** `min_length=1`, e que quem recusa a lista
+vazia é o service, com o código `EVENTO_SEM_SETOR`.
+
+**Por quê:** o contrato do frontend é o `codigo`, não a mensagem. `min_length` responderia `422` com
+`DADOS_INVALIDOS`, o código genérico de "algum campo está errado", e a tela não teria como dizer o
+que faltou. O critério que fixei aqui vale para as Epics 3 a 5 inteiras: **validação de estrutura é
+do Pydantic; regra de negócio é do service** — e regra de negócio tem nome próprio. Pelo mesmo
+motivo o campo tem `default_factory=list`: sem isso, mandar `[]` e não mandar nada teriam respostas
+diferentes para a mesma situação.
+
+**O que caiu:** **`Field(min_length=1)`**, que é a linha que qualquer um escreveria e resolve em um
+caractere. Caiu pelo código errado. E, junto dela, a tentação de deixar o banco responder pelo nome
+de setor repetido: a `uq_setor_evento_id_nome` da 2.3 sozinha transformaria um erro de digitação do
+organizador num `500` — `IntegrityError` no `commit` sobe até o handler genérico. Conferir os nomes
+no service, antes de qualquer `INSERT`, é o que faz isso virar um `422` legível e não deixa evento
+órfão no banco.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -1537,13 +1705,14 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 |---|---|
 | **Mapa de assentos** | O desafio aceita venda por quantidade em setores. A plataforma é focada em shows — pista, VIP, camarote — onde assento numerado não é o padrão |
 | **Tela de editar evento** | O vínculo com a portaria só é definido na publicação. Num sistema real seria preciso escalar e remover porteiros depois |
+| **Publicar exige portaria escalada (AD-7) — vale só a partir da Story 2.5** | **Dívida datada, assumida de propósito na Story 2.4.** A arquitetura diz que publicar um evento exige ao menos um usuário de portaria escalado, e a rota `POST /organizador/eventos` nasceu na 2.4 **sem** essa exigência: a 2.5 é quem acrescenta o `EVENTO_SEM_PORTARIA` à mesma rota. Entre uma e outra é possível publicar um evento sem ninguém autorizado a validar ingresso nele. Aceitei a janela porque ela dura uma story, dentro de uma branch que só eu publico — o raciocínio inteiro, com a alternativa que caiu, está em [A rota publica de fato](#a-rota-publica-de-fato-mesmo-com-o-ad-7-chegando-só-na-story-seguinte). **A consequência que sobra:** evento publicado nessa janela fica sem portaria **para sempre**, porque não existe tela de editar evento (a linha acima) — se eu publicar eventos de teste agora, eles não são validáveis na Epic 5 |
 | **Cancelamento pelo cliente** | O modelo já suporta; faltam endpoint e tela |
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
 | **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
 | **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
 | **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Organizador nasce pelo seed de [Contas semeadas](#contas-semeadas), que é como o próprio enunciado o pede. **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
-| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só as quatro contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — mostraria o fluxo do organizador funcionando, mas travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
+| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só as quatro contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — deixou de ser hipotética na Story 2.4: o fluxo existe e funciona de ponta a ponta. Mesmo assim ela não substitui o seed, porque travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto. E, enquanto a Story 2.5 não chega, todo evento publicado assim nasce sem portaria escalada (linha acima) |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` já existe para o organizador desde a Story 2.2 — mas `Meus eventos` (Story 2.6) e `Turnos` para a portaria (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |

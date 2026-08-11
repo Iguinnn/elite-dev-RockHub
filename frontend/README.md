@@ -391,8 +391,8 @@ frontend/
           page.module.css
         organizador/
           publicar/
-            page.tsx          # Server Component — passo 1: busca no catálogo (Story 2.2)
-            page.module.css
+            page.tsx          # Server Component — passo 1 (2.2) + passo 2 (2.4), a escolha vem da URL
+            page.module.css   # inclui as classes do passo 2, da linha de setor e da confirmação
       (entrada)/              # casca sem masthead: só a marca
         layout.tsx
         layout.module.css
@@ -416,6 +416,7 @@ frontend/
       AvisoDeErro.module.css
       FormularioLogin.tsx     # "use client"
       FormularioCadastro.tsx  # "use client"
+      FormularioPublicacao.tsx # "use client" — a primeira ilha fora das telas de acesso (2.4)
       BotaoSair.tsx           # "use client" — logout + router.refresh()
     lib/
       api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
@@ -656,11 +657,124 @@ retorno depois do checkout (Epic 3) e para o link compartilhado (Epic 4).
 
 ## A tela do organizador: `/organizador/publicar`
 
-Passo 1 do fluxo de publicação (Story 2.2): buscar a atração no catálogo da Ticketmaster. Só o
-passo 1 — selecionar a atração (2.4), o formulário de data/local/setores (2.4) e escalar a portaria
-(2.5) ainda não existem. Nada nesta tela é clicável.
+Dois passos, na mesma tela: buscar a atração no catálogo da Ticketmaster (Story 2.2) e preencher
+data, local e setores (Story 2.4). Escalar a portaria é o passo 3, e é a Story 2.5 — ainda não
+existe.
 
-### `<form method="get">`, sem uma linha de `"use client"`
+### A escolha da atração vive na URL, como a busca
+
+Clicar numa fila do catálogo não muda estado: **segue um `<Link>`**. O destino é a mesma página com
+um parâmetro a mais — `?q=baco&escolhido=G5vYZ9a1kd` —, o Next re-renderiza no servidor, a fila
+escolhida ganha o fio âmbar e o passo 2 aparece abaixo.
+
+É a mesma decisão da busca da 2.2, estendida em vez de contradita, e ela paga três coisas de graça:
+recarregar mantém a escolha, o botão voltar a desfaz, e o link abre no mesmo lugar para outra
+pessoa. A alternativa — `onClick` guardando a escolha em `useState` — mostraria o passo 2 sem
+recarregar, e é o que qualquer formulário moderno faria; caiu porque tiraria a escolha da URL e
+transformaria a página **inteira** em ilha de cliente, contra a convenção *"Server Component por
+padrão"*. O motivo completo, com a terceira alternativa que também caiu (uma rota
+`/organizador/publicar/[id]`), está no [README da
+raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+```tsx
+const parametros = new URLSearchParams();
+if (termoLimpo) parametros.set("q", termoLimpo);
+parametros.set("escolhido", idExterno);
+return `/organizador/publicar?${parametros}#passo-2`;
+```
+
+⚠️ **O `#passo-2` no fim do destino não é enfeite, e ele veio de um defeito real.** Sem a âncora,
+escolher uma atração deixava a pessoa exatamente onde estava, com o passo 2 nascendo abaixo da
+dobra — clicar na fila parecia **não fazer nada**, e o formulário só era encontrado por quem
+rolasse a página até o rodapé. A âncora resolve isso pela **navegação**: o `<Link>` leva até o passo
+2 porque o destino é o passo 2. Nenhum `onClick`, nenhum `useEffect`, nenhuma linha de
+`"use client"` a mais — e o link continua compartilhável, agora apontando para o lugar certo da
+página. O `scroll-behavior: smooth` fica no `html` do `globals.css`, e o bloco de
+`prefers-reduced-motion` que já existia lá o desliga para quem pediu menos movimento.
+
+⚠️ **`URLSearchParams` e para por aí.** `q` chega na `page.tsx` já decodificado pelo Next, e
+concatenar um `encodeURIComponent` à mão em cima disso produz `%2520` e uma busca que não acha nada.
+
+⚠️ **`?escolhido=` sobrevive à troca do termo**, e o comportamento certo é o passo 2 sumir. Buscar
+"baco", escolher e depois buscar "rosalia" deixa na URL um id que não está mais na lista; o `find`
+devolve `undefined` e a tela volta a ter só o passo 1 — sem erro, sem aviso, sem nada quebrado. É
+por isso que **nunca** uso `!` para calar o TypeScript aqui: `undefined` é um estado real da tela,
+não um caso impossível.
+
+### `FormularioPublicacao` é a primeira ilha `"use client"` fora das telas de acesso
+
+Login e cadastro são ilhas porque são formulários. Esta é a primeira vez que um formulário convive
+na **mesma página** com conteúdo renderizado no servidor, e a fronteira entre os dois é a prop
+`item`, que atravessa serializada.
+
+A ilha existe por um motivo que dá para apontar com o dedo: `+ Adicionar setor` e o `×` de remover
+mudam a quantidade de campos na tela a cada clique, e isso é interação que exige o navegador. O que
+**não** está na ilha continua no servidor: masthead, busca, catálogo, e a página que decide qual
+atração foi escolhida.
+
+Dentro dela, só os setores têm `useState`. Os campos do evento — data, horário, casa de show, cidade
+— são lidos por `FormData` no envio, sem estado, exatamente como no `FormularioCadastro`: eles não
+mudam de quantidade, então não precisam ser controlados.
+
+Nome e imagem da atração aparecem **travados**, e são texto, não `<input readOnly>`: campo que
+ninguém pode editar é campo que não deveria ser campo. `local` e `cidade` chegam pré-preenchidos do
+catálogo e **são editáveis** — o porquê disso (turnê) está no README da raiz.
+
+### A conversão de reais para centavos mora aqui, na fronteira
+
+A API só conhece `preco_centavos: int` (AD-11). O organizador digita `120,00`, e a conversão
+acontece no cliente, antes do `POST`:
+
+```ts
+const normalizado = bruto.includes(",")
+  ? bruto.replace(/\./g, "").replace(",", ".")   // "1.234,50" → "1234.50"
+  : bruto;                                        // "120.50" já está pronto
+if (!/^\d+(\.\d{1,2})?$/.test(normalizado)) return null;
+return Math.round(Number(normalizado) * 100);
+```
+
+A regra evita adivinhar: **com vírgula**, ela é o decimal e o ponto é milhar; **sem vírgula**, o
+ponto é o decimal. Assim `"1.234"` não vira 123.400 por chute — ele falha no teste da regex, devolve
+`null` e vira erro na tela **antes** de qualquer ida à rede. Mesma disciplina das duas validações
+locais do `FormularioCadastro`.
+
+Ela mora no cliente porque a alternativa é pior: aceitar decimal na API poria ponto flutuante no
+contrato, que é exatamente o que o AD-11 existe para impedir. O motivo completo está no README da
+raiz.
+
+⚠️ **A junção de data com hora não é estética.** `new Date("2026-08-14")` — data sozinha — é lida
+como **UTC** pela especificação; `new Date("2026-08-14T21:00")` — data com hora, sem offset — é lida
+como **hora local**. Mandar só a data faria um show das 21h em São Paulo virar 18h na tela de quem
+compra, e o sintoma só apareceria em produção, porque quem testa costuma olhar a resposta da API e
+não o horário renderizado. O `toISOString()` do resultado é o que vira `data_hora` no corpo.
+
+### Publicar não leva a lugar nenhum, e é de propósito
+
+Deu certo, a confirmação toma o lugar do formulário na mesma tela: nome, data por extenso, local,
+cidade e a lista de setores com **capacidade e preço exatos**. Números exatos e nenhum medidor —
+proporção é para quem compra; organizador vê inventário (UX-DR7).
+
+Sem `router.push` e sem `router.refresh`: nada da sessão mudou, e não há para onde mandar alguém.
+"Meus eventos" é a Story 2.6, e a raiz é o estado vazio da programação até a 3.1 — publicar para
+cair numa tela que diz "a programação entra no ar quando os primeiros eventos forem publicados"
+pareceria defeito. O caminho de volta é o `Publicar outro →`, que leva à URL limpa.
+
+O erro vem pelo `codigo`, nunca pela `mensagem` do servidor — convenção desde a Story 1.4. Os dois
+códigos novos desta tela são `EVENTO_SEM_SETOR` e `SETOR_DUPLICADO`.
+
+### Rótulo oculto não é rótulo ausente
+
+A linha de setor tem quatro colunas no desktop e uma faixa de kickers acima nomeando cada uma. Essa
+faixa é decoração: ela é `aria-hidden` e serve a quem enxerga. Quem serve a quem **não** enxerga é
+um `<label htmlFor>` em cada entrada, escondido pelo padrão "visually hidden" (`position:absolute;
+width:1px; clip-path: inset(50%)`) — nunca `display:none`, que tiraria o rótulo da árvore de
+acessibilidade e é exatamente o que o UX-DR9 proíbe. `placeholder` não conta como rótulo.
+
+Abaixo de 900px a grade vira uma coluna e a faixa de kickers some — e **o rótulo oculto volta a
+ser visível**, na mesma media query. Sem a faixa acima, "Pista" e "800" empilhados não diriam qual é
+qual para quem enxerga; o `<label>` já estava lá, e só precisou deixar de estar escondido.
+
+### A busca é `<form method="get">`, sem uma linha de `"use client"`
 
 ```tsx
 <form method="get">
@@ -991,6 +1105,24 @@ A lista da Story 2.2, `/organizador/publicar`:
 - **Derrubar a Ticketmaster de propósito** (`TICKETMASTER_API_KEY` errada no `.env` do backend) →
   a tela mostra o aviso de indisponível e **não quebra**, com ou sem termo digitado
 
+A lista da Story 2.4, o passo 2 da mesma tela:
+
+- **Clicar numa fila** → a URL ganha `escolhido=…#passo-2`, a fila fica com o fio âmbar e a etiqueta
+  `Selecionado`, e a página **leva você até** o passo **2 · Data, local e setores**. Se ele aparecer
+  mas a página não se mexer, a âncora quebrou — é o defeito que motivou o `#passo-2`
+- **Recarregar** → a escolha continua. **Botão voltar** → a escolha some, e a tela volta ao passo 1
+- **Buscar outro termo com a escolha na URL** → o passo 2 some, sem erro e sem aviso. É o `find`
+  devolvendo `undefined`, e é o comportamento certo
+- **Publicar com um setor** → o formulário dá lugar à confirmação, com nome, data por extenso,
+  capacidade e preço exatos. **Sem redirect**
+- **Publicar com dois setores de mesmo nome** (`Pista` e ` pista `) → a tela diz o que aconteceu e
+  **não** quebra: é o `SETOR_DUPLICADO`. Se aparecer "erro interno", a verificação do service caiu
+- **Preço `abc`** → recusa **antes** de ir à rede. Se aparecer chamada no Network, a validação local
+  vazou
+- **`+ Adicionar setor` e o `×`** → o `×` só aparece a partir da segunda linha
+- **Abaixo de 900px** → um campo por linha, os rótulos dos setores ficam **visíveis**, e nada rola na
+  horizontal
+
 ### E a mesma lista, em produção
 
 Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. Contra
@@ -1121,3 +1253,40 @@ raiz](../README.md#o-id-da-ticketmaster-saiu-da-tela-do-organizador). Nenhum tes
 corte de sempre desta camada. A conferência é a lista manual de [Sobre não ter teste automatizado
 aqui](#sobre-não-ter-teste-automatizado-aqui), que ganhou duas entradas junto: a vitrine sem feira de
 negócios, e `rosalia` como prova de que o `genreId` não vazou para a busca por termo.
+
+### Story 2.4 — publicar um evento com seus setores
+
+A story em que a tela do organizador deixa de ser só de leitura. A fila do catálogo virou `<Link>`,
+o passo 2 nasceu, e o primeiro evento real do sistema passou a existir — criado pela interface, não
+por seed.
+
+**A escolha da atração foi para a URL, e essa foi a decisão que puxou todas as outras.** Ela é o que
+mantém a página inteira no servidor: se a escolha morasse em `useState`, a `page.tsx` teria que
+virar `"use client"` por inteiro, e junto com ela a busca, o catálogo e a guarda de sessão. Do jeito
+que ficou, a única ilha é o formulário, e ela existe por um motivo específico e apontável — a linha
+de setor que aparece e some ao clicar.
+
+**Testando a tela, achei um defeito que nenhum teste pegaria:** clicar na fila funcionava, a URL
+mudava, o passo 2 nascia — **abaixo da dobra**. Da cadeira, parecia que o clique não tinha feito
+nada. Resolvi com uma âncora no próprio destino do link (`#passo-2`), e não com JavaScript rolando a
+página depois: a escolha continua sendo navegação, e navegação sabe para onde vai.
+
+**Foi a primeira vez que precisei de um componente de cliente dentro de uma página de servidor**, e
+o desenho que sai daqui vale para as Epics 3 a 5 (stepper de quantidade, câmera da portaria): ilha
+pequena, prop serializada como fronteira, e todo o resto renderizado no servidor.
+
+**A conversão de reais para centavos ficou no cliente**, e o cuidado ali é não adivinhar: `"1.234"`
+sem vírgula não vira 123.400 por chute — vira erro na tela. Prefiro recusar o ambíguo a gravar um
+preço que ninguém digitou.
+
+**Escrevi o `<label>` de cada campo de setor antes de escrever o CSS que o esconde.** É a ordem que
+importa: o rótulo existe sempre, e a media query de 900px só desliga o esconderijo. Rótulo que nasce
+como `placeholder` nunca vira `<label>` depois.
+
+Não há teste automatizado aqui — corte já registrado em [Sobre não ter teste automatizado
+aqui](#sobre-não-ter-teste-automatizado-aqui). A conferência foi manual, com o `next dev` e o
+backend no ar: clicar numa fila e ver a URL ganhar `escolhido=`, recarregar e a escolha continuar,
+trocar o termo e o passo 2 sumir sem erro, publicar de verdade e conferir a linha no Postgres por
+`psql`. O backend ganhou vinte e quatro testes para a rota que esta tela consome (a suíte foi de 140
+para 164), documentados no [README do
+backend](../backend/README.md#story-24--publicar-um-evento-com-seus-setores).

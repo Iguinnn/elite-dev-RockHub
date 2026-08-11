@@ -52,6 +52,15 @@ body {
   font: 16px/1.55 var(--serif);
 }
 
+/* Só vale para link com âncora (`#passo-2`, na tela do organizador): ir de um
+   ponto a outro da mesma página sem corte seco, para quem clicou entender que
+   continua onde estava. Não é animação de entrada nem transição de tela —
+   quem pediu menos movimento recebe o salto instantâneo, pelo bloco de
+   `prefers-reduced-motion` mais abaixo. */
+html {
+  scroll-behavior: smooth;
+}
+
 a {
   color: inherit;
   text-decoration: none;

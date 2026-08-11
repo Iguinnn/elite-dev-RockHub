@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-11 (story 2.3 implementada — schema de evento e setor)
+last_updated: 2026-08-11 (story 2.4 implementada — suíte de 140 para 164, pronta para commit)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -73,7 +73,12 @@ development_status:
   2-1-cliente-da-ticketmaster-com-a-chave-protegida: review
   2-2-buscar-a-atracao-no-catalogo: review
   2-3-modelo-de-evento-e-setor: review
-  2-4-publicar-um-evento-com-seus-setores: backlog
+  # A 2.4 contraria o AD-7 por uma story de distância: ela publica sem exigir
+  # portaria escalada, e a 2.5 é quem acrescenta o `EVENTO_SEM_PORTARIA` à mesma
+  # rota. Decisão consciente: a janela dura uma story, numa branch que só o Igor
+  # publica, e fechá-la agora custaria retrabalho na 2.5. Registrada no AC18 da
+  # story e no README da raiz.
+  2-4-publicar-um-evento-com-seus-setores: review
   2-5-escalar-quem-valida-na-porta: backlog
   2-6-ver-e-gerenciar-meus-eventos: backlog
   epic-2-retrospective: optional

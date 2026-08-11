@@ -1,17 +1,19 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import FormularioPublicacao from "@/components/FormularioPublicacao";
 import { buscarNoCatalogo } from "@/lib/catalogo";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
 
 /**
- * Passo 1 do fluxo de publicação: buscar a atração no catálogo da
- * Ticketmaster. Server Component — a busca vive na URL (`?q=`), não em
- * estado de cliente, e por isso a página é recarregável, compartilhável e o
- * botão voltar funciona.
+ * Fluxo de publicação: passo 1, buscar a atração no catálogo da Ticketmaster;
+ * passo 2, preencher data, local e setores. Server Component — a busca vive na
+ * URL (`?q=`) **e a escolha também** (`?escolhido=`), não em estado de cliente,
+ * e por isso a página é recarregável, compartilhável e o botão voltar funciona.
  *
  * **Duas guardas, não uma.** Sem sessão, `redirect` para o login com o
  * caminho de volta preservado — o mesmo padrão da `/conta`. Com sessão e
@@ -19,11 +21,13 @@ import estilos from "./page.module.css";
  * segredo (a API responde `403`, que é público por natureza), e mandar
  * alguém logado para um 404 pareceria defeito.
  *
- * **Nada é clicável nesta story.** Selecionar a atração é a Story 2.4 — aqui
- * o organizador só busca e enxerga o resultado.
+ * **A escolha é navegação, não estado** (Story 2.4). Clicar numa fila é
+ * seguir um `<Link>`, e é o que mantém esta página inteira no servidor: a
+ * única ilha `"use client"` da tela é o `FormularioPublicacao`, que precisa do
+ * navegador para acrescentar e remover linha de setor.
  *
  * **A busca acontece sempre, mesmo sem termo** — revisado depois do corte
- * original desta story: em vez de um convite "busque pelo nome do show" antes
+ * original da Story 2.2: em vez de um convite "busque pelo nome do show" antes
  * de qualquer chamada, a tela já chega mostrando exemplos reais do catálogo
  * (os próximos eventos no Brasil), para o organizador ver do que se trata sem
  * precisar digitar nada primeiro.
@@ -40,17 +44,52 @@ export default async function PublicarEvento({
     redirect("/");
   }
 
-  // `q` pode chegar como `string[]` (`?q=a&q=b`) — o primeiro valor basta,
-  // não há motivo para a busca aceitar mais de um termo.
-  const bruto = (await searchParams).q;
-  const termo = (Array.isArray(bruto) ? bruto[0] : bruto) ?? "";
+  // Os dois podem chegar como `string[]` (`?q=a&q=b`) — o primeiro valor
+  // basta, não há motivo para a busca aceitar mais de um termo nem para a
+  // tela ter duas atrações escolhidas.
+  const parametros = await searchParams;
+  const primeiro = (valor: string | string[] | undefined) =>
+    (Array.isArray(valor) ? valor[0] : valor) ?? "";
+
+  const termo = primeiro(parametros.q);
   const termoLimpo = termo.trim();
+  const idEscolhido = primeiro(parametros.escolhido);
 
   // `buscarNoCatalogo` nunca levanta: o `503` da Ticketmaster é um estado da
   // tela, não uma falha da aplicação — não existe `error.tsx` neste projeto.
   // Chama sempre, com ou sem termo: sem termo, o backend lista os próximos
   // eventos do catálogo como exemplo.
   const resultado = await buscarNoCatalogo(termoLimpo);
+
+  // ⚠️ Pode ser `undefined` de verdade, e isso **não** é erro: `?escolhido=`
+  // sobrevive à troca do termo de busca, e o id na URL pode não estar mais na
+  // lista. Nesse caso o passo 2 simplesmente não aparece — sem aviso, sem
+  // tela quebrada. Nunca use `!` para calar o TypeScript aqui.
+  const escolhido =
+    resultado.estado === "ok"
+      ? resultado.itens.find((item) => item.id_externo === idEscolhido)
+      : undefined;
+
+  // `URLSearchParams` e só ele: `q` chega aqui já decodificado pelo Next, e
+  // concatenar `encodeURIComponent` à mão em cima disso produz `%2520` e uma
+  // busca que não acha nada.
+  //
+  // O `#passo-2` no fim não é enfeite: sem ele, escolher uma atração deixa a
+  // pessoa exatamente onde estava, com o formulário nascendo lá embaixo, fora
+  // da tela — parece que o clique não fez nada. A âncora resolve isso **pela
+  // navegação**, sem `onClick` e sem `useEffect`: o `<Link>` leva até o passo
+  // 2 porque o destino é o passo 2, não porque alguém rolou a página com
+  // JavaScript depois.
+  function destinoDaEscolha(idExterno: string): string {
+    const parametros = new URLSearchParams();
+    // Termo vazio não entra na URL: `?q=&escolhido=…` é ruído para quem
+    // compartilha o link.
+    if (termoLimpo) {
+      parametros.set("q", termoLimpo);
+    }
+    parametros.set("escolhido", idExterno);
+    return `/organizador/publicar?${parametros}#passo-2`;
+  }
 
   return (
     <section className={estilos.pagina}>
@@ -102,9 +141,15 @@ export default async function PublicarEvento({
             const origem = ["Ticketmaster", item.local, item.cidade]
               .filter(Boolean)
               .join(" · ");
+            const selecionado = item.id_externo === escolhido?.id_externo;
 
             return (
-              <div key={item.id_externo} className={estilos.item}>
+              <Link
+                key={item.id_externo}
+                href={destinoDaEscolha(item.id_externo)}
+                className={`${estilos.item} ${selecionado ? estilos.itemEscolhido : ""}`}
+                aria-current={selecionado ? "true" : undefined}
+              >
                 {item.imagem_url ? (
                   // A Discovery serve imagem de mais de um host
                   // (`s1.ticketm.net`, `media.ticketmaster.com`), e
@@ -125,10 +170,25 @@ export default async function PublicarEvento({
                   <h4 className={estilos.nome}>{item.nome}</h4>
                   <div className={estilos.origem}>{origem}</div>
                 </div>
-              </div>
+                <span className={estilos.estado}>
+                  {selecionado ? "Selecionado" : "Selecionar"}
+                </span>
+              </Link>
             );
           })}
         </div>
+      )}
+
+      {escolhido && (
+        <>
+          <div
+            id="passo-2"
+            className={`${estilos.secTitulo} ${estilos.secTituloPasso2}`}
+          >
+            <h2>2 · Data, local e setores</h2>
+          </div>
+          <FormularioPublicacao item={escolhido} />
+        </>
       )}
     </section>
   );
