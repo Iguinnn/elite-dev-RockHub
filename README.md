@@ -1015,7 +1015,13 @@ servidor do Next — servidor a servidor, sem navegador no meio. Quem faz o cook
 proxy. Deixar o README sugerir que o CORS é o conserto apagaria a razão de o proxy existir, e no
 primeiro login quebrado alguém iria mexer na variável errada.
 
-### Publiquei a branch da epic, não a `main`
+### Publiquei a branch da epic, não a `main` — até a Epic 1 ser revisada
+
+> **Encerrada em 2026-08-11.** Depois do code review, a Epic 1 entrou na `main` e a Production
+> Branch dos dois painéis passou a apontar para ela. O registro abaixo fica porque o raciocínio
+> continua valendo: **a revisão vem antes da publicação, nunca o contrário.** Da Epic 2 em diante o
+> efeito é o mesmo por outro caminho — a branch da epic só chega na `main` depois de revisada, e é a
+> `main` que publica. Nenhum campo de painel precisa ser tocado de novo.
 
 **Decidi** apontar a Production Branch dos dois painéis para
 `epic-1---fundacao-acesso-e-primeiro-deploy`, e definir o `API_URL` da Vercel para Production **e**
@@ -1029,7 +1035,18 @@ configuração.
 **O que caiu:** **mesclar na `main` antes e publicar dali**, que é o que as duas plataformas assumem
 sozinhas e o que quem avalia espera encontrar. O custo que eu assumi é um campo divergente em dois
 painéis, que precisa ser trocado quando a epic entrar na `main` — e é por isso que ele está escrito
-nos dois READMEs de camada, em vez de virar surpresa.
+nos dois READMEs de camada, em vez de virar surpresa. **Foi cobrado e pago:** a troca aconteceu no
+merge da Epic 1, e custou o previsto — um campo em cada painel, achado no lugar em que o README
+dizia que ele estaria.
+
+**E uma terceira via que eu cheguei a considerar depois, e descartei:** uma branch de pré-produção
+permanente, juntando as epics antes de promover para a `main`. Caiu por duas razões. A `main` ficaria
+parecendo um projeto sem código para quem clona ou abre o repositório — o oposto do que ela deveria
+demonstrar. E, sem um segundo banco, a pré-produção compartilharia o PostgreSQL da produção: uma
+migração ruim quebraria as duas do mesmo jeito, só que com um passo a mais no caminho. Seria
+isolamento aparente. A segurança que ela prometia já vem de quatro lugares que existem — a branch por
+epic, o code review como portão, o Pre-deploy que barra migração quebrada antes de trocar o tráfego,
+e o Preview que a Vercel dá de graça em toda branch.
 
 Sobre o Preview: caiu **defini-lo só para Production**, que manteria o banco de produção fora do
 alcance de qualquer build de branch. Perdeu porque o Preview cairia no padrão `http://localhost:8000`
@@ -1184,6 +1201,5 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
 | **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**, porque o `API_URL` está definido com o mesmo valor em Production e Preview. Uma conta criada num Preview é uma conta no banco real. A alternativa — definir a variável só para Production — deixaria todo Preview com o login quebrado em silêncio, que é pior; e um segundo serviço Railway com banco próprio é infraestrutura que não se paga em sete dias. A mitigação que existe hoje: no plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |
 | **Domínio próprio** | A aplicação vive em `elite-dev-rock-hub.vercel.app` e a API em `elite-dev-rockhub-production.up.railway.app`. Domínio custa dinheiro e propagação de DNS, e não acrescenta nada ao que está sendo avaliado |
-| **Branch de produção alinhada com a `main`** | Os dois painéis publicam a branch da epic, não a `main` — o merge vem depois do code review, e publicar da `main` hoje exigiria mesclar código não revisado. É um campo para trocar em dois painéis quando a Epic 1 entrar na `main`, e está escrito assim de propósito para não virar surpresa |
 | **Integração contínua** | Não há GitHub Actions nem suíte rodando antes do deploy. Um push na branch publicada dispara o build direto, e quem garante que os testes passam sou eu, na minha máquina. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade desde a Story 1.3 — é infraestrutura que não se paga em sete dias. O que existe no lugar: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender, então schema errado não entra no ar |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |

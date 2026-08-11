@@ -133,8 +133,12 @@ As correções do review já estão aplicadas; a mais relevante está registrada
 no README da raiz.
 
 **As duas metades estão no ar:** frontend em <https://elite-dev-rock-hub.vercel.app> (Vercel)
-e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), ambos
-publicando a branch da epic — não a `main`, porque o merge vem depois do review.
+e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), **os dois
+publicando a `main`** desde o merge da Epic 1. Da Epic 2 em diante o fluxo é: branch da epic →
+code review → merge na `main` → deploy automático. Nenhum campo de painel precisa ser tocado de
+novo — nem `Root Directory`, nem Production Branch, nem variável de ambiente (a
+`TICKETMASTER_API_KEY` já está definida na Railway desde a 1.8, só falta a `Settings` declará-la
+na Story 2.1).
 
 O que existe hoje: backend FastAPI com migração Alembic e a tabela `usuario`; cadastro, login,
 logout e `/auth/eu` com senha em Argon2id e sessão em cookie `httpOnly` de 8h; autorização por
