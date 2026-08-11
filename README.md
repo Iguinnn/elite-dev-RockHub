@@ -13,9 +13,11 @@ camada.
 
 > **Estado atual:** em construção. **O acesso está fechado pelos dois lados:** dá para criar conta em
 > `/cadastro` e entrar em `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o
-> navegador falando só com o domínio do frontend. O backend sobe com PostgreSQL migrado por Alembic e
-> a tabela `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de
-> estado vazio. Ainda não há contas semeadas (Story 1.7) nem rota protegida (Story 1.6). A seção
+> navegador falando só com o domínio do frontend. Rota protegida já tem guarda por papel, e um
+> comando semeia as quatro contas de avaliação (abaixo, em
+> [Contas semeadas](#contas-semeadas)). O backend sobe com PostgreSQL migrado por Alembic e a tabela
+> `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado
+> vazio. Ainda não há evento nenhum para descobrir ou comprar — isso começa na Epic 2. A seção
 > [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## Como executar
@@ -47,8 +49,13 @@ uv sync                   # cria a .venv/ e instala exatamente o que está no uv
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 uv run alembic upgrade head       # cria o schema (tabela usuario)
+uv run python -m seeds.semear     # cria as 4 contas de avaliação (organizador, 2 clientes, portaria)
 uv run uvicorn app.main:app --reload
 ```
+
+O seed pode rodar quantas vezes você quiser: ele não duplica conta e **não apaga nem sobrescreve
+nada** que já esteja no banco. Rode-o de dentro de `backend/` e **com o `-m`** — os dois detalhes
+estão explicados em [Contas semeadas](#contas-semeadas).
 
 Em desenvolvimento o valor de exemplo do `JWT_SECRET` funciona e você pode pular esse passo. Com
 `AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito — o motivo está no
@@ -92,64 +99,85 @@ do servidor. Convenções de CSS, tokens da identidade, o proxy e as armadilhas 
 
 ## Contas semeadas
 
-Ainda não existem — o seed com os quatro usuários de avaliação (organizador, cliente e portaria)
-entra na Story 1.7.
-
-**Para conta de cliente não é mais preciso script:** abra <http://localhost:3000/cadastro>, preencha
-nome, e-mail e senha, e você já entra logado. Toda conta criada pela interface nasce `CLIENTE`, de
-propósito — não há seletor de papel, e enviar `papel` na requisição não muda nada.
-
-Para **organizador** e **portaria**, o script abaixo continua sendo o único caminho até a Story 1.7.
-Rode a partir de `backend/`, com o Compose no ar e a migração aplicada, trocando o `PapelUsuario`
-conforme o papel desejado:
+Um comando cria as quatro contas de avaliação, com o Compose no ar e a migração aplicada:
 
 ```bash
-uv run python -c "
-from app.core.db import SessaoLocal
-from app.core.seguranca import gerar_hash
-from app.models.usuario import PapelUsuario, Usuario
-s = SessaoLocal()
-s.add(Usuario(nome='Igor Teste', email='igor@exemplo.com',
-              senha_hash=gerar_hash('rockhub'), papel=PapelUsuario.ORGANIZADOR.value))
-s.commit()
-"
+cd backend
+uv run python -m seeds.semear
 ```
+
+| Papel | Nome | E-mail | Senha |
+|---|---|---|---|
+| `ORGANIZADOR` | Helena Marques | `organizador@rockhub.dev` | `rockhub123` |
+| `CLIENTE` | Bruno Tavares | `cliente@rockhub.dev` | `rockhub123` |
+| `CLIENTE` | Marina Aoki | `cliente2@rockhub.dev` | `rockhub123` |
+| `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
+
+**São dois clientes de propósito.** O segundo existe para dar como demonstrar duas garantias que um
+cliente só deixaria no ar: que o ingresso de um não aparece na conta do outro (Epic 4) e que duas
+pessoas disputando o último ingresso de um setor produzem uma venda e uma recusa (Epic 3).
+
+O comando imprime uma linha por conta — `criada` na primeira execução, `mantida` nas seguintes — e
+**rodar de novo é seguro**: ele não duplica conta, não apaga nem sobrescreve nada. Se você já tinha
+criado contas pela interface, elas continuam exatamente onde estão.
+
+Dois detalhes que valem os dez segundos de leitura:
+
+- **Com o `-m`.** `uv run seeds/semear.py` falha com `ModuleNotFoundError: No module named 'app'` —
+  executar o arquivo direto põe `backend/seeds/` no caminho de import em vez de `backend/`
+- **A partir de `backend/`**, porque é de lá que o `.env` é lido
+
+**Conta criada por `/cadastro` nasce sempre `CLIENTE`**, de propósito: não há seletor de papel na
+tela, e enviar `papel` na requisição não muda nada. Se você quiser uma conta de cliente sua, abra
+<http://localhost:3000/cadastro> — nome, e-mail e senha, e já entra logado.
 
 ## Roteiro de avaliação
 
 O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento
-e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá para verificar:
+e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá para verificar, começando
+pelas contas semeadas (rode `uv run python -m seeds.semear` se ainda não rodou):
 
-1. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
+1. Entrar em `http://localhost:3000/login` como `organizador@rockhub.dev` / `rockhub123` → a
+   `/conta` mostra **Helena Marques** e o papel `ORGANIZADOR`. É a conta que vai publicar eventos na
+   Epic 2, e ela não poderia ter nascido pela interface: `/cadastro` só cria `CLIENTE`
+2. Sair e entrar como `cliente@rockhub.dev` → a mesma tela mostra **Bruno Tavares**, papel `CLIENTE`.
+   O segundo cliente, `cliente2@rockhub.dev`, ainda não tem o que fazer aqui: ele existe para as
+   Epics 3 e 4, onde prova que o ingresso de um não aparece na conta do outro e que dois clientes
+   disputando o último lugar de um setor produzem uma venda e uma recusa
+3. Rodar `uv run python -m seeds.semear` **de novo** → as quatro linhas dizem `mantida`, o comando
+   sai em `0` e nenhuma conta sua desaparece. É a garantia que faz esse mesmo comando poder rodar a
+   cada deploy
+4. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
    `/auth/login`, `/auth/logout` e `/auth/eu`
-2. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
-   caracteres) → **cai na raiz já logado**, sem precisar entrar de novo
-3. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
+5. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
+   caracteres) → **cai na raiz já logado**, sem precisar entrar de novo. Rodar o seed mais uma vez
+   depois disso **não mexe nessa conta**: ela continua lá e continua entrando
+6. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
    frontend — com `HttpOnly` marcado. E `document.cookie` no console não o mostra
-4. Na aba Network, a chamada foi para `/api/auth/cadastro`, nunca para `localhost:8000`
-5. Tentar cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) mostra
+7. Na aba Network, a chamada foi para `/api/auth/cadastro`, nunca para `localhost:8000`
+8. Tentar cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) mostra
    "Esse e-mail já tem conta. Entre com ele ou use outro." e responde `409` — nunca um `500`
-6. No cadastro, digitar senha e confirmação diferentes mostra "As senhas não conferem." **sem
+9. No cadastro, digitar senha e confirmação diferentes mostra "As senhas não conferem." **sem
    nenhuma requisição no Network** — a confirmação nunca sai do navegador
-7. Apagar o cookie e entrar em `/login` com a conta que você acabou de criar → cai na raiz. É a prova
-   de que hash e normalização de e-mail batem entre as duas rotas
-8. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
-   resposta é `401` com `CREDENCIAIS_INVALIDAS`. Um e-mail que não existe devolve **exatamente** a
-   mesma coisa
-9. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL
-10. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
+10. Apagar o cookie e entrar em `/login` com a conta que você acabou de criar → cai na raiz. É a
+    prova de que hash e normalização de e-mail batem entre as duas rotas
+11. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
+    resposta é `401` com `CREDENCIAIS_INVALIDAS`. Um e-mail que não existe devolve **exatamente** a
+    mesma coisa
+12. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL
+13. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
 
 E o ciclo da sessão, que fecha na Story 1.6:
 
-11. **Sem sessão**, a raiz `http://localhost:3000/` abre normalmente e o masthead mostra
+14. **Sem sessão**, a raiz `http://localhost:3000/` abre normalmente e o masthead mostra
     `Início` · `Entrar` — a raiz é pública
-12. Ainda sem sessão, abrir `http://localhost:3000/conta` → você é levado para
+15. Ainda sem sessão, abrir `http://localhost:3000/conta` → você é levado para
     `/login?voltar=%2Fconta`. Entrar ali **devolve você a `/conta`**, não à raiz
-13. Com sessão, o masthead vira `Início` · `Minha conta`, e a `/conta` mostra nome, e-mail e papel
-14. Clicar em `Sair` leva de volta para `/` **e o masthead vira `Entrar` na hora**, sem recarregar
-15. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie responde
+16. Com sessão, o masthead vira `Início` · `Minha conta`, e a `/conta` mostra nome, e-mail e papel
+17. Clicar em `Sair` leva de volta para `/` **e o masthead vira `Entrar` na hora**, sem recarregar
+18. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie responde
     `401 {"erro":{"codigo":"NAO_AUTENTICADO", ...}}`
-16. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=https://exemplo.com`, ou
+19. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=https://exemplo.com`, ou
     `?voltar=javascript:alert(1)`) e entrar → você cai em `/`. **Nunca fora do site**
 
 ## Stack e estrutura
@@ -728,6 +756,69 @@ tem parâmetro e não tem o que validar — e perde o lugar de onde a pessoa vei
 devolver**, que é o mais barato dos três e tem a mesma perda, sem nem a economia de código do
 segundo.
 
+### As contas de avaliação vêm de um script à parte, não de uma migração
+
+**Decidi** que as quatro contas nascem de `backend/seeds/semear.py`, chamado à mão por
+`uv run python -m seeds.semear`.
+
+**Por quê:** conta de avaliação é *dado*, e migração é *schema*. Um script separado pode rodar de
+novo quando alguém apagar uma conta sem querer, é lido por quem avalia sem precisar entender Alembic,
+e o passo extra no README custa uma linha — que é o preço mais barato desta lista.
+
+**O que caiu:** **uma migração Alembic de dados**, que seria zero passo a mais e faria o deploy semear
+sozinho. Ela mistura dado com schema, roda **uma vez na vida** (conta apagada não volta nunca), e um
+`alembic downgrade base` levaria as contas junto com as tabelas. Caiu também **semear no startup do
+FastAPI**, que dispensaria o comando de release na Railway: semearia a cada `--reload` durante o
+desenvolvimento e ataria o seed ao ciclo de vida da aplicação — o dia em que o seed falhasse, a API
+não subiria.
+
+### A idempotência do seed é uma consulta, não uma limpeza
+
+**Decidi** que o seed pergunta "já existe esse e-mail?" e, se existir, **não escreve nada** — nem
+nome, nem senha, nem papel. Não há `DELETE`, `TRUNCATE`, `UPDATE` nem `drop` em lugar nenhum de
+`seeds/`.
+
+**Por quê:** este é o primeiro código do projeto escrito para rodar **contra o banco de produção,
+repetidamente, sem supervisão** — na Story 1.8 ele entra na sequência de cada deploy. Um seed que
+limpasse a tabela antes de inserir funcionaria perfeitamente hoje e, no primeiro redeploy, apagaria a
+conta de quem estivesse avaliando no meio de uma compra. A restrição `UNIQUE` do e-mail, criada na
+Story 1.3, é o que sustenta isso de graça.
+
+**O que caiu:** **limpar a tabela antes de inserir**, que é o padrão de seed mais comum e garante um
+estado conhecido a cada execução — garantia que não vale nada se o preço for destruir dado real. Caiu
+junto uma opção `--forcar` que recriaria tudo: é o `TRUNCATE` com outro nome, e quem quiser banco
+limpo já tem `docker compose down -v`. E caiu **"atualizar" a conta que já existe** para deixá-la
+igual ao script — parece zelo e, em produção, significa trocar a senha de alguém sem avisar. Quando
+o e-mail existe com papel diferente do esperado, o script **avisa na saída e continua**, porque
+silêncio ali viraria "o organizador não funciona" sem pista nenhuma.
+
+### As quatro contas têm nome de gente, e uma senha só, publicada aqui
+
+**Decidi** que as contas semeadas são pessoas — Helena Marques, Bruno Tavares, Marina Aoki, Jonas
+Ribeiro —, com e-mail que diz o papel (`organizador@rockhub.dev`) e **a mesma senha** nas quatro,
+impressa na tabela de [Contas semeadas](#contas-semeadas).
+
+**Por quê:** o nome dessas contas aparece na tela, e a identidade visual manda nome próprio em
+serifada (é a regra UX-DR2). "Organizador RockHub" em Georgia, no lugar onde deveria estar o nome de
+uma pessoa, é exatamente a cara de dado de mentira que o desafio penaliza — o e-mail já diz o papel,
+então o nome não precisa dizer. A senha única é sobre a outra ponta: a tabela do README precisa ser
+copiável às onze da noite sem erro, e quatro senhas diferentes é quatro vezes mais chance de errar
+uma. Ela passa no mínimo de 6 caracteres que a própria interface exige, então não abre exceção para o
+seed.
+
+**O que caiu:** **nomes genéricos pelo papel**, que seriam mais óbvios de ler numa lista e mais
+honestos sobre serem dado de teste — perderam pela tipografia. **Uma senha por conta**, mais realista
+e sem ganho nenhum aqui. E **deixar o seed configurável por variável de ambiente** (`SEED_SENHA`,
+`SEED_EMAIL_ORGANIZADOR`), que parece a escolha flexível e é justamente o jeito de as credenciais
+divergirem do README sem ninguém notar — o pior desfecho possível para um dado que existe para ser
+copiado de um documento.
+
+Isso **não** enfraquece a regra de segredo do projeto, e a distinção é a decisão: senha de conta
+semeada é dado de avaliação publicado de propósito; `JWT_SECRET` e `TICKETMASTER_API_KEY` continuam
+só no ambiente, fora do repositório. Pelo mesmo raciocínio o comando **não imprime a senha** no
+terminal: ele roda no deploy da Railway, e o que ele imprime vai para o log — credencial em log é
+hábito que se leva junto para o dia em que a credencial importa.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -742,7 +833,8 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
 | **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
 | **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
-| **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Até a Story 1.7, organizador nasce pelo script em [Contas semeadas](#contas-semeadas). **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
+| **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Organizador nasce pelo seed de [Contas semeadas](#contas-semeadas), que é como o próprio enunciado o pede. **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
+| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**: `Evento` e `Setor` só passam a existir na Story 2.3, e não há como semear tabela que não existe. A dívida está registrada aqui de propósito, e o seed da Epic 2 acrescenta o evento ao mesmo `backend/seeds/`. A alternativa — o avaliador publicar pela interface — mostraria o fluxo do organizador funcionando, mas travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. Pelo mesmo motivo não há `Meus eventos` para organizador nem `Turnos` para portaria — navegação diferente por papel nasce nas Epics 2 e 5, com as telas |

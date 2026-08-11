@@ -13,6 +13,14 @@ depois de entrar.
 O histórico de decisões do projeto inteiro está no [README da raiz](../README.md). Aqui fica o que
 é específico desta camada.
 
+> **Com que conta entrar em `/login`:** as quatro credenciais de avaliação — organizador, dois
+> clientes e portaria — estão no [README da raiz](../README.md#contas-semeadas). Elas nascem de um
+> comando do backend (`uv run python -m seeds.semear`), e **a Story 1.7, que as criou, não alterou
+> nenhum arquivo desta pasta**: entrar com uma conta semeada usa exatamente a mesma tela e o mesmo
+> caminho de qualquer outra, prontos desde a Story 1.4. Registro aqui porque "nada mudou nesta
+> camada, e este é o motivo" também é informação — e porque quem abre o frontend primeiro precisa
+> saber onde estão as senhas.
+
 ## Como executar
 
 ### Pré-requisitos

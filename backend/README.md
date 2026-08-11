@@ -28,6 +28,7 @@ cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
 uv run alembic upgrade head               # cria o schema (tabela usuario)
+uv run python -m seeds.semear             # as 4 contas de avaliação — rodar de novo é seguro
 uv run uvicorn app.main:app --reload      # sobe em http://127.0.0.1:8000
 uv run pytest                             # roda os testes — exige o Compose no ar (ver Testes)
 ```
@@ -91,8 +92,8 @@ painel de deploy é um erro chato de achar.
 ## Banco de dados
 
 O Postgres sobe pelo `docker-compose.yml` da raiz — não pela pasta `backend/`, porque o banco é
-infraestrutura do projeto inteiro (a Story 1.7 semeia por ele, e é a mesma instância que o
-frontend depende em desenvolvimento).
+infraestrutura do projeto inteiro (é nele que o seed de [Dados semeados](#dados-semeados) grava, e é
+a mesma instância de que o frontend depende em desenvolvimento).
 
 ```bash
 # da raiz do repositório
@@ -114,6 +115,72 @@ O `docker compose up` também cria o `rockhub_teste` na primeira subida (script 
 versionada, verificada em código pela T9 desta story (busca literal por `create_all` no
 repositório). O `--autogenerate` é ponto de partida, não resultado: sempre revi a migração gerada
 à mão antes de aplicar, confirmando `CheckConstraint`, `UniqueConstraint` e o `downgrade()`.
+
+## Dados semeados
+
+As quatro contas de avaliação vêm de um comando só, rodado com o banco migrado:
+
+```bash
+cd backend
+uv run python -m seeds.semear
+```
+
+| Papel | Nome | E-mail | Senha |
+|---|---|---|---|
+| `ORGANIZADOR` | Helena Marques | `organizador@rockhub.dev` | `rockhub123` |
+| `CLIENTE` | Bruno Tavares | `cliente@rockhub.dev` | `rockhub123` |
+| `CLIENTE` | Marina Aoki | `cliente2@rockhub.dev` | `rockhub123` |
+| `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
+
+O relatório sai uma linha por conta, e o comando termina em `0`:
+
+```
+ORGANIZADOR  organizador@rockhub.dev   criada
+CLIENTE      cliente@rockhub.dev       criada
+CLIENTE      cliente2@rockhub.dev      criada
+PORTARIA     portaria@rockhub.dev      criada
+As senhas estão no README da raiz, em "Contas semeadas".
+```
+
+Na segunda execução as quatro dizem `mantida`. Este é **o único caminho do sistema que cria conta com
+papel diferente de `CLIENTE`** — `cadastrar()` fixa o papel em literal, e nenhuma rota oferece
+alternativa.
+
+### Rodar de novo é seguro, e é o requisito central
+
+A idempotência vem de **"já existe esse e-mail? então não insere"**. Não há `DELETE`, `TRUNCATE`,
+`UPDATE` nem `drop` em lugar nenhum de `seeds/`, e não deve passar a haver: a Story 1.8 chama este
+mesmo comando a cada deploy na Railway, e um seed que limpasse a tabela antes de inserir funcionaria
+hoje e destruiria, no primeiro redeploy, o trabalho de quem estivesse avaliando. Conta criada por
+`/cadastro` continua exatamente onde está.
+
+Pelo mesmo motivo o script **não "conserta" conta nenhuma**. Se o e-mail já existir com nome ou senha
+diferentes, os valores gravados ficam como estão — em produção, "consertar" significaria trocar a
+senha de alguém no meio da avaliação. E se o e-mail existir com **outro papel** (alguém criou
+`organizador@rockhub.dev` por `/cadastro`, e a conta nasceu `CLIENTE`), o script avisa e segue:
+
+```
+ORGANIZADOR  organizador@rockhub.dev   já existe com papel CLIENTE — não foi alterada
+```
+
+**Mesmo aí ele sai em `0`.** Na Story 1.8 o comando roda entre o `alembic upgrade head` e o
+`uvicorn`: um `exit(1)` por causa de um aviso derrubaria o deploy inteiro, e a única saída seria
+mexer no banco de produção às pressas. Falha de verdade — banco fora do ar, migração não aplicada —
+continua estourando exceção e saindo diferente de zero, que aí é o comportamento certo.
+
+### Duas armadilhas do comando
+
+⚠️ **Com o `-m`, sempre.** `uv run seeds/semear.py` põe `backend/seeds/` no `sys.path` em vez de
+`backend/`, e `import app.core.db` estoura `ModuleNotFoundError: No module named 'app'`. A correção é
+o `-m` — **nunca** um `sys.path.append` no topo do script.
+
+⚠️ **Rode a partir de `backend/`.** A `Settings` lê o `.env` do diretório corrente; da raiz do
+repositório o script pegaria os valores padrão em vez dos seus. Hoje dá no mesmo, na Railway não daria.
+
+**A senha não vai para o stdout**, de propósito. Ela está publicada num README, então não é segredo —
+mas o mesmo comando roda no deploy, e o que ele imprime vai para o log de deploy. Credencial em log é
+hábito que se leva junto para o dia em que a credencial importa, e não há ganho: quem rodou o comando
+tem o README aberto.
 
 ## Estrutura
 
@@ -140,6 +207,8 @@ backend/
   migrations/         # Alembic
     env.py
     versions/
+  seeds/              # dados exigidos pelo desafio — não sobe com o uvicorn
+    semear.py          # as quatro contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
   alembic.ini
@@ -147,6 +216,10 @@ backend/
   uv.lock
   .env.example
 ```
+
+`seeds/` é irmã de `app/`, não subpasta dela: seed não é código de aplicação e não tem por que subir
+com o `uvicorn`. É o lugar que a árvore da arquitetura reservou, e é onde o evento e os setores de
+exemplo da Epic 2 vão morar.
 
 `services/` e `schemas/` nasceram vazias na Story 1.1, só com `__init__.py`, e ganharam o primeiro
 morador na 1.4 com o login. Foi proposital: elas materializaram o paradigma desde o primeiro
@@ -415,9 +488,26 @@ cd backend
 uv run pytest
 ```
 
-São **73 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
+São **85 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
 de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o hash e o
-token de sessão, as quatro rotas de autenticação e a dependência de papel.
+token de sessão, as quatro rotas de autenticação, a dependência de papel e o seed de avaliação.
+
+### O que `test_seed.py` prova
+
+Quase tudo ali é sobre o que o seed **não** faz, porque é o primeiro código deste repositório escrito
+para rodar contra o banco de produção, repetidamente, sem ninguém olhando: que a segunda execução não
+duplica nem levanta exceção; que uma conta que já existe com o mesmo e-mail sai com **nome e
+`senha_hash` idênticos** aos de antes; que uma conta criada por `/cadastro` continua lá depois do
+seed; que um e-mail semeado que existe com outro papel devolve `papel-divergente` sem alterar o
+papel; que a senha publicada no README realmente autentica pelas quatro contas (é o que prova que o
+hash é Argon2id de verdade, e não uma string colada); e que todo e-mail de `CONTAS` já sai
+normalizado — comparado contra o que o `EmailNormalizado` do login produziria.
+
+⚠️ **Nenhum teste chama `main()`.** `main()` abre `SessaoLocal`, que aponta para `DATABASE_URL` — o
+banco de **desenvolvimento**. Um teste que o chamasse gravaria quatro contas fora do banco de teste,
+passaria verde, e ninguém descobriria até estranhar contas repetidas em `rockhub`. É por isso que
+`semear()` recebe a `Session` por parâmetro e só o `main()` escolhe o banco: a mesma regra que a
+Story 1.3 aplicou à URL do Alembic na fixture.
 
 ### A rota `/_teste` não existe no código de produção
 
@@ -640,5 +730,44 @@ Duas armadilhas que custaram tempo e vão se repetir:
 
 As quatro decisões de projeto desta story — autorização como dependência, papel lido do banco,
 guarda na página em vez de `middleware`, e redirecionar com volta — estão no
+[README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
+descartei.
+
+### Story 1.7 — dados semeados para avaliação
+
+A primeira story do projeto que **não toca `app/`**: nenhuma linha da aplicação mudou, nenhuma
+coluna, nenhuma migração, nenhuma dependência nova — a terceira seguida sem `uv sync`. Nasceu a pasta
+`seeds/`, com `semear.py`, e o `test_seed.py` ao lado dos outros. Ela existe para o avaliador, não
+para o usuário: até aqui, organizador e portaria vinham de um `uv run python -c` de dez linhas colado
+no README da raiz, que é exatamente o tipo de instrução que alguém copia errado às onze da noite.
+
+O risco desta story não estava na complexidade — o script tem trinta linhas — e sim em **o que ele
+faz com dado que já existe**, porque é o primeiro código daqui escrito para rodar contra o banco de
+produção a cada deploy. Por isso a maior parte do que eu escrevi e testei é sobre o que ele não faz,
+e está em [Dados semeados](#dados-semeados).
+
+Três detalhes de implementação que decidem se isto funciona:
+
+- **`semear()` recebe a `Session`; só o `main()` abre a de produção.** É o que permite ao teste rodar
+  o seed dentro da transação revertida do `conftest.py`. Se a função abrisse `SessaoLocal` por conta
+  própria, todo teste do arquivo gravaria no banco de desenvolvimento
+- **`commit` por conta, não um no fim.** Uma falha na terceira conta não desfaz as duas primeiras, e
+  o `rollback()` do `except IntegrityError` fica com escopo de uma conta só. Um `commit` único no fim
+  exigiria `SAVEPOINT` para conseguir o mesmo isolamento
+- **O `SELECT` antes do `INSERT` é exatamente o que `cadastrar()` recusou na 1.5 — e aqui está
+  certo.** Lá era endpoint concorrente, e a janela entre consulta e gravação virava `500` no caso que
+  o `409` existia para cobrir. Aqui é script de uma execução, o `except IntegrityError` cobre a
+  corrida improvável, e a consulta é o que permite distinguir "criada" de "mantida". Deixei esse
+  porquê escrito no código: sem ele, parece contradição com a story anterior
+
+A prova que mais me interessou não foi de teste automatizado. Rodei o seed contra o meu banco de
+desenvolvimento, que já tinha quatro contas criadas por `/cadastro` durante as Stories 1.5 e 1.6:
+as quatro continuaram lá, com o `criado_em` original — ou seja, não foram recriadas. Depois criei
+mais uma no meio do caminho, rodei o seed de novo, e ela voltou do login com o mesmo `id`. É o
+critério que o `pytest` verifica dentro de uma transação revertida, verificado uma vez onde ele
+realmente importa.
+
+As três decisões desta story — script idempotente em vez de migração de dados, idempotência por
+consulta em vez de limpeza da tabela, e senha única publicada no README — estão no
 [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
 descartei.
