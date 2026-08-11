@@ -92,6 +92,24 @@ def test_chave_estrangeira_de_setor_aponta_para_evento_com_cascade(
     assert chave["options"]["ondelete"] == "CASCADE"
 
 
+def test_as_duas_chaves_estrangeiras_lidas_tem_indice(engine_teste: Engine) -> None:
+    """O Postgres cria índice para chave **primária** e para `UNIQUE`, nunca
+    para chave estrangeira — quem quiser tem que declarar.
+
+    `setor.evento_id` já tinha o dele desde a Story 2.3. O de
+    `evento.organizador_id` entrou no code review da Epic 2: é a coluna do
+    `where` das duas leituras de "Meus eventos", e estava sem, sozinha, contra
+    o argumento que a irmã doze linhas abaixo já usava.
+    """
+    inspetor = inspect(engine_teste)
+
+    indices_de_evento = {i["name"] for i in inspetor.get_indexes("evento")}
+    indices_de_setor = {i["name"] for i in inspetor.get_indexes("setor")}
+
+    assert "ix_evento_organizador_id" in indices_de_evento
+    assert "ix_setor_evento_id" in indices_de_setor
+
+
 def test_upgrade_cria_a_tabela_evento_portaria(engine_teste: Engine) -> None:
     """A escala da portaria (AD-7), com chave primária composta.
 

@@ -30,9 +30,16 @@ def _instalar_transporte(
     `ticketmaster.buscar_eventos`, que chama `_criar_cliente` do próprio
     módulo. Apontar para `app.api.organizador` não substituiria nada e o
     teste tentaria ir à rede de verdade.
+
+    Um cliente novo por chamada, e não um reaproveitado, pelo motivo escrito em
+    `tests/test_ticketmaster.py`: o código de produção fecha o cliente que
+    recebe, e a segunda chamada num mesmo teste estouraria.
     """
-    cliente_http = httpx.Client(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(ticketmaster, "_criar_cliente", lambda: cliente_http)
+    monkeypatch.setattr(
+        ticketmaster,
+        "_criar_cliente",
+        lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+    )
 
 
 def _entrar(cliente: TestClient, usuario: Usuario) -> None:
@@ -101,7 +108,11 @@ def test_rota_aparece_no_openapi_com_schema_de_saida(cliente: TestClient) -> Non
     especificacao = cliente.get("/openapi.json").json()
     operacao = especificacao["paths"]["/organizador/catalogo"]["get"]
     schema_200 = operacao["responses"]["200"]["content"]["application/json"]["schema"]
-    assert "items" in schema_200
+    # `assert "items" in schema_200` passava para lista de qualquer coisa,
+    # inclusive `list[str]` — os testes irmãos das outras rotas já conferiam o
+    # `$ref`, e este ficou para trás (code review da Epic 2).
+    assert schema_200["type"] == "array"
+    assert schema_200["items"]["$ref"].endswith("/ItemDoCatalogo")
 
 
 # --------------------------------------------------------------------------- #

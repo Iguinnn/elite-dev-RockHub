@@ -63,6 +63,15 @@ em 2026-08-11: era duplicata literal das seções temáticas do mesmo arquivo. O
 para a seção temática do assunto (`## Publicar evento`, `## O sistema visual`), não para uma linha
 do tempo paralela. Não recrie a seção.
 
+**A régua da camada, definida em 2026-08-11: no máximo cinco parágrafos por story ou review.**
+Sem tabela nova, sem subseção nova, sem "a lição que fica". Escreva o que mudou e por quê, na
+seção temática que já existe, e pare. Se não couber em cinco parágrafos, provavelmente é decisão
+de raiz — aí aplique a régua da raiz — ou é detalhe que já está no comentário do código.
+
+**Por quê:** o code review da Epic 2 gastou mais tempo escrevendo README do que revisando código.
+A raiz tinha régua e as camadas não, e foi exatamente onde o texto inchou. Documentação não pode
+bloquear o commit: aplique o código, rode a suíte, mostre o resultado — **depois** escreva.
+
 **Mas README não é só explicação.** A parte operacional vem primeiro, porque é o que alguém precisa
 em dez segundos. Estrutura do `README.md` da raiz, nesta ordem:
 

@@ -167,6 +167,21 @@ o conjunto inteiro de parâmetros. Mesma verificação que a Story 2.2 fez ao ac
 
 ## 6 · Documentação
 
+> ⚠️ **Revisado em 2026-08-11, no code review da Epic 2.** O que esta seção pedia para o `README.md`
+> da raiz **não vai acontecer**, e não é esquecimento. No mesmo dia em que esta techspec foi escrita,
+> o `CLAUDE.md` ganhou uma régua para a seção *Decisões*: entra só o que, se eu tivesse escolhido a
+> alternativa, faria quem avalia ver **um sistema diferente**. Escolher dois ids da taxonomia da
+> Ticketmaster não passa nessa régua — é do mesmo tamanho de "escolha de biblioteca menor", que a
+> régua barra por escrito. O motivo da régua existir é que os três READMEs chegaram a 5.093 linhas e
+> as 20 decisões que importam ficaram enterradas.
+>
+> O filtro **está documentado**, ao lado do código que ele afeta: `backend/README.md`, seção
+> *Catálogo da Ticketmaster*, com os dois ids, os dois caminhos do híbrido e a contraprova do
+> `rosalia`; e `frontend/README.md`, com a linha de origem sem o `id_externo`.
+>
+> Os dois parágrafos abaixo ficam como registro do que foi planejado, não como pendência. Os dois
+> itens correspondentes da seção 8 estão marcados como supridos.
+
 **`README.md` da raiz** — uma decisão nova em *Decisões: por que isso e não aquilo*, com as três
 partes de sempre. A matéria-prima é a seção 3 desta techspec: o híbrido, os números medidos, e as
 quatro alternativas descartadas. **É esta entrada que o desafio avalia** — a techspec não a
@@ -211,7 +226,9 @@ Três lugares, para daqui a três dias ainda se saber de onde veio este commit:
 - [ ] `uv run pytest` inteiro verde, número final registrado
 - [ ] Conferido **na tela** (`/organizador/publicar`, como organizador): a vitrine abre com shows de
       rock e sem feira de negócios; buscar `rosalia` acha; buscar `tiago iorc` acha
-- [ ] README da raiz: a decisão com as alternativas descartadas + a limitação da busca vazia
+- [x] ~~README da raiz: a decisão com as alternativas descartadas + a limitação da busca vazia~~ —
+      **suprido pela régua do `CLAUDE.md`** (2026-08-11, code review da Epic 2). Ver o aviso na
+      seção 6: a decisão vive em `backend/README.md`, ao lado do código
 - [ ] `backend/README.md`: o híbrido documentado na seção do catálogo
 - [ ] Os três rastros da seção 7
 - [ ] Igor avisado de que está pronto para commit — **nenhum comando git é executado por agente**

@@ -13,7 +13,10 @@ export type PortariaDisponivel = {
 
 export type ResultadoDasPortarias =
   | { estado: "ok"; itens: PortariaDisponivel[] }
-  | { estado: "indisponivel" };
+  | { estado: "indisponivel" }
+  // Mesma separação do `lib/catalogo.ts`, pelo mesmo motivo: sessão expirada
+  // não é indisponibilidade, e "tente de novo em instantes" nunca se cumpre.
+  | { estado: "sem-sessao" };
 
 /**
  * As contas de portaria disponíveis para escalar, do lado do servidor.
@@ -36,6 +39,9 @@ export async function listarPortarias(): Promise<ResultadoDasPortarias> {
       cache: "no-store",
     });
 
+    if (resposta.status === 401 || resposta.status === 403) {
+      return { estado: "sem-sessao" };
+    }
     if (!resposta.ok) {
       return { estado: "indisponivel" };
     }

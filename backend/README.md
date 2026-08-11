@@ -555,6 +555,11 @@ a tela da Story 2.2 já pronta, e o planejamento não tinha como prever isso. A 
 raciocínio completo e as alternativas medidas contra a API, está em
 [docs/techspec-filtro-do-catalogo.md](../docs/techspec-filtro-do-catalogo.md).
 
+> **Esta seção é o registro definitivo da decisão** — ela não sobe para o README da raiz. A techspec
+> pedia uma entrada lá, mas a régua que instituí no `CLAUDE.md` no mesmo dia barra: escolher dois ids
+> da taxonomia da Ticketmaster não faz quem avalia ver um sistema diferente. Alinhado no code review
+> da Epic 2, com o aviso escrito na seção 6 da própria techspec.
+
 | Constante | Valor | Entra quando |
 |---|---|---|
 | `_SEGMENTO_MUSICA` | `KZFzniwnSyZfZ7v7nJ` (segmento *Music*) | **Sempre**, nos dois caminhos |
@@ -584,14 +589,28 @@ busca por termo passaria a esconder resultado legítimo em silêncio.
 | Por segundo | 5 req/s | Nada — uma busca por evento publicado não chega perto |
 | Por dia | 5 000 chamadas | Nada hoje. Toda abertura da tela gasta uma chamada (ver a revisão abaixo); 5 000/dia é folga larga para o volume de uma avaliação |
 
-**Toda falha vira o mesmo erro.** Timeout, conexão recusada, `401`, `429`, `500` ou corpo que não é
-JSON válido — os seis viram `ErroDeDominio("CATALOGO_INDISPONIVEL", ..., status_http=503)`. Quem
-chama não precisa saber qual dos seis aconteceu; o log sabe (`401` vira `logger.error`, porque é
+**Toda falha vira o mesmo erro.** Timeout, conexão recusada, `401`, `429`, `500`, corpo que não é
+JSON válido e **JSON válido com forma inesperada** — os sete viram
+`ErroDeDominio("CATALOGO_INDISPONIVEL", ..., status_http=503)`. Quem
+chama não precisa saber qual dos sete aconteceu; o log sabe (`401` vira `logger.error`, porque é
 chave errada ou revogada — erro meu, não instabilidade da Ticketmaster; os demais viram
 `logger.warning`). **A chave nunca aparece em log nenhum**: as exceções do `httpx` carregam a URL
 completa da requisição, e a URL carrega `apikey=` — um `logger.exception()` por reflexo vazaria a
 chave para o log da Railway, furando o AD-2 pelo lado de dentro do backend. Um teste prova que o
 valor da chave não aparece nem no `caplog` nem na mensagem do `ErroDeDominio`.
+
+⚠️ **A sétima entrou no code review da Epic 2, e é a que mostra o buraco que a promessa tinha.** O
+`try` cobria só `cliente.get`, `raise_for_status` e `.json()` — a **conversão** da resposta ficava de
+fora. Resultado: uma resposta perfeitamente bem formada como JSON, mas com forma inesperada, não era
+nem `HTTPError` nem `ValueError`, e subia como `AttributeError`/`TypeError`/`ValidationError` até o
+handler genérico. `500`, no módulo cujo propósito declarado é nunca deixar a Ticketmaster derrubar
+nada. Quatro casos reais, todos com teste agora: corpo que é lista em vez de objeto (um proxy no
+meio do caminho), `_embedded.events` que não é lista, `width` das imagens como texto (o `max()`
+comparava `str` com `int`), e `name` numérico (o Pydantic v2 não coage `int` para `str`).
+
+A lição que fica: **`try/except` que cobre a chamada mas não a interpretação da resposta protege
+metade do caminho** — e a metade que ele deixa de fora é justamente a que ninguém testa, porque
+exige um fornecedor devolvendo algo estranho em vez de simplesmente falhar.
 
 **Política de chave ausente, por ambiente** — o mesmo padrão do `JWT_SECRET`:
 
@@ -792,6 +811,24 @@ diferentes dependendo de o cliente ter mandado `[]` ou não ter mandado nada.
 O teste que segura isso afirma `resposta.json()["erro"]["codigo"] == "EVENTO_SEM_SETOR"`, não o
 status: com `min_length` o status continuaria `422` e o teste passaria sem querer.
 
+### Todo número tem teto, e o `ge` sozinho não bastava
+
+Descoberto no code review da Epic 2. `capacidade` tinha `Field(ge=1)` sem `le`, contra uma coluna
+`Integer` — que no Postgres é **int4**. Um corpo com `"capacidade": 3000000000` passava pelo schema,
+passava pelas cinco recusas do service e só estourava no `commit`, como `DataError: integer out of
+range`. Isso **não** é `IntegrityError`, ninguém previa, e caía no handler genérico: `500
+ERRO_INTERNO` para um erro de digitação. É a mesma "pior resposta possível" que o `SETOR_DUPLICADO`
+existe para evitar, por um caminho que ninguém tinha fechado.
+
+| Campo | Teto | De onde vem |
+|---|---|---|
+| `capacidade` | `2 147 483 647` | O maior `int4`, que é o tipo da coluna |
+| `preco_centavos` | `100 000 000 000` (R$ 1 bi) | **Não** é o limite da coluna, que é `BigInteger`. É o do JavaScript: acima de `Number.MAX_SAFE_INTEGER` o `Math.round` do formulário arredonda errado e envia um valor que não é o digitado — dinheiro corrompido em silêncio, exatamente o que o AD-11 existe para impedir. O frontend também recusa, com `Number.isSafeInteger` |
+
+`imagem_url` ganhou validação de esquema na mesma leva: só `http://` e `https://`. O campo chega
+pelo **corpo**, não da Ticketmaster — o service não confere nada contra o catálogo, então "veio do
+fornecedor" nunca foi garantia —, e a Epic 3 vai renderizá-lo em `<img src>` na programação pública.
+
 ### Nome de setor repetido seria um `500` se ninguém tratasse
 
 A `uq_setor_evento_id_nome` nasceu na Story 2.3 e é o banco quem a aplica. Dois "Pista" no mesmo
@@ -892,23 +929,41 @@ consultas a `Usuario`. Ela consulta usuários, mas não é pergunta sobre autent
 pôr na porta deste evento", e existe para a publicação. Em `autenticacao.py` ficaria cercada de login
 e hash de senha, sem relação com o motivo de existir.
 
-### Dois códigos de erro novos, e a ordem das quatro recusas
+### Três códigos de erro novos, e a ordem das cinco recusas
 
 | Código | Status | Quando |
 |---|---|---|
 | `EVENTO_SEM_PORTARIA` | `422` | `portaria_ids` vazio **ou ausente** — AD-7 |
 | `PORTARIA_INVALIDA` | `422` | Algum id não existe **ou** não tem papel `PORTARIA` |
+| `EVENTO_NO_PASSADO` | `422` | `data_hora` já passou — entrou no code review da Epic 2 |
 
 ```
 1. setores vazio          → EVENTO_SEM_SETOR
 2. nome de setor repetido → SETOR_DUPLICADO
 3. portaria_ids vazio     → EVENTO_SEM_PORTARIA
 4. id que não resolve     → PORTARIA_INVALIDA
+5. data_hora no passado   → EVENTO_NO_PASSADO
    ── só então: monta o Evento e grava ──
 ```
 
-As quatro acontecem **antes** de qualquer `add`. É isso, e não uma transação esperta, que garante o
+As cinco acontecem **antes** de qualquer `add`. É isso, e não uma transação esperta, que garante o
 "nenhum evento órfão" desde a 2.4.
+
+**Por que a data é a quinta, e não a primeira.** Ela é do evento, não dos setores, e a leitura
+natural pediria que viesse antes de tudo. Pus por último pelo mesmo motivo que pôs setor antes de
+portaria: as quatro anteriores já têm testes que provam o código que devolvem, e mover a nova para
+cima trocaria a resposta de casos já cobertos sem ganho nenhum.
+
+**O que ela me custou, e por que aceitei.** Sem evento no passado publicável, a seção *Já
+aconteceram* de `Meus eventos` não tem como ser vista na avaliação — está em
+[*O que não está pronto*](../README.md#o-que-não-está-pronto). Escolhi assim porque errar a data é
+**permanente**: não existe tela de editar nem de apagar evento, e na Epic 3 esse show entraria na
+programação vendendo ingresso para uma noite que já passou.
+
+⚠️ Foi ela que obrigou o `_corpo` de `tests/test_organizador_eventos.py` a parar de usar data fixa.
+O padrão era `"2026-08-15T00:00:00Z"`, escrito quatro dias antes dessa data: com esta recusa
+valendo, a suíte inteira passaria a falhar na quinta-feira sem ninguém ter tocado em nada. Hoje é
+`_daqui_a(30)`.
 
 **Setor antes de portaria não é estética.** As duas recusas novas entraram numa rota que a 2.4 já
 tinha entregado, e os dezesseis testes de recusa daquela story mandam corpo sem `portaria_ids`,
@@ -990,13 +1045,47 @@ e não quebra a listagem. Tem teste.
 ```python
 select(Evento)
     .where(Evento.organizador_id == organizador.id)
-    .order_by(Evento.data_hora)
+    .order_by(Evento.data_hora, Evento.id)
     .options(selectinload(Evento.setores))
 ```
 
 O `selectinload` não é otimização prematura: sem ele, ler `evento.setores` no laço da soma emite uma
 consulta **por evento**, e o custo cresce com o sucesso do organizador. O sintoma só aparece com
 volume — ou seja, nunca, numa avaliação —, e é exatamente por isso que a linha entra agora.
+
+### Ordem sem `ORDER BY` é ordem que o Postgres não prometeu
+
+Três correções do code review da Epic 2, e as três têm a mesma raiz: eu estava lendo a ordem física
+do heap e chamando de contrato.
+
+| Onde | Era | É |
+|---|---|---|
+| `listar_do_organizador` | `.order_by(Evento.data_hora)` | `.order_by(Evento.data_hora, Evento.id)` |
+| `Evento.setores` | sem `order_by` | `order_by="Setor.nome"` |
+| `Evento.portarias` | sem `order_by` | `order_by=Usuario.nome` |
+
+Sem critério **total**, dois eventos no mesmo horário — duas casas na mesma noite é rotina — trocam
+de lugar entre requisições, na tela que o organizador recarrega o dia inteiro.
+
+Os setores eram o caso mais traiçoeiro, porque funcionavam. Sem `ORDER BY`, o Postgres devolve na
+ordem de varredura do heap, que coincide com a de inserção **até a primeira escrita na linha**. O
+`UPDATE setor SET vendidos = ...` do AD-3, que a Epic 3 vai fazer a cada venda, reescreve a tupla no
+fim do heap: "Pista, Camarote" viraria "Camarote, Pista" depois da primeira venda de Pista, sem nada
+ter mudado. Havia um teste afirmando `["Pista", "Camarote"]` — ele passava por acidente e teria
+continuado verde.
+
+**Por nome, e não por ordem de digitação**, porque não existe coluna de ordem e inventar uma seria
+uma migração para resolver uma tela. Alfabético é estável, previsível, e não finge registrar uma
+intenção que ninguém gravou.
+
+### `evento.organizador_id` ganhou índice
+
+O Postgres cria índice para chave **primária** e para `UNIQUE`, nunca para chave estrangeira.
+`setor.evento_id` tinha o dele desde a Story 2.3, com o motivo escrito ao lado; `organizador_id`
+não, mesmo sendo a coluna do `where` das duas leituras desta seção. Corrigido no code review da
+Epic 2, **dentro da migração `b91316d771ae`** e não numa revisão nova — naquela altura ela só tinha
+rodado em banco local e de teste, e a `main` ainda não conhecia a tabela `evento`. Depois do merge
+isso não se faz mais: migração aplicada não se reescreve.
 
 ### O escopo é a sessão, e não há por onde outro id entrar
 

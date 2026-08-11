@@ -83,8 +83,12 @@ class Evento(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     # Sem `ondelete`: apagar um organizador com eventos publicados deve doer.
+    #
+    # `index=True` pelo mesmo motivo do `setor.evento_id` mais abaixo — o
+    # Postgres não cria índice para chave estrangeira, e esta é a coluna do
+    # `where` das duas leituras de "Meus eventos" (Story 2.6).
     organizador_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("usuario.id"), nullable=False
+        Uuid, ForeignKey("usuario.id"), nullable=False, index=True
     )
     nome: Mapped[str] = mapped_column(String(200), nullable=False)
     # TIMESTAMPTZ em UTC, como todo tempo do projeto (AD-11).
@@ -118,6 +122,16 @@ class Evento(Base):
         # DELETE, estoura no NOT NULL e nunca chega no CASCADE que a migração
         # declarou. As duas metades precisam concordar.
         passive_deletes=True,
+        # ⚠️ Sem `order_by`, o Postgres devolve na ordem de varredura do heap —
+        # que hoje coincide com a ordem de inserção e **deixa de coincidir** no
+        # primeiro `UPDATE setor SET vendidos = ...` do AD-3: a linha atualizada
+        # é reescrita no fim do heap, e o setor troca de lugar na tela do
+        # organizador depois da primeira venda, sem nada ter mudado.
+        #
+        # Por nome, e não por ordem de digitação: não existe coluna de ordem, e
+        # inventar uma para isto seria migração a mais. Alfabético é estável,
+        # previsível e não mente sobre uma intenção que não foi registrada.
+        order_by="Setor.nome",
     )
 
     # Sem `passive_deletes` aqui, ao contrário de `setores`, e a diferença é
@@ -131,7 +145,14 @@ class Evento(Base):
     # consumidor — com o agravante de que `usuario.py` teria que importar este
     # módulo, que já importa `usuario.py`: ciclo de import por uma linha que
     # ninguém usa.
-    portarias: Mapped[list[Usuario]] = relationship(secondary=evento_portaria)
+    #
+    # `order_by` pelo mesmo motivo dos setores, e pelo nome porque é assim que
+    # `listar_portarias` já entrega a lista de onde a escala foi escolhida — a
+    # confirmação da publicação mostra os escalados na mesma ordem em que eles
+    # apareciam na tela.
+    portarias: Mapped[list[Usuario]] = relationship(
+        secondary=evento_portaria, order_by=Usuario.nome
+    )
 
 
 class Setor(Base):

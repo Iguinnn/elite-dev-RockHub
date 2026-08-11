@@ -15,7 +15,13 @@ export type ItemDoCatalogo = {
 
 export type ResultadoDaBusca =
   | { estado: "ok"; itens: ItemDoCatalogo[] }
-  | { estado: "indisponivel" };
+  | { estado: "indisponivel" }
+  // A sessão morreu enquanto a tela estava aberta. Culpar a Ticketmaster por
+  // isso manda a pessoa esperar por algo que nunca vai melhorar sozinho.
+  | { estado: "sem-sessao" }
+  // O termo passou do `max_length=120` da rota. Erro do formulário, não do
+  // fornecedor — e a Discovery nem chegou a ser chamada.
+  | { estado: "busca-invalida" };
 
 /**
  * Busca no catálogo do organizador, do lado do servidor.
@@ -40,6 +46,17 @@ export async function buscarNoCatalogo(termo: string): Promise<ResultadoDaBusca>
       },
     );
 
+    // ⚠️ `401`, `403` e `422` **não** são "a Ticketmaster não respondeu".
+    // Achado no code review da Epic 2: qualquer `!resposta.ok` virava
+    // "indisponível", e a tela acusava a Ticketmaster por sessão expirada ou
+    // por um termo de busca acima do `max_length=120` da rota — sem que a
+    // Discovery tivesse sido chamada. O `lib/eventos.ts` já separava assim.
+    if (resposta.status === 401 || resposta.status === 403) {
+      return { estado: "sem-sessao" };
+    }
+    if (resposta.status === 422) {
+      return { estado: "busca-invalida" };
+    }
     if (!resposta.ok) {
       return { estado: "indisponivel" };
     }

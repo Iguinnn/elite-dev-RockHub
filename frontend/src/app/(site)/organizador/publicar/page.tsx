@@ -117,12 +117,16 @@ export default async function PublicarEvento({
 
       <form method="get" className={estilos.busca}>
         <div className={estilos.campoBusca}>
+          {/* `maxLength` igual ao `Query(max_length=120)` da rota: sem ele,
+              colar um texto longo devolvia `422` e a tela acusava a
+              Ticketmaster por um erro do próprio formulário. */}
           <Campo
             id="q"
             name="q"
             type="search"
             rotulo="Buscar no catálogo"
             defaultValue={termo}
+            maxLength={120}
           />
         </div>
         <div className={estilos.botaoBusca}>
@@ -133,6 +137,23 @@ export default async function PublicarEvento({
       {resultado.estado === "indisponivel" && (
         <p className={estilos.aviso}>
           O catálogo da Ticketmaster não respondeu. Tente de novo em instantes.
+        </p>
+      )}
+
+      {/* Três estados de falha e três textos, porque três consertos diferentes:
+          esperar, entrar de novo, e encurtar a busca. Um texto só mandava a
+          pessoa esperar por coisa que não melhora sozinha. */}
+      {resultado.estado === "sem-sessao" && (
+        <p className={estilos.aviso}>
+          Sua sessão expirou.{" "}
+          <Link href="/login?voltar=%2Forganizador%2Fpublicar">Entre de novo</Link>{" "}
+          para ver o catálogo.
+        </p>
+      )}
+
+      {resultado.estado === "busca-invalida" && (
+        <p className={estilos.aviso}>
+          A busca ficou longa demais. Use até 120 caracteres.
         </p>
       )}
 

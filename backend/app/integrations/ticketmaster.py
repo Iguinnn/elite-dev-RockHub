@@ -8,9 +8,12 @@ Três responsabilidades, e cada uma existe por um motivo que já mordeu alguém:
   falha HTTP não pode virar log ou mensagem de erro sem antes passar por aqui:
   a exceção do `httpx` carrega a URL completa, e a URL carrega `apikey=`.
 - **A Ticketmaster fora do ar não derruba a aplicação.** Toda falha — timeout,
-  conexão recusada, `401`, `429`, `500`, JSON malformado — vira o mesmo
+  conexão recusada, `401`, `429`, `500`, JSON malformado **e JSON válido com
+  forma inesperada** — vira o mesmo
   `ErroDeDominio("CATALOGO_INDISPONIVEL", ..., status_http=503)`. Quem chama
-  não precisa saber qual dos cinco aconteceu; o log sabe.
+  não precisa saber qual dos seis aconteceu; o log sabe. A última das seis só
+  entrou no code review da Epic 2: até ali a conversão da resposta ficava fora
+  do `try`, e resposta bem formada mas de forma errada virava `500`.
 - **O formato deles morre aqui.** `_embedded`, `_links`, `dates`,
   `classifications` não atravessam esta fronteira — quem lê `ItemDoCatalogo`
   não faz ideia de que existe uma Ticketmaster do outro lado (AD-1).
@@ -19,6 +22,7 @@ Três responsabilidades, e cada uma existe por um motivo que já mordeu alguém:
 import logging
 
 import httpx
+from pydantic import ValidationError
 
 from app.core.config import obter_settings
 from app.core.erros import ErroDeDominio
@@ -184,11 +188,27 @@ def buscar_eventos(termo: str, *, limite: int = 20) -> list[ItemDoCatalogo]:
         logger.warning("Catálogo indisponível: resposta não é JSON válido")
         raise _catalogo_indisponivel() from erro
 
-    eventos = (dados.get("_embedded") or {}).get("events") or []
+    # ⚠️ **A conversão também é `try`, e é isto que fecha a promessa do topo do
+    # módulo.** Até o code review da Epic 2 estas linhas estavam de fora, e a
+    # promessa "toda falha vira `CATALOGO_INDISPONIVEL`" era falsa para uma
+    # classe inteira: JSON *válido* com forma inesperada. Corpo que é lista em
+    # vez de objeto (um proxy no meio do caminho), `width` como string em
+    # `images`, `name` numérico — nenhum é `HTTPError` nem `ValueError`, então
+    # todos subiam como `AttributeError`/`TypeError`/`ValidationError` até o
+    # handler genérico e viravam `500`, o oposto do `503` prometido.
+    try:
+        eventos = (dados.get("_embedded") or {}).get("events") or []
 
-    itens = []
-    for evento in eventos:
-        item = _converter_evento(evento)
-        if item is not None:
-            itens.append(item)
+        itens = []
+        for evento in eventos:
+            item = _converter_evento(evento)
+            if item is not None:
+                itens.append(item)
+    except (AttributeError, TypeError, ValidationError) as erro:
+        logger.warning(
+            "Catálogo indisponível: resposta em formato inesperado (%s)",
+            type(erro).__name__,
+        )
+        raise _catalogo_indisponivel() from erro
+
     return itens

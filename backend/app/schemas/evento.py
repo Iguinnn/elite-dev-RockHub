@@ -70,17 +70,40 @@ def _limpar_opcional(valor: object) -> object:
 TextoLimpo = Annotated[str, BeforeValidator(_limpar_texto)]
 TextoLimpoOpcional = Annotated[str | None, BeforeValidator(_limpar_opcional)]
 
+# Maior valor que cabe num `Integer` do Postgres (int4), que é o tipo da coluna
+# `setor.capacidade`. O schema recusa antes de o banco estourar — ver o comentário
+# em `SetorEntrada.capacidade`.
+_MAXIMO_INT4 = 2_147_483_647
+
+# R$ 1.000.000.000,00 em centavos. A coluna é `BigInteger` e aguentaria muito
+# mais; o teto real é o do JavaScript do formulário, não o do banco.
+_MAXIMO_PRECO_CENTAVOS = 100_000_000_000
+
 
 class SetorEntrada(BaseModel):
     nome: TextoLimpo = Field(min_length=1, max_length=80)
     # `ge=1` e não `ge=0`: o `CHECK capacidade_positiva` da Story 2.3 diz
     # `> 0`, e o schema recusa antes de o banco precisar defender. Setor com
     # capacidade zero nasce esgotado e ninguém entende por que não dá comprar.
-    capacidade: int = Field(ge=1)
+    #
+    # ⚠️ O `le` é tão obrigatório quanto o `ge`, e por um motivo que só apareceu
+    # no code review da Epic 2: a coluna é `Integer` (int4). Sem teto,
+    # `capacidade: 3000000000` passava aqui, passava por todas as recusas do
+    # service e só estourava no `commit`, como `DataError: integer out of
+    # range` — que não é `IntegrityError`, não era previsto por ninguém e caía
+    # no handler genérico. Erro de digitação virando `500 ERRO_INTERNO` é a
+    # mesma "pior resposta possível" que o `SETOR_DUPLICADO` existe para evitar.
+    capacidade: int = Field(ge=1, le=_MAXIMO_INT4)
     # Inteiro, nunca `float` (AD-11): dinheiro em ponto flutuante é erro de
     # arredondamento esperando acontecer. A conversão de reais para centavos
     # acontece no cliente, antes do envio.
-    preco_centavos: int = Field(ge=0)
+    #
+    # O teto é R$ 1 bilhão por ingresso — proteção contra corpo absurdo, não
+    # regra de produto, como o `max_length=20` dos setores. Ele fica **abaixo**
+    # de `Number.MAX_SAFE_INTEGER`, e é isso que importa: acima disso o próprio
+    # JavaScript do formulário já perde precisão antes de enviar, e o valor
+    # gravado não seria o digitado.
+    preco_centavos: int = Field(ge=0, le=_MAXIMO_PRECO_CENTAVOS)
 
 
 class EventoEntrada(BaseModel):
@@ -123,6 +146,22 @@ class EventoEntrada(BaseModel):
                 "informe a data com fuso horário (ISO-8601 com offset, ex.: "
                 "2026-08-15T00:00:00Z)"
             )
+        return valor
+
+    @field_validator("imagem_url")
+    @classmethod
+    def _exigir_esquema_http(cls, valor: str | None) -> str | None:
+        """Só `http://` e `https://`.
+
+        Acrescentado no code review da Epic 2. O campo **chega pelo corpo da
+        requisição**, não da Ticketmaster — o service não confere nada contra o
+        catálogo, então "veio do fornecedor" nunca foi garantia. Ele é gravado,
+        devolvido em `EventoSaida` e a Epic 3 vai renderizá-lo em `<img src>` na
+        programação pública, onde `javascript:`, `data:` e o pixel de rastreio de
+        terceiro não têm o que fazer.
+        """
+        if valor is not None and not valor.startswith(("http://", "https://")):
+            raise ValueError("a imagem precisa ser uma URL http:// ou https://")
         return valor
 
 

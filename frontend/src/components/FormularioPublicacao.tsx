@@ -55,6 +55,27 @@ type LinhaDeSetor = { chave: number; nome: string; capacidade: string; preco: st
 const MENSAGEM_GENERICA =
   "Não foi possível publicar o evento agora. Tente de novo em instantes.";
 
+/** Espelha `_MAXIMO_INT4` do `schemas/evento.py` — o tipo da coluna. */
+const MAXIMO_CAPACIDADE = 2_147_483_647;
+
+/** Tetos do `EventoEntrada`: 20 setores e 20 escalados por evento. */
+const MAXIMO_SETORES = 20;
+const MAXIMO_ESCALADOS = 20;
+
+/**
+ * Hoje no fuso do produto, em `AAAA-MM-DD` — o formato que o `<input
+ * type="date">` exige no `min`.
+ *
+ * **Em São Paulo, e não no fuso do navegador**, pelo mesmo motivo do `FUSO` do
+ * `lib/formato.ts`: quem publica está no Brasil, e um organizador viajando não
+ * deve ver o seletor liberar ontem ou barrar hoje.
+ */
+function hojeEmSaoPaulo(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date());
+}
+
 /** Mesma convenção do login e do cadastro: o texto vem do `codigo`. */
 function mensagemParaCodigo(codigo: string): string {
   if (codigo === "EVENTO_SEM_SETOR") {
@@ -72,11 +93,34 @@ function mensagemParaCodigo(codigo: string): string {
     // resposta não tem. Recarregar é o conserto real — a lista mudou.
     return "Alguma das contas escaladas não está mais disponível. Recarregue a página e escale de novo.";
   }
+  if (codigo === "EVENTO_NO_PASSADO") {
+    return "A data do show já passou. Confira o dia e o horário.";
+  }
   if (codigo === "DADOS_INVALIDOS") {
     return "Confira os dados do formulário.";
   }
+  // ⚠️ Estes dois faltavam, e o buraco era grande: a sessão dura 8 horas
+  // (AD-15), esta tela é longa (catálogo → data e local → N setores → escala),
+  // e expirando o cookie no meio o `POST` voltava `401`. Sem entrada na tabela,
+  // ele caía na mensagem genérica "tente de novo em instantes" — e tentar de
+  // novo dava `401` outra vez, para sempre, com tudo digitado na tela e nenhum
+  // caminho para o login. As guardas da `page.tsx` rodam na renderização, não
+  // no envio. O link do aviso é quem fecha a saída (ver `AvisoDeSessao`).
+  if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
+    return SESSAO_EXPIRADA;
+  }
   return MENSAGEM_GENERICA;
 }
+
+/**
+ * Marcador de "a sessão morreu", não um texto de tela.
+ *
+ * O aviso precisa de um `<Link>` dentro dele, e `mensagemParaCodigo` devolve
+ * `string`. Comparar contra esta constante é o que deixa o componente decidir
+ * entre renderizar texto puro e texto com link, sem transformar a tabela de
+ * códigos numa fábrica de JSX.
+ */
+const SESSAO_EXPIRADA = "__sessao_expirada__";
 
 /**
  * Reais digitados → centavos inteiros. `null` quando não dá para ter certeza.
@@ -94,7 +138,16 @@ function reaisParaCentavos(valor: string): number | null {
     : bruto;
 
   if (!/^\d+(\.\d{1,2})?$/.test(normalizado)) return null;
-  return Math.round(Number(normalizado) * 100);
+
+  const centavos = Math.round(Number(normalizado) * 100);
+  // ⚠️ **`Math.round` mente em silêncio acima de `MAX_SAFE_INTEGER`**, e o
+  // regex acima aceita qualquer quantidade de dígitos. Sem esta guarda,
+  // `999999999999999,99` era enviado **arredondado errado** e gravado sem erro
+  // nenhum — dinheiro corrompido sem ninguém saber, que é exatamente o que o
+  // AD-11 existe para impedir. `null` devolve a mensagem de preço inválido, que
+  // é a resposta certa para um número que o JavaScript não sabe representar.
+  if (!Number.isSafeInteger(centavos)) return null;
+  return centavos;
 }
 
 export default function FormularioPublicacao({ item, portarias }: Props) {
@@ -127,9 +180,18 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
   function alternarEscalado(id: string) {
     setEscalados((atuais) => {
       const proximos = new Set(atuais);
-      if (!proximos.delete(id)) {
-        proximos.add(id);
+      if (proximos.delete(id)) return proximos;
+
+      // Mesmo teto do `max_length=20` de `portaria_ids`. Desmarcar nunca é
+      // barrado — só marcar além do vigésimo, e com o motivo dito na hora, em
+      // vez de um `422` genérico depois de publicar.
+      if (proximos.size >= MAXIMO_ESCALADOS) {
+        setErro(`São até ${MAXIMO_ESCALADOS} contas de portaria por evento.`);
+        return atuais;
       }
+
+      setErro(null);
+      proximos.add(id);
       return proximos;
     });
   }
@@ -155,6 +217,11 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
 
   async function aoEnviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
+    // O `disabled={enviando}` do botão cobre o clique, mas só depois do próximo
+    // render — e não cobre `Enter` mantido pressionado num campo de texto, que
+    // dispara envio atrás de envio. Sem chave de idempotência e sem tela de
+    // apagar evento, cada duplicata é permanente.
+    if (enviando) return;
     setErro(null);
 
     const dados = new FormData(evento.currentTarget);
@@ -188,6 +255,12 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
       }
       if (!Number.isInteger(capacidade) || capacidade < 1) {
         setErro(`A capacidade de "${nome}" precisa ser um número inteiro maior que zero.`);
+        return;
+      }
+      if (capacidade > MAXIMO_CAPACIDADE) {
+        setErro(
+          `A capacidade de "${nome}" passou do máximo de ${MAXIMO_CAPACIDADE.toLocaleString("pt-BR")} lugares.`,
+        );
         return;
       }
       if (centavos === null) {
@@ -321,7 +394,18 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
       <div className={estilos.colunas}>
         <div>
           <div className={estilos.duasColunas}>
-            <Campo id="data" name="data" rotulo="Data" type="date" required />
+            {/* `min` em hoje: a API recusa show no passado com
+                `EVENTO_NO_PASSADO`, e o seletor de data avisa antes da ida à
+                rede. Como não existe tela de editar evento, errar a data é
+                permanente — vale as duas barreiras. */}
+            <Campo
+              id="data"
+              name="data"
+              rotulo="Data"
+              type="date"
+              min={hojeEmSaoPaulo()}
+              required
+            />
             <Campo id="hora" name="hora" rotulo="Horário" type="time" required />
           </div>
           <Campo
@@ -385,6 +469,10 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
                   className={estilos.entrada}
                   type="number"
                   min={1}
+                  // Maior `Integer` do Postgres, que é o tipo da coluna. Sem
+                  // teto, a capacidade passava pelo schema e estourava no
+                  // `commit` como `500` — ver `schemas/evento.py`.
+                  max={MAXIMO_CAPACIDADE}
                   step={1}
                   inputMode="numeric"
                   value={setor.capacidade}
@@ -425,13 +513,22 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             </div>
           ))}
 
-          <button
-            type="button"
-            className={estilos.acrescentar}
-            onClick={acrescentarSetor}
-          >
-            + Adicionar setor
-          </button>
+          {/* Some no teto de 20, que é o `max_length` do schema. Antes a tela
+              deixava criar a 21ª linha e a API devolvia "confira os dados do
+              formulário" depois de tudo digitado, sem dizer que havia teto. */}
+          {setores.length < MAXIMO_SETORES ? (
+            <button
+              type="button"
+              className={estilos.acrescentar}
+              onClick={acrescentarSetor}
+            >
+              + Adicionar setor
+            </button>
+          ) : (
+            <p className={estilos.aviso}>
+              São até {MAXIMO_SETORES} setores por evento.
+            </p>
+          )}
         </div>
       </div>
 
@@ -457,9 +554,22 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           // portaria nenhuma, ou a lista não pôde ser carregada —, e o
           // formulário continua de pé nos dois.
           <p className={estilos.aviso}>
-            {portarias.estado === "indisponivel"
-              ? "Não foi possível carregar as contas de portaria agora. Sem ao menos uma escalada, o evento não pode ser publicado — recarregue a página em instantes."
-              : "Não há nenhuma conta de portaria cadastrada. Sem ao menos uma escalada, o evento não pode ser publicado."}
+            {portarias.estado === "sem-sessao" ? (
+              <>
+                Sua sessão expirou, e por isso a lista de portarias não carregou.{" "}
+                <Link
+                  href="/login?voltar=%2Forganizador%2Fpublicar"
+                  target="_blank"
+                >
+                  Entre de novo
+                </Link>{" "}
+                e recarregue esta página.
+              </>
+            ) : portarias.estado === "indisponivel" ? (
+              "Não foi possível carregar as contas de portaria agora. Sem ao menos uma escalada, o evento não pode ser publicado — recarregue a página em instantes."
+            ) : (
+              "Não há nenhuma conta de portaria cadastrada. Sem ao menos uma escalada, o evento não pode ser publicado."
+            )}
           </p>
         ) : (
           <>
@@ -515,7 +625,25 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         )}
       </div>
 
-      <AvisoDeErro mensagem={erro} />
+      {/* O único aviso com link: sem ele, sessão expirada no meio do
+          preenchimento não tinha saída nenhuma. `target="_blank"` porque sair
+          desta página descartaria o formulário inteiro — a pessoa entra na
+          outra aba e volta para clicar em Publicar com tudo ainda preenchido. */}
+      <AvisoDeErro
+        mensagem={
+          erro === SESSAO_EXPIRADA ? (
+            <>
+              Sua sessão expirou.{" "}
+              <Link href="/login?voltar=%2Forganizador%2Fpublicar" target="_blank">
+                Entre de novo
+              </Link>{" "}
+              e clique em Publicar outra vez — o que você preencheu continua aqui.
+            </>
+          ) : (
+            erro
+          )
+        }
+      />
 
       <div className={estilos.rodape}>
         {/* Nada gira e nada pulsa enquanto envia: o botão fica `disabled`, e é

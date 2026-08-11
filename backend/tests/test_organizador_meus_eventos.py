@@ -278,8 +278,16 @@ def test_o_detalhe_traz_setores_e_portarias_com_nome_e_email(
 
     assert resposta.status_code == 200
     corpo = resposta.json()
-    assert [setor["nome"] for setor in corpo["setores"]] == ["Pista", "Camarote"]
-    assert corpo["setores"][0]["vendidos"] == 12
+    # ⚠️ **Alfabético, e não a ordem em que os setores foram gravados.** Até o
+    # code review da Epic 2 esta asserção era `["Pista", "Camarote"]` e passava
+    # por acidente: sem `ORDER BY`, o Postgres devolvia na ordem de varredura do
+    # heap, que coincide com a inserção **até a primeira escrita na linha**. O
+    # `UPDATE setor SET vendidos = ...` do AD-3, na Epic 3, reescreve a tupla no
+    # fim do heap e trocaria os setores de lugar na tela do organizador, com
+    # este teste continuando verde. O `order_by="Setor.nome"` do modelo é o
+    # contrato agora, e é isto que o teste afirma.
+    assert [setor["nome"] for setor in corpo["setores"]] == ["Camarote", "Pista"]
+    assert corpo["setores"][1]["vendidos"] == 12
     assert corpo["portarias"] == [
         {"id": str(porteiro.id), "nome": porteiro.nome, "email": porteiro.email}
     ]

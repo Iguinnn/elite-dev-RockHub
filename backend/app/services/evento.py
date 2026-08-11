@@ -12,16 +12,18 @@ regra de negócio para um service fazer. Aqui sobra: existem duas invariantes
 que o banco sozinho não sabe recusar de forma legível, e existe uma transação
 que precisa gravar evento e setores juntos ou nada.
 
-**A ordem das quatro recusas é a garantia do "nenhum evento órfão".** Elas
+**A ordem das cinco recusas é a garantia do "nenhum evento órfão".** Elas
 acontecem antes de qualquer `add`: se a lista está vazia, tem nomes repetidos,
-não traz portaria nenhuma ou traz um id que não resolve, nada chega a existir
-no banco — nem o evento, nem o primeiro setor antes de o segundo estourar.
+não traz portaria nenhuma, traz um id que não resolve ou a data já passou, nada
+chega a existir no banco — nem o evento, nem o primeiro setor antes de o segundo
+estourar.
 
 ```
 1. setores vazio          → EVENTO_SEM_SETOR
 2. nome de setor repetido → SETOR_DUPLICADO
 3. portaria_ids vazio     → EVENTO_SEM_PORTARIA
 4. id que não resolve     → PORTARIA_INVALIDA
+5. data_hora no passado   → EVENTO_NO_PASSADO
    ── só então: monta o Evento e grava ──
 ```
 
@@ -33,11 +35,19 @@ provar, sem reescrita.
 
 **Não há `try/except IntegrityError` aqui**, ao contrário do `cadastrar()`. Lá
 o `UNIQUE` do e-mail é a regra, e conferir antes seria uma corrida. Aqui as
-duas violações possíveis (`uq_setor_evento_id_nome` e os `CHECK` do setor)
-chegam todas do mesmo corpo de requisição, num único instante, sem ninguém
+duas violações que vêm do corpo (`uq_setor_evento_id_nome` e os `CHECK` do
+setor) chegam do mesmo corpo de requisição, num único instante, sem ninguém
 concorrendo — dá para conferi-las na memória, com certeza, antes de gravar. Um
 `except` genérico neste ponto só serviria para transformar bug de verdade em
 `422` bonito.
+
+⚠️ **A justificativa acima tem um limite, apontado no code review da Epic 2 e
+adiado de propósito** (`deferred-work.md`): existe uma terceira violação
+possível, e ela **não** vem do corpo — a FK `evento_portaria.usuario_id`, que
+aponta para outra linha, de outro dono. O `SELECT` das contas escaladas não
+trava nada, então uma conta apagada entre ele e o `COMMIT` daria
+`IntegrityError` → `500`. A janela é teórica enquanto não existir rota de
+apagar usuário; quem escrever essa rota precisa voltar aqui.
 """
 
 from datetime import datetime, timezone
@@ -122,6 +132,23 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
         raise ErroDeDominio(
             "PORTARIA_INVALIDA",
             "Alguma das contas escaladas não existe ou não é de portaria.",
+            status_http=422,
+        )
+
+    # Quinta recusa, decidida no code review da Epic 2. Publicar show que já
+    # aconteceu não é um caso de uso — é erro de digitação na data, e ele é
+    # **permanente**, porque não existe tela de editar nem de apagar evento. Na
+    # Epic 3 esse evento entraria na programação e venderia ingresso para uma
+    # noite que já passou.
+    #
+    # **Por último, e não primeiro.** A ordem das recusas anteriores é o que
+    # mantém os testes das Stories 2.4 e 2.5 provando o que se propuseram a
+    # provar (ver o topo deste módulo); entrar antes delas mudaria o código de
+    # erro de casos que já estão cobertos, sem nenhum ganho.
+    if dados.data_hora <= datetime.now(timezone.utc):
+        raise ErroDeDominio(
+            "EVENTO_NO_PASSADO",
+            "A data do show já passou. Confira o dia e o horário.",
             status_http=422,
         )
 
@@ -220,7 +247,11 @@ def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoR
     eventos = sessao.scalars(
         select(Evento)
         .where(Evento.organizador_id == organizador.id)
-        .order_by(Evento.data_hora)
+        # `Evento.id` como desempate: dois shows no mesmo horário — duas casas
+        # na mesma noite é rotina — trocavam de lugar entre requisições, porque
+        # sem critério total o Postgres não promete ordem nenhuma. A lista do
+        # organizador é a tela que ele recarrega o dia inteiro.
+        .order_by(Evento.data_hora, Evento.id)
         # ⚠️ Não é otimização prematura: sem ele, ler `evento.setores` no laço
         # abaixo emite **uma consulta por evento**, e o custo cresce com o
         # sucesso do organizador. O sintoma só aparece com volume, ou seja,

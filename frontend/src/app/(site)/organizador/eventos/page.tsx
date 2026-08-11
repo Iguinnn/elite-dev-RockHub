@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { listarMeusEventos, type MeuEventoResumo } from "@/lib/eventos";
+import { partesDaData } from "@/lib/formato";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
@@ -75,8 +76,13 @@ export default async function MeusEventos() {
 
   return (
     <section className={estilos.pagina}>
+      {/* O kicker do cabeçalho é o que o AC14 pede para o estado vazio
+          (EXPERIENCE.md#Vazio: "kicker em versalete, frase, fim"). Quando não
+          há nenhum evento, as duas seções não são renderizadas e ele é o único
+          kicker da tela — sem ele o vazio virava um parágrafo solto. */}
       <div className={estilos.secTitulo}>
         <h1>Meus eventos</h1>
+        <span className="kicker">Organizador</span>
       </div>
 
       {resultado.estado === "indisponivel" && (
@@ -130,14 +136,7 @@ function Secao({ titulo, eventos }: { titulo: string; eventos: MeuEventoResumo[]
  * dono da informação (UX-DR7). Medidor é da tela de quem compra, na Epic 3.
  */
 function Fila({ evento }: { evento: MeuEventoResumo }) {
-  const instante = new Date(evento.data_hora);
-  const dia = new Intl.DateTimeFormat("pt-BR", { day: "2-digit" }).format(instante);
-  const mes = new Intl.DateTimeFormat("pt-BR", { month: "short" })
-    .format(instante)
-    // O `Intl` do pt-BR devolve "ago." com ponto; a fila é versalete e o ponto
-    // vira sujeira entre o mês e o ano.
-    .replace(".", "");
-  const ano = new Intl.DateTimeFormat("pt-BR", { year: "numeric" }).format(instante);
+  const { dia, mes, ano } = partesDaData(evento.data_hora);
   const origem = [evento.local, evento.cidade].filter(Boolean).join(" · ");
 
   return (

@@ -12,12 +12,16 @@ linha existe do jeito que deveria.
 ⚠️ **Desde a Story 2.5, publicar exige portaria escalada** (AD-7). Todo teste
 de caminho feliz passa `portaria_ids` pelo `_corpo`, com a fixture `porteiro`.
 Os testes de recusa **não** passam — e continuam recebendo o código que
-esperavam porque a ordem das quatro recusas põe as de setor na frente.
+esperavam porque a ordem das cinco recusas põe as de setor na frente.
+
+⚠️ **A quinta recusa (`EVENTO_NO_PASSADO`) entrou no code review da Epic 2**, e
+com ela o `data_hora` padrão do `_corpo` deixou de ser uma constante: ver
+`_daqui_a`.
 """
 
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -61,6 +65,20 @@ def _instalar_transporte(
     monkeypatch.setattr(ticketmaster, "_criar_cliente", lambda: cliente_http)
 
 
+def _daqui_a(dias: int) -> str:
+    """Data ISO-8601 com fuso, relativa ao relógio.
+
+    ⚠️ **Relativa, e não fixa, desde que a quinta recusa entrou** (code review
+    da Epic 2). O padrão do `_corpo` era `"2026-08-15T00:00:00Z"` — escrito
+    quatro dias antes dessa data. Com `EVENTO_NO_PASSADO` valendo, uma constante
+    no calendário é uma bomba-relógio: a suíte passaria hoje e falharia inteira
+    na quinta-feira, sem ninguém ter tocado em nada.
+    """
+    return (
+        datetime.now(timezone.utc) + timedelta(days=dias)
+    ).isoformat().replace("+00:00", "Z")
+
+
 def _corpo(**ajustes: Any) -> dict[str, Any]:
     """Corpo válido **menos a escala**, com ajuste por parâmetro.
 
@@ -76,7 +94,7 @@ def _corpo(**ajustes: Any) -> dict[str, Any]:
         "origem_externa_id": "G5vYZ9a1kd",
         "nome": "Baco Exu do Blues — Bluesman Vivo",
         "imagem_url": "https://s1.ticketm.net/dam/a/bluesman.jpg",
-        "data_hora": "2026-08-15T00:00:00Z",
+        "data_hora": _daqui_a(30),
         "local": "Espaço Unimed",
         "cidade": "São Paulo",
         "setores": [
@@ -560,19 +578,30 @@ def test_data_hora_com_offset_e_gravada_em_utc(
     usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, "organizador15@exemplo.com")
     _entrar(cliente, usuario)
 
-    # 21h de 14/08 em São Paulo (-03:00) é 00h de 15/08 em UTC — é exatamente
-    # a conversão que o navegador faz antes de enviar.
+    # 21h em São Paulo (-03:00) é 00h do dia seguinte em UTC — é exatamente a
+    # conversão que o navegador faz antes de enviar. O dia é relativo pelo mesmo
+    # motivo do `_daqui_a`: com `EVENTO_NO_PASSADO` valendo, uma data fixa faz o
+    # teste apodrecer no calendário.
+    dia = (datetime.now(timezone.utc) + timedelta(days=30)).date()
+    fuso_de_brasilia = timezone(timedelta(hours=-3))
+
     resposta = cliente.post(
         "/organizador/eventos",
         json=_corpo(
-            data_hora="2026-08-14T21:00:00-03:00", portaria_ids=[str(porteiro.id)]
+            data_hora=f"{dia.isoformat()}T21:00:00-03:00",
+            portaria_ids=[str(porteiro.id)],
         ),
     )
 
     assert resposta.status_code == 201
     gravado = sessao.get(Evento, resposta.json()["id"])
     assert gravado is not None
-    assert gravado.data_hora == datetime(2026, 8, 15, 0, 0, tzinfo=timezone.utc)
+    esperado = datetime.combine(dia, time(21, 0), tzinfo=fuso_de_brasilia)
+    assert gravado.data_hora == esperado.astimezone(timezone.utc)
+    # A prova de que a conversão aconteceu, e não de que os dois lados são
+    # iguais por acaso: em UTC o show cai no **dia seguinte**, à meia-noite.
+    assert gravado.data_hora.astimezone(timezone.utc).hour == 0
+    assert gravado.data_hora.astimezone(timezone.utc).date() == dia + timedelta(days=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -816,3 +845,119 @@ def test_senha_hash_nao_aparece_em_lugar_nenhum_da_resposta(
 
     assert resposta.status_code == 201
     assert "senha_hash" not in resposta.text
+
+
+# --------------------------------------------------------------------------- #
+# Code review da Epic 2 — a quinta recusa e os tetos que faltavam
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("rotulo", "quando"),
+    [
+        ("ontem", -1),
+        ("ano-passado", -365),
+    ],
+)
+def test_publicar_show_no_passado_e_422_evento_no_passado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    rotulo: str,
+    quando: int,
+) -> None:
+    """AD-7 não cobre isto, e nada cobria: erro de digitação na data é
+    **permanente**, porque não existe tela de editar nem de apagar evento.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, f"passado-{rotulo}@ex.com")
+    _entrar(cliente, usuario)
+    antes = _quantos_eventos(sessao)
+
+    resposta = cliente.post(
+        "/organizador/eventos",
+        json=_corpo(data_hora=_daqui_a(quando), portaria_ids=[str(porteiro.id)]),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_NO_PASSADO"
+    # A recusa acontece antes de qualquer `add`: nada chegou a existir.
+    assert _quantos_eventos(sessao) == antes
+
+
+def test_a_recusa_do_setor_vem_antes_da_recusa_da_data(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    """A quinta recusa entrou **por último** de propósito.
+
+    Um corpo que erra a data *e* não tem setor recebe `EVENTO_SEM_SETOR`, que é
+    o que os testes das Stories 2.4 e 2.5 já provavam — a ordem documentada no
+    topo de `services/evento.py` continua valendo.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, "ordem-recusa@exemplo.com")
+    _entrar(cliente, usuario)
+
+    resposta = cliente.post(
+        "/organizador/eventos", json=_corpo(setores=[], data_hora=_daqui_a(-1))
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_SEM_SETOR"
+
+
+@pytest.mark.parametrize(
+    ("rotulo", "setor"),
+    [
+        # `Integer` do Postgres é int4: sem o `le` do schema, isto passava por
+        # todas as recusas e estourava no `commit` como `DataError`, virando
+        # `500 ERRO_INTERNO` — erro de digitação vestido de bug do servidor.
+        ("capacidade-acima-do-int4", {"capacidade": 2_147_483_648}),
+        ("preco-absurdo", {"preco_centavos": 100_000_000_001}),
+    ],
+)
+def test_valor_acima_do_teto_e_422_e_nao_500(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    rotulo: str,
+    setor: dict[str, Any],
+) -> None:
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, f"teto-{rotulo}@exemplo.com")
+    _entrar(cliente, usuario)
+    antes = _quantos_eventos(sessao)
+
+    base = {"nome": "Pista", "capacidade": 800, "preco_centavos": 12000}
+    resposta = cliente.post(
+        "/organizador/eventos",
+        json=_corpo(setores=[base | setor], portaria_ids=[str(porteiro.id)]),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+    assert _quantos_eventos(sessao) == antes
+
+
+@pytest.mark.parametrize(
+    "imagem",
+    ["javascript:alert(1)", "data:text/html;base64,PHNjcmlwdD4=", "//evil.example"],
+)
+def test_imagem_url_fora_de_http_e_recusada(
+    cliente: TestClient,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    imagem: str,
+) -> None:
+    """O campo chega pelo **corpo**, não da Ticketmaster — o service não confere
+    nada contra o catálogo. A Epic 3 vai renderizá-lo em `<img src>` público.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, f"img{len(imagem)}@ex.com")
+    _entrar(cliente, usuario)
+
+    resposta = cliente.post(
+        "/organizador/eventos",
+        json=_corpo(imagem_url=imagem, portaria_ids=[str(porteiro.id)]),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"

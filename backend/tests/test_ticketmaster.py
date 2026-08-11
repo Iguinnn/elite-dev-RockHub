@@ -39,9 +39,19 @@ def _instalar_transporte(
 ) -> None:
     """Substitui `_criar_cliente` por um cliente com `MockTransport` — o único
     ponto de indireção que o módulo de produção expõe para isto.
+
+    ⚠️ **Um cliente novo por chamada, não um reaproveitado.** O código de
+    produção usa `with _criar_cliente() as cliente:`, ou seja, **fecha** o que
+    receber. Devolvendo sempre a mesma instância, o primeiro `buscar_eventos`
+    funcionava e o segundo levantava `RuntimeError: Cannot send a request, as
+    the client has been closed` — armadilha encontrada no code review da Epic 2,
+    invisível enquanto todo teste chamava a função uma vez só.
     """
-    cliente = httpx.Client(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(ticketmaster, "_criar_cliente", lambda: cliente)
+    monkeypatch.setattr(
+        ticketmaster,
+        "_criar_cliente",
+        lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+    )
 
 
 def _evento_completo() -> dict:
@@ -520,3 +530,86 @@ def test_genre_id_ausente_na_busca_com_termo(
     ticketmaster.buscar_eventos("rosalia")
 
     assert "genreId" not in capturado["url"].params
+
+
+# --------------------------------------------------------------------------- #
+# Code review da Epic 2 — JSON válido, forma inesperada
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("rotulo", "corpo"),
+    [
+        # Um proxy ou gateway no meio do caminho devolvendo 200 com corpo que
+        # não é objeto: `dados.get` era `AttributeError`.
+        ("corpo-e-lista", []),
+        ("corpo-e-string", "indisponivel"),
+        # `_embedded.events` que não é lista: o laço iterava caracteres.
+        ("events-e-string", {"_embedded": {"events": "nenhum"}}),
+        # `width` como texto: `max(...)` comparava `str` com `int`.
+        (
+            "width-textual",
+            {
+                "_embedded": {
+                    "events": [
+                        {
+                            "id": "G1",
+                            "name": "Show",
+                            "images": [
+                                {"ratio": "16_9", "width": "1024", "url": "https://x"},
+                                {"ratio": "16_9", "width": 640, "url": "https://y"},
+                            ],
+                        }
+                    ]
+                }
+            },
+        ),
+        # `name` numérico: o Pydantic v2 não coage `int` para `str`, e
+        # `ValidationError` não é `ValueError` do `json`.
+        (
+            "name-numerico",
+            {"_embedded": {"events": [{"id": "G1", "name": 123}]}},
+        ),
+    ],
+)
+def test_forma_inesperada_vira_catalogo_indisponivel_e_nao_500(
+    monkeypatch: pytest.MonkeyPatch, rotulo: str, corpo: object
+) -> None:
+    """A promessa do topo do módulo — "toda falha vira `CATALOGO_INDISPONIVEL`"
+    — era falsa para uma classe inteira: JSON **válido** com forma inesperada.
+
+    A conversão da resposta ficava fora do `try`, e cada um destes casos subia
+    como `AttributeError`, `TypeError` ou `ValidationError` até o handler
+    genérico, virando `500` em vez do `503` prometido. Achado no code review da
+    Epic 2.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=corpo)
+
+    _instalar_transporte(monkeypatch, handler)
+
+    with pytest.raises(ErroDeDominio) as exc_info:
+        ticketmaster.buscar_eventos("metallica")
+
+    assert exc_info.value.codigo == "CATALOGO_INDISPONIVEL"
+    assert exc_info.value.status_http == 503
+
+
+def test_duas_buscas_seguidas_funcionam(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Guarda da armadilha de teste consertada no code review da Epic 2.
+
+    O `_instalar_transporte` devolvia sempre o **mesmo** `httpx.Client`, e o
+    código de produção usa `with _criar_cliente() as cliente:` — ou seja, fecha
+    o que recebe. A segunda chamada levantava `RuntimeError: Cannot send a
+    request, as the client has been closed`. Nenhum teste percebia porque todos
+    chamavam `buscar_eventos` uma vez só; este chama duas, de propósito.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    assert ticketmaster.buscar_eventos("metallica") == []
+    assert ticketmaster.buscar_eventos("rosalia") == []

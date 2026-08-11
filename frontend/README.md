@@ -912,6 +912,42 @@ inteira — aqui, o formulário de publicação junto com a lista.
 A `page.tsx` só chama `listarPortarias()` **quando há atração escolhida**. Sem ela não existe passo 3
 na tela, e buscar a lista a cada busca no catálogo seria uma chamada por consulta que ninguém lê.
 
+#### Nem todo `!resposta.ok` é "o fornecedor não respondeu"
+
+Correção do code review da Epic 2, e ela é a continuação exata do parágrafo acima. Eu tinha
+resolvido o **sintoma** (repassar o cookie) e deixado a **causa** de pé: qualquer status não-ok
+virava `indisponivel`, então a tela seguia capaz de acusar a Ticketmaster por erro que não era dela.
+
+| Status | Era | É | Por quê |
+|---|---|---|---|
+| `401`, `403` | `indisponivel` | `sem-sessao` | A sessão morreu. "Tente de novo em instantes" nunca se cumpre — o conserto é entrar de novo, e a tela agora oferece o link |
+| `422` | `indisponivel` | `busca-invalida` | O termo passou dos 120 caracteres da rota. A Discovery **nem chegou a ser chamada** |
+| Demais | `indisponivel` | `indisponivel` | Aí sim é o fornecedor |
+
+O `src/lib/eventos.ts` já fazia essa separação desde a 2.6 (ele distingue `nao-encontrado` de
+`indisponivel`); foram `catalogo.ts` e `portarias.ts` que ficaram para trás. O campo de busca também
+ganhou `maxLength={120}`, para o `422` deixar de ser alcançável pela interface.
+
+**A mesma raiz aparecia no envio do formulário**, e ali era pior. `mensagemParaCodigo` não conhecia
+`NAO_AUTENTICADO` nem `SEM_PERMISSAO`, então um `POST` com sessão expirada caía na mensagem genérica
+"tente de novo em instantes" — e tentar de novo dava `401` outra vez, para sempre, com todos os
+setores digitados na tela e nenhum caminho para o login. As guardas da `page.tsx` rodam na
+**renderização**, não no envio, e a sessão dura 8 horas contra uma tela longa (catálogo → data e
+local → N setores → escala).
+
+O aviso agora leva um `<Link>` com `target="_blank"`, e o alvo em nova aba não é detalhe: sair da
+página descartaria o formulário inteiro, que é justamente o que a correção existe para evitar. Foi
+por isso que o `AvisoDeErro` passou a aceitar `ReactNode` em vez de `string`.
+
+**Outras cinco do mesmo review, todas de "a tela deixa fazer o que a API recusa":** `max` na
+capacidade e `Number.isSafeInteger` no preço (acima do inteiro seguro o `Math.round` arredondava
+errado e enviava valor diferente do digitado); `min` de hoje no seletor de data, junto com o
+`EVENTO_NO_PASSADO` novo do backend; o botão `+ Adicionar setor` some no vigésimo, e marcar a 21ª
+portaria avisa em vez de deixar publicar e receber `422`; `if (enviando) return` em `aoEnviar`,
+porque o `disabled` do botão só vale depois do próximo render e não segura `Enter` mantido
+pressionado; e o kicker que faltava no cabeçalho de `Meus eventos` — é ele que aparece no estado
+vazio, quando nenhuma seção é renderizada (AC14).
+
 ### A imagem é `<img>`, não `next/image`
 
 A Discovery serve imagem de mais de um host (`s1.ticketm.net`, `media.ticketmaster.com`), e
@@ -984,6 +1020,43 @@ do `servidor.ts`, cujo import de `next/headers` é justamente o que o prende ao 
 
 `reaisParaCentavos` **ficou onde estava**: ela converte o que uma pessoa digitou, é do formulário e
 não tem consumidor de servidor. Mover tudo "já que estou aqui" é escopo que ninguém pediu.
+
+#### O fuso é fixo, e sem isso a mesma publicação aparecia com duas datas
+
+O bug mais sério que o code review da Epic 2 encontrou, e um que **não dava para ver aqui na minha
+máquina**.
+
+`Intl.DateTimeFormat` sem `timeZone` usa o fuso **do runtime**. As telas de `Meus eventos` são
+Server Components, e o runtime delas é o container da Vercel, cujo `TZ` é **UTC** — enquanto a
+confirmação da publicação renderiza no navegador, em `America/Sao_Paulo`. Um show às 21h de 14/08:
+
+| Tela | Onde renderiza | Mostrava |
+|---|---|---|
+| Confirmação da publicação | Client Component | 14 de agosto, 21h00 |
+| Lista de `Meus eventos` | Server Component | **15 AGO** |
+| Detalhe do evento | Server Component | **15 de agosto, 00h00** |
+
+O dado estava **certo** no banco: o `FormularioPublicacao` monta `new Date("2026-08-14T21:00")` no
+fuso do navegador e envia `2026-08-15T00:00:00Z`, que é o instante correto. O erro era todo na
+leitura. Em desenvolvimento os dois lados concordam, porque a máquina e o "servidor" são o mesmo
+fuso — o defeito só nascia no deploy.
+
+A saída é uma constante `FUSO = "America/Sao_Paulo"` em `formato.ts`, aplicada em todas as
+formatações do módulo. **Ela contraria a letra do AD-11** ("a conversão para o fuso do usuário
+acontece só na renderização"), e é uma contradição que a regra não previu: num Server Component não
+existe "o usuário" no momento de formatar — não há navegador do outro lado. As duas alternativas
+eram renderizar a data num componente `"use client"` só para isso (e conviver com divergência de
+hidratação, ou com a data piscando) ou fixar. Fixei, porque o catálogo já é `countryCode=BR` e todo
+show deste produto acontece no Brasil. O dia em que não acontecer, `FUSO` é o único lugar a mudar.
+
+⚠️ **As três formatações da fila de `Meus eventos` eram inline na `page.tsx`** — dia, mês e ano, cada
+um com tipografia própria — e foram justamente as que passaram despercebidas quando o `timeZone`
+entrou no resto do módulo. Viraram `partesDaData(iso)`, exportada daqui. Uma cópia da regra é uma
+chance de a próxima tela repetir o erro.
+
+O que **não** estava errado, apesar de parecer: o corte `Em cartaz / Já aconteceram` logo abaixo. Ele
+compara `getTime()` contra `getTime()`, que são instantes absolutos — fuso nenhum entra na conta.
+Errado estava só o que a tela **escrevia**, nunca em que seção o evento caía.
 
 ### O corte "Em cartaz / Já aconteceram" mora na tela, não na API
 
