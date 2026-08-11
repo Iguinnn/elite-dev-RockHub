@@ -9,24 +9,16 @@ Elite Dev** da Verzel — o enunciado completo está em
 Monorepo com `backend/` (FastAPI + PostgreSQL) e `frontend/` (Next.js). Este README é o histórico
 de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no caminho. Os READMEs de
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
-camada.
+camada — como rodar, estrutura de pastas, convenções e armadilhas.
 
 > **Estado atual:** em construção, e **as duas metades estão no ar** —
 > <https://elite-dev-rock-hub.vercel.app> é a aplicação, com o PostgreSQL da Railway migrado e
-> semeado por trás. Dá para abrir num navegador, entrar com uma conta de avaliação e ver a `/conta`
-> sem clonar nada. **O acesso está fechado pelos dois lados:** dá para criar conta em
-> `/cadastro` e entrar em `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o
-> navegador falando só com o domínio do frontend. Rota protegida já tem guarda por papel, e um
-> comando semeia as cinco contas de avaliação (abaixo, em
-> [Contas semeadas](#contas-semeadas)). O backend sobe com PostgreSQL migrado por Alembic; o frontend
-> sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. **A Epic 2 já
-> publica de verdade:** em `/organizador/publicar` o organizador busca a atração no catálogo da
-> Ticketmaster (2.1 e 2.2), preenche data, local e setores (2.3 e 2.4) e escala quem vai validar na
-> porta (2.5) — e o evento vai para o banco com setores e escala na mesma transação. Desde a 2.6 ele
-> também **acompanha o que publicou**, em `/organizador/eventos`: a lista com o inventário de cada
-> show e o detalhe setor a setor, com quem ficou na porta. O que ainda não existe é o outro lado:
-> descobrir, comprar e validar são as Epics 3 a 5. A seção [O que não está
-> pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
+> semeado por trás. O acesso está fechado pelos dois lados (cadastro, login, sessão em cookie
+> `httpOnly`, guarda por papel) e a **Epic 2 publica de verdade**: em `/organizador/publicar` o
+> organizador busca a atração no catálogo, preenche data, local e setores, escala quem vai validar
+> na porta, e acompanha o que publicou em `/organizador/eventos`. O que ainda não existe é o outro
+> lado — descobrir, comprar e validar são as Epics 3 a 5. A seção
+> [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## No ar
 
@@ -34,8 +26,8 @@ A aplicação está publicada na Vercel — **é esta URL que abre a interface**
 
 **<https://elite-dev-rock-hub.vercel.app>**
 
-Entre com qualquer uma das credenciais de [Contas semeadas](#contas-semeadas). O caminho completo,
-passo a passo, está em [Roteiro de avaliação](#roteiro-de-avaliação).
+Entre com qualquer uma das credenciais de [Contas semeadas](#contas-semeadas). O caminho completo
+está em [Roteiro de avaliação](#roteiro-de-avaliação).
 
 A API vive à parte, na Railway, com o banco no mesmo projeto:
 
@@ -43,23 +35,11 @@ A API vive à parte, na Railway, com o banco no mesmo projeto:
 
 Você não precisa dela para usar a aplicação — o navegador nunca fala com esse endereço, e é de
 propósito ([por quê](#proxy-api-no-next-não-samesitenone-em-produção)). Ela está aqui para quem
-quiser ver o contrato da API. Dá para conferir sem instalar nada:
+quiser ver o contrato:
 
 - **[`/saude`](https://elite-dev-rockhub-production.up.railway.app/saude)** → `{"status": "ok"}`
-- **[`/docs`](https://elite-dev-rockhub-production.up.railway.app/docs)** → a documentação
-  automática, com as quatro rotas de autenticação. Dá para entrar por ali mesmo, com qualquer uma
-  das credenciais de [Contas semeadas](#contas-semeadas)
-
-```bash
-curl -X POST https://elite-dev-rockhub-production.up.railway.app/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"organizador@rockhub.dev","senha":"rockhub123"}'
-```
-
-Essa chamada é a verificação que mais paga num comando só: ela só devolve `200` se as migrações
-rodaram, **e** o seed gravou as contas, **e** o banco em uso é o da Railway.
-
-E a mesma chamada **pelo domínio da Vercel** prova o sistema inteiro de uma vez:
+- **[`/docs`](https://elite-dev-rockhub-production.up.railway.app/docs)** → documentação automática,
+  com todas as rotas. Dá para entrar por ali mesmo, com qualquer conta semeada
 
 ```bash
 curl -i -X POST https://elite-dev-rock-hub.vercel.app/api/auth/login \
@@ -67,16 +47,15 @@ curl -i -X POST https://elite-dev-rock-hub.vercel.app/api/auth/login \
   -d '{"email":"organizador@rockhub.dev","senha":"rockhub123"}'
 ```
 
-Ela só responde `200` se o build da Vercel leu o endereço da API, **e** o proxy `/api/*` reescreveu
-para a Railway a partir do servidor, **e** o banco de lá respondeu. Repare no `Set-Cookie`: ele volta
-pelo domínio da Vercel, com `HttpOnly`, `Secure` e `SameSite=lax` — é o cookie de sessão
-atravessando dois fornecedores, que é a coisa que este deploy existe para provar.
+Essa chamada prova o sistema inteiro num comando: ela só responde `200` se o build da Vercel leu o
+endereço da API, **e** o proxy `/api/*` reescreveu para a Railway do lado do servidor, **e** as
+migrações rodaram, **e** o seed gravou as contas. Repare no `Set-Cookie`: ele volta pelo domínio da
+Vercel, com `HttpOnly`, `Secure` e `SameSite=lax` — é o cookie de sessão atravessando dois
+fornecedores, que é a coisa que este deploy existe para provar.
 
-Como cada plataforma foi configurada, campo por campo e refazível numa conta vazia, está nos READMEs
-de cada camada: [Deploy na Vercel](frontend/README.md#deploy-na-vercel) e
-[Deploy na Railway](backend/README.md#deploy-na-railway). Não há `vercel.json` nem `railway.json`
-neste repositório, e isso é decisão — o motivo está
-[abaixo](#a-configuração-de-deploy-mora-no-painel-nas-duas-plataformas).
+Como cada plataforma foi configurada, campo por campo, está em
+[Deploy na Vercel](frontend/README.md#deploy-na-vercel) e
+[Deploy na Railway](backend/README.md#deploy-na-railway).
 
 ## Como executar
 
@@ -84,8 +63,7 @@ neste repositório, e isso é decisão — o motivo está
 
 - **[uv](https://docs.astral.sh/uv/)** para o backend. Ele mesmo baixa o Python 3.12 se a máquina
   não tiver
-- **Docker**, com o plugin Compose (`docker compose`, com espaço — é o Compose v2, embutido em
-  qualquer instalação atual), para o PostgreSQL 16
+- **Docker**, com o plugin Compose (`docker compose`, com espaço), para o PostgreSQL 16
 - **Node ≥ 20.9** e **npm** para o frontend. O Next 16 não roda no Node 18
 
 ### Banco de dados
@@ -103,42 +81,25 @@ cd backend
 cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
-# gere o segredo que assina a sessão e cole no .env, em JWT_SECRET
-# (opcional em desenvolvimento — o valor de exemplo funciona; veja abaixo)
-uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
-
-uv run alembic upgrade head       # cria o schema (tabela usuario)
-uv run python -m seeds.semear     # cria as 5 contas (organizador, 2 clientes, 2 portarias)
+uv run alembic upgrade head       # cria o schema
+uv run python -m seeds.semear     # cria as 5 contas de avaliação
 uv run uvicorn app.main:app --reload
 ```
 
-O seed pode rodar quantas vezes você quiser: ele não duplica conta e **não apaga nem sobrescreve
-nada** que já esteja no banco. Rode-o de dentro de `backend/` e **com o `-m`** — os dois detalhes
-estão explicados em [Contas semeadas](#contas-semeadas).
+Sobe em <http://127.0.0.1:8000>, com `/saude` e `/docs` respondendo.
 
-Em desenvolvimento o valor de exemplo do `JWT_SECRET` funciona e você pode pular esse passo. Com
-`AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito — o motivo está no
-[README do backend](backend/README.md#configuração).
+Em desenvolvimento o `JWT_SECRET` de exemplo funciona e você pode pular a geração de segredo; com
+`AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito. A
+`TICKETMASTER_API_KEY` segue a mesma regra e pode ficar vazia aqui — em `local` a busca no catálogo
+responde `CATALOGO_INDISPONIVEL` em vez de travar a avaliação por falta de conta no portal da
+Ticketmaster. Detalhes em [Configuração](backend/README.md#configuração).
 
-`TICKETMASTER_API_KEY` segue a mesma regra e pode ficar vazia aqui: em `local` a aplicação sobe sem
-ela, e a busca no catálogo (Story 2.1 em diante) responde `CATALOGO_INDISPONIVEL` em vez de travar a
-avaliação por falta de conta no portal da Ticketmaster. Só em produção ela é obrigatória.
-
-Sobe em <http://127.0.0.1:8000>. Para conferir que está no ar:
-
-- <http://127.0.0.1:8000/saude> → `{"status": "ok"}`
-- <http://127.0.0.1:8000/docs> → documentação automática do FastAPI
-
-Testes (exigem o Compose no ar a partir da Story 1.3 — os testes de banco migram
-`rockhub_teste` pelo próprio Alembic):
+Testes (exigem o Compose no ar — a suíte migra o banco de teste pelo próprio Alembic):
 
 ```bash
 cd backend
 uv run pytest
 ```
-
-Detalhes de configuração, variáveis de ambiente e o contorno para o bloqueio de executáveis do
-Windows estão no [README do backend](backend/README.md).
 
 ### Frontend
 
@@ -149,16 +110,12 @@ cd frontend
 
 cp .env.example .env.local    # no Windows: copy .env.example .env.local
 npm install
-
 npm run dev
 ```
 
-Abre em <http://localhost:3000>, com o cabeçalho e o sistema visual aplicados.
-
-**Suba o backend antes.** Desde o login, o frontend chama a API — e ele a alcança por um proxy
+Abre em <http://localhost:3000>. **Suba o backend antes** — o frontend o alcança por um proxy
 próprio: o navegador só conhece `/api/...`, e o Next reescreve para `http://localhost:8000` do lado
-do servidor. Convenções de CSS, tokens da identidade, o proxy e as armadilhas do Next 16 estão no
-[README do frontend](frontend/README.md).
+do servidor.
 
 ## Contas semeadas
 
@@ -177,175 +134,107 @@ uv run python -m seeds.semear
 | `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
 | `PORTARIA` | Ana Sampaio | `portaria2@rockhub.dev` | `rockhub123` |
 
-**São dois clientes de propósito.** O segundo existe para dar como demonstrar duas garantias que um
-cliente só deixaria no ar: que o ingresso de um não aparece na conta do outro (Epic 4) e que duas
-pessoas disputando o último ingresso de um setor produzem uma venda e uma recusa (Epic 3).
+**São dois clientes de propósito**, para demonstrar duas garantias que um cliente só deixaria no ar:
+que o ingresso de um não aparece na conta do outro (Epic 4) e que duas pessoas disputando o último
+ingresso produzem uma venda e uma recusa (Epic 3). **E são duas portarias** desde a Story 2.5, para
+que o cenário do AD-7 — a portaria A **não** valida o evento da portaria B — seja demonstrável sem
+criar conta na mão. Conta de portaria não se cria pela interface, de propósito.
 
-**E são duas portarias pelo mesmo motivo**, desde a Story 2.5. O enunciado pede uma; com uma só, a
-tela de escalação vira um item obrigatório que não se pode não marcar, e o cenário que o AD-7 existe
-para provar — a portaria A **não** valida o evento da portaria B — dependeria de você criar uma conta
-de portaria na mão. Conta de portaria não se cria pela interface, de propósito. A segunda conta é o
-que torna esse cenário demonstrável em dois cliques.
+**As mesmas cinco contas existem no banco da Railway**, criadas por este mesmo comando, que roda a
+cada deploy logo depois das migrações. Então elas valem nos três lugares: local, aplicação publicada
+e `/docs` da API.
 
-**As mesmas cinco contas existem no banco da Railway**, criadas por este mesmo comando: ele roda a
-cada deploy, logo depois das migrações. Então dá para entrar com elas em três lugares, com as mesmas
-senhas: no seu ambiente local, na [aplicação publicada](https://elite-dev-rock-hub.vercel.app) e
-direto no `/docs` da [API](#no-ar).
+**Rodar de novo é seguro:** o comando não duplica conta, não apaga e não sobrescreve nada. Ele
+imprime `criada` na primeira execução e `mantida` nas seguintes. Dois detalhes que evitam dez minutos
+de confusão: rode **com o `-m`** (executar o arquivo direto quebra o caminho de import) e **a partir
+de `backend/`**, que é de onde o `.env` é lido.
 
-O comando imprime uma linha por conta — `criada` na primeira execução, `mantida` nas seguintes — e
-**rodar de novo é seguro**: ele não duplica conta, não apaga nem sobrescreve nada. Se você já tinha
-criado contas pela interface, elas continuam exatamente onde estão.
-
-Dois detalhes que valem os dez segundos de leitura:
-
-- **Com o `-m`.** `uv run seeds/semear.py` falha com `ModuleNotFoundError: No module named 'app'` —
-  executar o arquivo direto põe `backend/seeds/` no caminho de import em vez de `backend/`
-- **A partir de `backend/`**, porque é de lá que o `.env` é lido
-
-**Conta criada por `/cadastro` nasce sempre `CLIENTE`**, de propósito: não há seletor de papel na
-tela, e enviar `papel` na requisição não muda nada. Se você quiser uma conta de cliente sua, abra
-<https://elite-dev-rock-hub.vercel.app/cadastro> (ou `http://localhost:3000/cadastro`, se estiver
-rodando local) — nome, e-mail e senha, e já entra logado.
+**Conta criada por `/cadastro` nasce sempre `CLIENTE`**: não há seletor de papel, e enviar `papel` na
+requisição não muda nada.
 
 ## Roteiro de avaliação
 
-O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento
-e validar na portaria — é escrito quando o fluxo estiver completo.
+O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento e
+validar na portaria — é escrito quando o fluxo estiver completo. O que dá para verificar hoje:
 
 ### Sem instalar nada
 
-Abra <https://elite-dev-rock-hub.vercel.app>. São cinco minutos, sem clonar, sem Docker, sem `uv`:
+Abra <https://elite-dev-rock-hub.vercel.app>. São cinco minutos, sem clonar, sem Docker:
 
 1. A raiz abre com a identidade aplicada — fundo escuro, masthead com o fio duplo, serifada nos
    títulos. O masthead mostra `Início` · `Entrar`, porque você ainda não tem sessão
 2. Abra `/conta` direto na barra de endereço → você é levado para `/login?voltar=%2Fconta`. A guarda
    de rota está valendo em produção
-3. Entre com `organizador@rockhub.dev` / `rockhub123` → você **volta para a `/conta`**, não para a
-   raiz, e ela mostra **Helena Marques** e o papel `ORGANIZADOR`. Essa conta não poderia ter nascido
-   pela interface: `/cadastro` só cria `CLIENTE`
-4. O masthead virou `Início` · `Minha conta`. Clique em `Sair` → ele volta para `Entrar`
-   **imediatamente, sem recarregar a página**
-5. Abra `/cadastro` e crie uma conta sua, com nome, e-mail e senha de no mínimo 6 caracteres → cai na
-   raiz já logado. Senhas diferentes nos dois campos mostram o erro **sem nenhuma requisição**
-6. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio da **Vercel**, com
-   `HttpOnly` marcado — e `document.cookie` no console não o mostra. Na aba Network, toda chamada saiu
-   para `/api/...` no domínio da Vercel, **nunca** para `up.railway.app`
+3. Entre com `organizador@rockhub.dev` / `rockhub123` → você **volta para a `/conta`**, e ela mostra
+   **Helena Marques**, papel `ORGANIZADOR`. Essa conta não poderia ter nascido pela interface
+4. O masthead vira `Início` · `Meus eventos` · `Publicar evento` · `Minha conta`. Clique em `Sair` →
+   ele volta para `Entrar` **imediatamente, sem recarregar a página**
+5. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio da **Vercel**, com
+   `HttpOnly` marcado — e `document.cookie` no console não o mostra. Na aba Network, toda chamada
+   saiu para `/api/...` no domínio da Vercel, **nunca** para `up.railway.app`
 
-O passo 6 é o que eu pediria para olhar com atenção: a interface está na Vercel, a API na Railway, e
+O passo 5 é o que eu pediria para olhar com atenção: a interface está na Vercel, a API na Railway, e
 mesmo assim não existe requisição entre domínios nem cookie de terceiro. O motivo está em
 [Proxy `/api/*` no Next](#proxy-api-no-next-não-samesitenone-em-produção).
 
-**O que ainda não dá para fazer por lá:** descobrir evento, comprar ingresso, receber o QR ou validar
-na portaria. Nada disso existe ainda. **Publicar evento já existe** desde a Story 2.4 — o roteiro
-dela está logo abaixo, em *Na sua máquina*, porque publicar em produção criaria um evento no banco
-real que ninguém pediu.
+**O que ainda não dá para fazer por lá:** descobrir evento, comprar, receber o QR ou validar na
+portaria. Publicar **existe**, mas o roteiro dele está abaixo, em *Na sua máquina*, porque publicar
+em produção criaria um evento no banco real que ninguém pediu.
 
 ### Na sua máquina
 
-Rodando local pelos passos de [Como executar](#como-executar), e começando pelas contas semeadas
-(rode `uv run python -m seeds.semear` se ainda não rodou):
+Rodando local pelos passos de [Como executar](#como-executar), começando pelo seed.
 
-1. Entrar em `http://localhost:3000/login` como `organizador@rockhub.dev` / `rockhub123` → a
-   `/conta` mostra **Helena Marques** e o papel `ORGANIZADOR`. É a conta que vai publicar eventos na
-   Epic 2, e ela não poderia ter nascido pela interface: `/cadastro` só cria `CLIENTE`
-2. Sair e entrar como `cliente@rockhub.dev` → a mesma tela mostra **Bruno Tavares**, papel `CLIENTE`.
-   O segundo cliente, `cliente2@rockhub.dev`, ainda não tem o que fazer aqui: ele existe para as
-   Epics 3 e 4, onde prova que o ingresso de um não aparece na conta do outro e que dois clientes
-   disputando o último lugar de um setor produzem uma venda e uma recusa
-3. Rodar `uv run python -m seeds.semear` **de novo** → as cinco linhas dizem `mantida`, o comando
-   sai em `0` e nenhuma conta sua desaparece. É a garantia que faz esse mesmo comando poder rodar a
-   cada deploy
-4. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
-   `/auth/login`, `/auth/logout` e `/auth/eu`
-5. E, para ver o contrato da API sem passar pela interface: abrir
-   <https://elite-dev-rockhub-production.up.railway.app/docs> e entrar pelo `POST /auth/login`
-   com `organizador@rockhub.dev` / `rockhub123` → `200`, com `"papel": "ORGANIZADOR"`. É a mesma
-   aplicação que a interface publicada consome, contra o mesmo PostgreSQL da Railway
-6. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
-   caracteres) → **cai na raiz já logado**, sem precisar entrar de novo. Rodar o seed mais uma vez
-   depois disso **não mexe nessa conta**: ela continua lá e continua entrando
-7. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
-   frontend — com `HttpOnly` marcado. E `document.cookie` no console não o mostra
-8. Na aba Network, a chamada foi para `/api/auth/cadastro`, nunca para `localhost:8000`
-9. Tentar cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) mostra
-   "Esse e-mail já tem conta. Entre com ele ou use outro." e responde `409` — nunca um `500`
-10. No cadastro, digitar senha e confirmação diferentes mostra "As senhas não conferem." **sem
-    nenhuma requisição no Network** — a confirmação nunca sai do navegador
-11. Apagar o cookie e entrar em `/login` com a conta que você acabou de criar → cai na raiz. É a
-    prova de que hash e normalização de e-mail batem entre as duas rotas
-12. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
-    resposta é `401` com `CREDENCIAIS_INVALIDAS`. Um e-mail que não existe devolve **exatamente** a
-    mesma coisa
-13. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL. E o
-    logotipo, no alto das duas, leva de volta para a raiz
-14. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
+**Acesso e sessão**
 
-E o ciclo da sessão, que fecha na Story 1.6:
+1. Entrar como `organizador@rockhub.dev` → a `/conta` mostra **Helena Marques**, `ORGANIZADOR`
+2. Rodar `uv run python -m seeds.semear` **de novo** → as cinco linhas dizem `mantida`, o comando sai
+   em `0`, e nenhuma conta criada por você desaparece. É a garantia que faz esse comando poder rodar
+   a cada deploy
+3. Criar uma conta em `/cadastro` → cai na raiz já logado. Senhas diferentes nos dois campos mostram
+   o erro **sem nenhuma requisição no Network** — a confirmação nunca sai do navegador
+4. Cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) → `409`, com
+   mensagem legível. Nunca um `500`
+5. Errar a senha → `401 CREDENCIAIS_INVALIDAS`. Um e-mail que **não existe** devolve exatamente a
+   mesma coisa, no mesmo tempo ([por quê](#recusa-não-entrega-o-que-ela-sabe))
+6. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie → `401 NAO_AUTENTICADO` no formato
+   `{"erro": {...}}`. E `/rota-que-nao-existe` → `404` no mesmo formato, em português
+7. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=javascript:alert(1)`) e entrar → você cai em `/`.
+   **Nunca fora do site**
 
-15. **Sem sessão**, a raiz `http://localhost:3000/` abre normalmente e o masthead mostra
-    `Início` · `Entrar` — a raiz é pública
-16. Ainda sem sessão, abrir `http://localhost:3000/conta` → você é levado para
-    `/login?voltar=%2Fconta`. Entrar ali **devolve você a `/conta`**, não à raiz
-17. Com sessão, o masthead vira `Início` · `Minha conta`, e a `/conta` mostra nome, e-mail e papel
-18. Clicar em `Sair` leva de volta para `/` **e o masthead vira `Entrar` na hora**, sem recarregar
-19. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie responde
-    `401 {"erro":{"codigo":"NAO_AUTENTICADO", ...}}`
-20. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=https://exemplo.com`, ou
-    `?voltar=javascript:alert(1)`) e entrar → você cai em `/`. **Nunca fora do site**
-21. `curl -i http://127.0.0.1:8000/rota-que-nao-existe` responde `404` no mesmo formato
-    `{"erro": {...}}` das rotas de verdade, e com a mensagem em português
+**Publicar um evento** — o primeiro fluxo completo do produto, do catálogo externo até o banco
 
-E a publicação de eventos, que fecha na Story 2.4 — é o primeiro fluxo do produto que existe de
-ponta a ponta, do catálogo externo até uma linha no banco:
-
-22. Entrar como `organizador@rockhub.dev` → o masthead ganha `Publicar evento`. A tela já abre
-    mostrando shows reais do catálogo da Ticketmaster, sem precisar buscar nada primeiro
-23. **Clicar numa fila** → a URL ganha `?escolhido=…`, a fila fica marcada com o fio âmbar e o passo
-    **2 · Data, local e setores** aparece abaixo. Recarregar mantém a escolha; o botão voltar a
-    desfaz
-24. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`); no passo
-    **3 · Escale a portaria**, marcar **as duas** contas → `Publicar evento` devolve a confirmação
-    **na própria tela**, com capacidade e preço exatos e os dois nomes sob `Na porta`. Dali, seguir o
-    `Ver meus eventos →` → o show que você acabou de publicar está na lista, sob `Em cartaz`, com
-    `0/800` à direita
-25. Conferir no banco que as linhas existem de verdade:
+8. Como organizador, abrir `Publicar evento`. A tela **já chega mostrando shows reais** do catálogo
+   da Ticketmaster, sem precisar buscar nada primeiro
+9. **Clicar numa fila** → a URL ganha `?escolhido=…` e o passo 2 aparece. Recarregar mantém a
+   escolha; o botão voltar a desfaz
+10. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`); no passo 3, marcar
+    **as duas** portarias → a confirmação aparece **na própria tela**, com capacidade, preço e os dois
+    nomes sob `Na porta`
+11. Conferir que as linhas existem de verdade:
     `docker compose exec db psql -U rockhub -d rockhub -c "select nome, data_hora, local from evento;"`
     e `... -c "select * from evento_portaria;"` → duas linhas para esse evento
-26. Repetir com **dois setores de mesmo nome** (`Pista` e `pista`) → a tela diz que há setores
-    repetidos, e a API responde `422 SETOR_DUPLICADO`. Nunca um `500`, e nada fica gravado
-27. Apagar o único setor não é possível — o `×` só aparece a partir da segunda linha. Pela API,
-    `"setores": []` responde `422 EVENTO_SEM_SETOR`
-28. Digitar `abc` no preço → a recusa acontece **sem nenhuma requisição no Network**
+12. Repetir com **dois setores de mesmo nome** (`Pista` e `pista`) → `422 SETOR_DUPLICADO`, nunca um
+    `500`, e nada fica gravado. `"setores": []` pela API → `422 EVENTO_SEM_SETOR`
+13. **Publicar sem marcar ninguém no passo 3** → a tela recusa sem requisição. Pela API, corpo sem
+    `portaria_ids` → `422 EVENTO_SEM_PORTARIA`
+14. **Escalar uma conta que não é de portaria** (`"portaria_ids": ["<id do cliente>"]`) →
+    `422 PORTARIA_INVALIDA`. Um UUID que não existe responde **exatamente o mesmo**
+15. `curl` em `/organizador/portarias` com cookie de **cliente** → `403 SEM_PERMISSAO`; sem cookie →
+    `401 NAO_AUTENTICADO`
 
-E a escala da portaria, que fecha na Story 2.5 e faz o AD-7 valer:
+**Acompanhar o que foi publicado**
 
-29. **Tentar publicar sem marcar ninguém no passo 3** → a tela recusa **sem nenhuma requisição no
-    Network**. Pela API, o corpo sem `portaria_ids` responde `422 EVENTO_SEM_PORTARIA`
-30. **Digitar `ana` no campo de busca** do passo 3 → só uma linha, e sem chamada nenhuma no Network:
-    o filtro é em memória. Apagar traz as duas de volta
-31. **Marcar Ana, buscar `jonas`, marcar Jonas e limpar o filtro** → as duas continuam marcadas.
-    Filtrar é ver menos, não desmarcar
-32. **Escalar uma conta que não é de portaria**, pela API (`"portaria_ids": ["<id do
-    cliente@rockhub.dev>"]`) → `422 PORTARIA_INVALIDA`. Um UUID que não existe responde **exatamente
-    o mesmo**, com a mesma mensagem: a rota não diz se a conta existe
-33. `curl` em `/organizador/portarias` com o cookie de **cliente** → `403 SEM_PERMISSAO`; sem cookie
-    nenhum → `401 NAO_AUTENTICADO`
-
-E "Meus eventos", que fecha a Epic 2 na Story 2.6 — a primeira tela de leitura do produto:
-
-34. Com a sessão de organizador, o masthead mostra `Início · Meus eventos · Publicar evento ·
-    Minha conta`. Abrir `Meus eventos` → os shows publicados nos passos acima, cada um numa fila com
-    data, nome, `local · cidade` e `vendidos/capacidade` à direita. **Números exatos, sem medidor** —
-    é o inventário de quem é dono da informação
-35. **Publicar um show com data no passado** (a rota aceita, e é pergunta em aberto) → ele aparece
-    numa segunda seção, `Já aconteceram`, separado do que está `Em cartaz`
-36. **Clicar numa fila, em qualquer ponto dela** → o detalhe abre com os setores um a um, com preço,
-    e o bloco `Na porta` com nome e e-mail de quem foi escalado. Não há nada para editar aqui, e é
-    decisão registrada em [O que não está pronto](#o-que-não-está-pronto)
-37. **Pedir o detalhe de um evento que não é seu**, pela API — publique com um segundo organizador ou
-    pegue um id no `psql` — → `404 EVENTO_NAO_ENCONTRADO`, com o corpo **idêntico** ao de um UUID que
-    nunca existiu. A rota não diz se o evento existe
-38. Entrar como `cliente@rockhub.dev` e digitar `/organizador/eventos` na barra → você cai na raiz, e
+16. Abrir `Meus eventos` → os shows numa fila com data, nome, `local · cidade` e
+    `vendidos/capacidade` à direita. **Números exatos, sem medidor** — é o inventário de quem é dono
+    da informação
+17. Publicar um show com **data no passado** → ele aparece em `Já aconteceram`, separado de
+    `Em cartaz`
+18. **Clicar numa fila** → o detalhe abre com os setores um a um, com preço, e o bloco `Na porta`.
+    Não há nada para editar aqui, e é [corte consciente](#o-que-não-está-pronto)
+19. Pedir pela API o detalhe de **um evento que não é seu** → `404 EVENTO_NAO_ENCONTRADO`, com corpo
+    **idêntico** ao de um UUID que nunca existiu
+20. Entrar como `cliente@rockhub.dev` e digitar `/organizador/eventos` → você cai na raiz, e
     `Meus eventos` não está no masthead
 
 ## Stack e estrutura
@@ -356,497 +245,296 @@ E "Meus eventos", que fecha a Epic 2 na Story 2.6 — a primeira tela de leitura
 | Sessão | Argon2id (`argon2-cffi`) para a senha · JWT HS256 (`PyJWT`) em cookie `httpOnly` |
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
-| Catálogo externo | Ticketmaster Discovery v2 — `GET /organizador/catalogo` no ar desde a Story 2.2 |
+| Catálogo externo | Ticketmaster Discovery v2 |
 | Deploy | Vercel (frontend) e Railway (API e banco) — **as duas no ar** |
 
 ```text
 docker-compose.yml   # Postgres 16 local — infraestrutura do projeto inteiro, por isso na raiz
 docker/initdb/       # script que cria o banco de teste na primeira subida do Compose
-backend/             # API FastAPI
-frontend/            # Next.js
-docs/                # enunciado do desafio e decisões técnicas em prosa
+backend/             # API FastAPI          → backend/README.md
+frontend/            # Next.js              → frontend/README.md
+docs/                # enunciado do desafio e specs avulsas
 _bmad-output/        # artefatos de planejamento: brainstorm, arquitetura, UX, epics e stories
 ```
 
-`_bmad-output/` é versionado de propósito: o desafio pede que os artefatos de planejamento sejam
-entregues junto com o código. Lá dentro estão a sessão de brainstorming, a espinha de arquitetura
-com as decisões vinculantes, o design de UX e as 38 stories.
+**`_bmad-output/` é versionado de propósito**, porque o desafio pede os artefatos de planejamento
+junto do código. Lá dentro estão a sessão de brainstorming (com o `.memlog.md` completo, que registra
+o que foi considerado e recusado), a espinha de arquitetura com as 14 decisões vinculantes
+(AD-1 a AD-14), o design de UX com protótipo navegável, e as 38 stories — uma por commit.
 
 ## Decisões: por que isso e não aquilo
 
-Esta seção cresce a cada story, enquanto o motivo ainda está fresco. As decisões de regra de
-negócio que ainda não viraram código estão detalhadas em
-[docs/decisoes-tecnicas.md](docs/decisoes-tecnicas.md).
+Esta seção só guarda decisão que **muda o produto ou a arquitetura** — a régua é: se eu tivesse
+escolhido a alternativa, quem avalia veria um sistema diferente. Decisão de detalhe (nome de
+componente, ordem de campo, escolha de biblioteca menor) mora no README da camada, ao lado do código
+que ela afeta.
+
+### Setores por quantidade, não mapa de assentos
+
+**Decidi** vender por setor com capacidade e contador (`Pista`, `800`, `120,00`), sem assento
+numerado. O desafio aceita qualquer um dos dois.
+
+**Por quê:** a plataforma é focada em show — pista, área VIP, camarote —, onde assento numerado não é
+o padrão. Escolher o formato que casa com o produto vale mais do que escolher o mais vistoso.
+
+**O que caiu:** o **mapa de assentos** de cinema e teatro, que é o mais impressionante de demonstrar
+e o que o enunciado cita primeiro. Ele exigiria modelar assento individual, desenhar a planta e
+resolver seleção em tempo real — e a invariante que importa ("o mesmo lugar não é vendido duas
+vezes") é a **mesma** nos dois modelos, só que com muito mais tela pela frente. Preferi o fluxo
+inteiro completo à metade sofisticada, que é literalmente o que o enunciado recomenda.
+
+### Portaria é escala de trabalho, não nível de permissão
+
+**Decidi** que o usuário de portaria é **escalado para eventos específicos** pelo organizador, no ato
+da publicação. Ao entrar, ele vê só os eventos em que trabalha. É a tabela `evento_portaria`, com
+chave composta, e um evento aceita vários escalados.
+
+**Por quê:** a leitura óbvia do enunciado é tratar os três papéis como níveis de permissão — e aí
+**qualquer conta de portaria valida ingresso de qualquer evento do sistema**. O papel diz o que a
+pessoa pode fazer, mas não *onde*. Numa plataforma com vários organizadores, isso é um furo de
+autorização. Um efeito colateral bem-vindo: como a validação sempre acontece dentro do contexto de um
+evento escolhido, o retorno "evento errado" que o desafio pede **surge do modelo**, em vez de ser uma
+regra inventada à parte.
+
+**O que caiu:** **papel como permissão pura**, que é o que o enunciado sugere e custa uma tabela a
+menos. E, dentro da escala, **um único porteiro por evento** (um `<select>`, que é o que o protótipo
+desenhava): caiu porque a interface passaria a ser a única coisa impedindo o que o banco permite, e
+não há tela de editar evento para corrigir depois — um evento com uma pessoa só escalada, e ela
+faltando na noite do show, é um evento sem portaria.
+
+### O catálogo externo é copiado na publicação, não consultado ao vivo
+
+**Decidi** que a Ticketmaster é chamada **apenas** quando o organizador busca uma atração para
+publicar. No ato da publicação, os dados usados são gravados no banco. Nenhuma tela de cliente ou de
+portaria toca a API externa.
+
+**Por quê:** a Discovery permite 5 requisições por segundo e 5.000 por dia. Se a listagem de eventos
+consultasse a API a cada visita, a aplicação quebraria com pouquíssimo uso — e ficaria refém da
+disponibilidade de um terceiro no meio de uma compra. Isso também resolve integridade: o nome, a
+imagem e o local que aparecem no ingresso são os do momento da compra, mesmo que a Ticketmaster mude
+o registro depois.
+
+**O que caiu:** **consultar ao vivo com cache**, que manteria os dados sempre atualizados. Caiu
+porque "atualizado" é a propriedade errada aqui: um ingresso vendido para um show que mudou de nome
+na origem tem que continuar dizendo o que dizia quando foi vendido.
+
+### Publicação exige atração do catálogo — sem cadastro manual de evento
+
+**Decidi** que o organizador só publica a partir de uma atração encontrada no catálogo. Não existe, e
+não vai existir, um caminho de "não achei — cadastro na mão".
+
+**Por quê:** é o que o enunciado descreve literalmente — "o organizador monta um evento **a partir
+de** um catálogo vindo de uma API externa" — e é o que a decisão acima pressupõe: o dado do catálogo
+vira cópia no banco, o que só faz sentido existindo uma atração de origem.
+
+**O que caiu:** um segundo caminho, "não encontrou? cadastre manualmente". Cobriria casos reais —
+cover, evento independente, show sem página na Ticketmaster — mas abriria um formulário novo com
+validação própria e sairia do que o enunciado pede para demonstrar. Fica registrado como
+[limitação](#o-que-não-está-pronto).
+
+### Só cliente cria a própria conta; organizador e portaria nascem por fora
+
+**Decidi** que o cadastro pela interface produz **sempre** uma conta `CLIENTE`. Não há seletor de
+papel, não há campo `papel` no schema de entrada, e enviar `{"papel": "ORGANIZADOR"}` cria uma conta
+cliente do mesmo jeito, calada.
+
+**Por quê:** um seletor de papel numa tela pública é escalada de privilégio com aparência de
+formulário. E a portaria é ainda mais direta: ela só valida onde foi *escalada*, então uma conta de
+portaria autocriada não estaria ligada a evento algum. Papel é uma afirmação sobre confiança, e
+afirmação de confiança não pode vir de quem está pedindo o acesso. Fiz questão de que o campo
+desconhecido seja **ignorado** em vez de recusado com `422`: um `422` provaria que o servidor viu o
+campo; ignorá-lo prova que ele não influencia nada.
+
+**O que caiu:** um seletor "sou cliente / sou organizador", que várias plataformas de evento têm —
+elas resolvem com aprovação manual ou verificação de CNPJ, que é exatamente a etapa que este projeto
+não tem. E **um cadastro de organizador em rota própria**, que está *adiado, não descartado*: sem uma
+forma de decidir quem merece o papel, seria o mesmo buraco com outro endereço.
 
 ### Backend separado em FastAPI, e não Next.js full-stack
 
 **Decidi** separar a API do frontend, com FastAPI de um lado e Next.js do outro.
 
-**Por quê:** o núcleo do desafio é concorrência — não vender o mesmo lugar duas vezes, não validar
-o mesmo ingresso duas vezes. Isso se resolve com `UPDATE` condicional e transação, e eu queria a
-ferramenta que deixa isso explícito. Separar também torna o contrato da API visível, o que é
-justamente o que está sendo avaliado.
+**Por quê:** o núcleo do desafio é concorrência — não vender o mesmo lugar duas vezes, não validar o
+mesmo ingresso duas vezes. Isso se resolve com `UPDATE` condicional e transação, e eu queria a
+ferramenta que deixa isso explícito. Separar também torna o contrato da API visível, que é justamente
+o que está sendo avaliado.
 
 **O que caiu:** Next.js full-stack com Route Handlers e Prisma. Seria menos código e um deploy só,
 mas empurraria a regra de concorrência para dentro do framework de tela, onde ela fica difícil de
 enxergar — e apagaria a fronteira entre API e interface que o desafio pede para demonstrar.
 
-### Sem camada de repositórios: `routers → services → models`
+### `routers → services → models`, sem camada de repositórios
 
-**Decidi** que o backend tem duas camadas antes do modelo. `app/api/` cuida do HTTP,
-`app/services/` cuida da regra de negócio e das transações. Não existe `app/repositories/`.
+**Decidi** duas camadas antes do modelo: `app/api/` cuida do HTTP, `app/services/` cuida da regra de
+negócio e das transações. Não existe `app/repositories/`.
 
-**Por quê:** a `Session` do SQLAlchemy já é, na prática, um repositório com unidade de trabalho.
-Numa aplicação deste tamanho, a camada extra viraria uma pilha de funções de repasse — `criar`,
-`buscar_por_id`, `salvar` — que não separam nada de novo e só afastam a regra do lugar onde ela
-acontece.
+**Por quê:** a `Session` do SQLAlchemy já é, na prática, um repositório com unidade de trabalho. Numa
+aplicação deste tamanho, a camada extra viraria uma pilha de funções de repasse — `criar`,
+`buscar_por_id`, `salvar` — que não separam nada e só afastam a regra do lugar onde ela acontece.
 
-**O que caiu:** o `router → service → repository` que é padrão em projeto grande. Ele se paga
-quando há mais de uma fonte de dados ou troca de ORM no horizonte. Não é o caso aqui, e adotar por
-hábito seria cerimônia sem contrapartida. Deixei registrado para não parecer esquecimento.
+**O que caiu:** o `router → service → repository` que é padrão em projeto grande. Ele se paga quando
+há mais de uma fonte de dados ou troca de ORM no horizonte; não é o caso, e adotar por hábito seria
+cerimônia sem contrapartida. A mesma régua criou **uma exceção deliberada**: a rota do catálogo chama
+a integração da Ticketmaster direto, sem service, porque um service ali teria como corpo inteiro
+`return ticketmaster.buscar_eventos(q)` — a definição de camada de repasse que eu acabei de recusar.
+
+### O estoque é protegido pelo banco, não pela aplicação
+
+**Decidi** que toda mudança de estoque é um único comando condicional, e que o banco carrega uma
+constraint que torna o estado inválido impossível de gravar:
+
+```sql
+UPDATE setor SET vendidos = vendidos + :quantidade
+ WHERE id = :setor_id AND vendidos + :quantidade <= capacidade
+```
+
+**Por quê:** o caso que interessa não é o normal, é o simultâneo — duas pessoas comprando o último
+ingresso no mesmo instante. Como a verificação e a escrita acontecem no mesmo comando, não existe
+intervalo entre "conferir" e "gravar", que é exatamente onde a corrida aconteceria. Se o comando
+afetar zero linhas, não havia estoque, e a transação é revertida. O comando já existe e é testado
+desde a Story 2.3, antes de a Epic 3 ter consumidor para ele.
+
+**O que caiu:** **`SELECT` para conferir e depois `UPDATE`**, que é o caminho intuitivo e tem a
+corrida embutida entre as duas linhas. E **lock na aplicação**, que resolveria numa instância só e
+quebraria assim que houvesse duas réplicas — que é justamente a situação de um deploy real. A mesma
+disciplina vai valer para a validação de ingresso na Epic 5: `WHERE id = :id AND usado_em IS NULL`.
+
+### Dinheiro é inteiro em centavos, do banco à fronteira
+
+**Decidi** que todo valor monetário é `int` em centavos no banco e no contrato da API. A conversão de
+`120,00` para `12000` acontece no cliente, antes do `POST`.
+
+**Por quê:** ponto flutuante não representa `0,10` exatamente, e preço de ingresso somado várias
+vezes é onde isso aparece. A fronteira é o lugar certo para a conversão: do lado de fora quem digita
+escreve como escreveria num cartaz; do lado de dentro, todo valor é inteiro, sem exceção.
+
+**O que caiu:** **aceitar reais na API e converter no backend**, que tiraria o parsing do cliente —
+caiu porque põe ponto flutuante no contrato. E **pedir centavos direto ao organizador**, zero
+conversão e zero ambiguidade, ao custo de ele fazer a conta de cabeça a cada setor.
 
 ### Erro da API tem código estável, e o frontend decide por ele
 
 **Decidi** que **toda** resposta de erro sai como
 `{"erro": {"codigo": "ESTOQUE_INSUFICIENTE", "mensagem": "..."}}` — as mesmas duas chaves, venha o
-erro da regra de negócio, do framework (rota inexistente, método errado) ou da validação do
-Pydantic. Fixei isso na primeira story, antes de existir qualquer regra de negócio.
+erro da regra de negócio, do framework (rota inexistente, método errado), da validação do Pydantic ou
+de uma exceção não prevista. Fixei isso na primeira story, antes de existir qualquer regra de
+negócio.
 
 **Por quê:** o `codigo` é contrato; a `mensagem` é texto para humano. Com essa separação eu reescrevo
-qualquer mensagem sem quebrar tela nenhuma. E o ponto de padronizar as três origens de uma vez é
-que o frontend passa a ter um caminho só para tratar erro — se o `404` do router falasse
-`{"detail": ...}` e o do meu service falasse `{"erro": ...}`, cada tela teria que saber os dois.
+qualquer mensagem sem quebrar tela nenhuma. E padronizar as origens de uma vez é o que dá ao frontend
+**um caminho só** para tratar erro — se o `404` do framework falasse `{"detail": ...}` e o do meu
+service falasse `{"erro": ...}`, cada tela teria que saber os dois. O corpo do `500` não carrega a
+causa: mensagem de exceção traz host, usuário e nome de tabela com frequência demais para virar
+resposta HTTP.
 
-**O que caiu:** deixar cada endpoint devolver o `detail` padrão do FastAPI e o frontend interpretar
-o texto. Funciona até a primeira vez que alguém corrige uma vírgula na mensagem e derruba um `if`
-do outro lado.
+**O que caiu:** deixar cada endpoint devolver o `detail` padrão do FastAPI e o frontend interpretar o
+texto. Funciona até a primeira vez que alguém corrige uma vírgula na mensagem e derruba um `if` do
+outro lado. **O que abri mão junto:** o erro de validação do Pydantic vem como lista de objetos
+aninhados, mais rica para depurar; achatei em texto para não ter uma forma de erro diferente só nesse
+caso.
 
-**O que abri mão junto:** o erro de validação do Pydantic vem como uma lista de objetos aninhados,
-que é mais rica para depurar. Achatei em texto (`quantidade: não é um inteiro`) para não ter uma
-forma de erro diferente só nesse caso. Contrato uniforme valeu mais que detalhe estruturado num
-cenário em que quem consome é a minha própria tela.
+### Alembic desde a primeira tabela, nunca `create_all` — nem em teste
 
-### Configuração só por variável de ambiente
+**Decidi** que todo schema nasce por migração versionada, sem exceção — inclusive nos testes, que
+migram o banco de teste pelo Alembic em vez de criar as tabelas a partir dos modelos.
 
-**Decidi** que tudo que muda entre máquinas vem do ambiente, lido por uma classe `Settings` do
-Pydantic, e que nenhum segredo entra no repositório — o que é versionado é o `.env.example`.
+**Por quê:** `create_all` seria mais rápido de montar, mas deixaria de verificar exatamente o que a
+migração entrega. Sem um `downgrade()` exercitado, uma migração pode estar quebrada por meses sem
+ninguém perceber — e seria o deploy a descobrir isso, da pior forma possível.
 
-**Por quê:** a chave da Ticketmaster e o segredo que assina os ingressos chegam nas próximas epics.
-Com o hábito já estabelecido, não existe o momento de tentação em que alguém "só comita o valor
-para testar". O Pydantic ainda valida na subida: `AMBIENTE=homologacao` derruba a aplicação na hora,
-em vez de causar um comportamento estranho três telas adiante.
+**O que caiu:** `Base.metadata.create_all`, cogitado especificamente para os testes por ser mais
+rápido de escrever. Cai fora do projeto inteiro, não só de uma story.
 
-**O que caiu:** um `config.py` com valores por ambiente versionado no repositório. É mais cômodo de
-ler, mas é exatamente o arquivo em que segredo acaba caindo.
+### Testes de banco contra Postgres real, não SQLite em memória
 
-### O domínio é escrito em português
+**Decidi** que a suíte roda `alembic downgrade base` seguido de `upgrade head` contra um banco de
+teste real (`rockhub_teste`) antes de qualquer asserção.
 
-**Decidi** nomear as entidades como o enunciado as chama: `evento`, `setor`, `reserva`, `ingresso`,
-`portaria`. Inclusive a rota de saúde é `/saude`.
+**Por quê:** SQLite não tem UUID nativo, não tem `TIMESTAMPTZ` e trata `CHECK` de outro jeito —
+passaria verde sem provar nada sobre o schema que a migração de verdade cria. Como as invariantes
+deste projeto **moram no banco** (a decisão do estoque, acima), testar contra um banco que não é o de
+produção testaria a coisa errada.
 
-**Por quê:** quem avalia lê o enunciado em português e depois o código. Sem tradução no meio, a
-correspondência é direta e não sobra dúvida sobre qual requisito cada parte atende.
-
-**O que caiu:** o inglês por convenção de mercado. Criaria um dicionário mental entre requisito e
-código — `sector` é setor ou seção? `gate` é portaria ou portão? — em troca de nada que o projeto
-aproveite.
-
-### `uv` em vez de `pip` + `requirements.txt`
-
-**Decidi** usar o `uv` como gerenciador do backend, com `uv.lock` versionado.
-
-**Por quê:** o desafio vai ser rodado numa máquina que eu nunca vi. O `uv` baixa o próprio Python
-3.12, cria a virtualenv e instala versões travadas — um comando, sem passo manual pelo caminho.
-Cada instrução a menos no README é um jeito a menos de a avaliação travar antes de ver o produto.
-
-**O que caiu:** `pip` + `requirements.txt`, que assume que a pessoa já tem a versão certa do Python
-e sabe criar a venv. E o Poetry, que resolve o mesmo problema, mas é ele próprio mais uma
-instalação a fazer antes de começar.
-
-### A interface é um jornal noturno, e não um catálogo de e-commerce
-
-**Decidi** que a listagem de shows não tem card: são filas separadas por fio, com a data na margem
-esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Fundo preto quente,
-âmbar como acento único, raio zero e sombra zero em todo o sistema.
-
-**Por quê:** ingresso não é produto de prateleira — é o direito de entrar num lugar, numa hora. Card
-com imagem, preço e botão é vocabulário de e-commerce, e ele carrega junto a promessa errada. A
-estrutura de impresso diz a coisa certa sobre o que está sendo vendido, e custa o mesmo para
-construir. O desafio penaliza por escrito a interface que "parece gerada", e o que denuncia uma
-interface gerada não é ser feia: é ser bonita de um jeito só. Escolher qual dos vários bonitos era
-justamente o ponto.
-
-**O que caiu:** a fileira horizontal de cards com paleta empresarial — o formato de Sympla, Eventim e
-Ingresso.com. É o que o mercado faz e é o que qualquer gerador entrega por padrão, então seria a
-escolha segura. Caiu junto uma lista de padrões que eu proibi de propósito e que estão anotados no
-[DESIGN.md](_bmad-output/planning-artifacts/ux-designs/ux-elite-dev-RockHub-2026-08-09/DESIGN.md):
-faixa que varre a tela, grade de 6 a 8 cards de seção, par de título gigante com textinho embaixo, e
-a linha de contexto decorativa no cabeçalho ("Edição de sexta · 14 apresentações em cartaz") — essa
-última eu cheguei a montar no protótipo e removi, porque soava gerada.
-
-Duas direções visuais competiram antes: um jornal de eventos londrino, editorial e claro, e uma
-parede de cartazes de casa de show, noturna. Nenhuma das duas resolvia sozinha — a primeira não tem
-noite, a segunda não tem estrutura. A identidade final é a fusão: estrutura de impresso, cor de
-madrugada.
-
-### CSS escrito à mão, sem biblioteca de componentes
-
-**Decidi** não usar shadcn, MUI, Chakra nem Tailwind. O frontend tem um `globals.css` com os nove
-tokens da identidade e um `.module.css` por componente.
-
-**Por quê:** é a mesma razão da decisão acima. Biblioteca de componentes não traz só código pronto —
-traz junto um vocabulário visual, e é exatamente o vocabulário que este projeto está tentando não
-ter. O card arredondado com sombra sutil vem de graça, e tirar ele depois dá mais trabalho do que
-nunca tê-lo. Com CSS Modules o token fica num lugar só e o estilo de cada componente tem escopo
-isolado, sem colisão de nome de classe.
-
-**O que caiu:** Tailwind, que é o padrão do `create-next-app` e teria sido mais rápido de escrever.
-Além do argumento acima, ele empurra a decisão visual para dentro do JSX, onde eu não consigo mais
-ler a identidade inteira num arquivo só. Caiu também a folha global única no estilo do protótipo:
-funciona hoje, mas com 30 telas pela frente vira um arquivo enorme com nomes de classe brigando.
-
-### Fontes do sistema, nenhuma fonte externa
-
-**Decidi** usar Georgia para a voz serifada e a monoespaçada do sistema para etiqueta e código.
-Nenhuma fonte é baixada.
-
-**Por quê:** a tensão entre as duas famílias é o que faz a identidade funcionar — serifada sozinha
-vira convite de casamento, monoespaçada sozinha vira terminal —, e essa tensão eu consigo com o que
-já existe em qualquer máquina. Sem requisição de rede, sem salto de layout enquanto a fonte carrega,
-sem depender de um CDN de terceiro estar no ar durante a avaliação.
-
-**O que caiu:** uma serifada de display do Google Fonts, que seria mais distinta. O `create-next-app`
-inclusive já vem com a `Geist` configurada — eu arranquei. Ganhar meio grau de personalidade não
-paga o custo de fazer a primeira renderização depender de rede.
-
-### TypeScript no frontend
-
-**Decidi** escrever o frontend em TypeScript.
-
-**Por quê:** o que trafega entre as duas camadas é um contrato com muitos campos, em português, com
-dinheiro em centavos e data em UTC — `preco_centavos`, `data_hora`, `vendidos`, `expira_em`. É
-precisamente o tipo de coisa em que se erra o nome do campo e só se descobre com um `undefined`
-aparecendo na tela. Como não há teste automatizado no frontend, o `tsc` é a única rede que eu tenho
-ali.
-
-**O que caiu:** JavaScript puro, que é mais rápido de escrever. Ele é mais rápido até a primeira vez
-que eu renomeio um campo no backend — aí eu descubro as telas quebradas uma a uma, abrindo cada
-uma, em vez de ler a lista que o compilador me dá de uma vez.
-
-### Postgres local por `docker-compose.yml` na raiz, não instalado na máquina
-
-**Decidi** subir o PostgreSQL 16 por Compose, num `docker-compose.yml` na raiz do repositório —
-não dentro de `backend/`, porque o banco é infraestrutura do projeto inteiro (a Story 1.7 semeia
-por ele, e o frontend em desenvolvimento depende do backend que depende dele).
-
-**Por quê:** quem avalia vai clonar o repositório numa máquina que eu nunca vi. Um comando que sobe
-o banco do zero, com volume nomeado e `healthcheck`, é um passo manual a menos para a avaliação
-travar antes de chegar no produto.
-
-**O que caiu:** Postgres instalado direto na máquina — obrigaria instalar, criar banco e usuário à
-mão, mais passos manuais e mais formas de a avaliação travar cedo. E o banco da Railway direto
-durante o desenvolvimento — zero setup local, mas passaria a depender de rede o tempo todo e todo
-mundo (inclusive eu, testando) escreveria no mesmo banco de produção.
+**O que caiu:** **SQLite em memória**, mais rápido e sem dependência externa. O custo que aceitei foi
+que `uv run pytest` passa a exigir o Compose no ar, e isso está documentado.
 
 ### SQLAlchemy síncrono, não `AsyncSession`
 
 **Decidi** usar a `Session` síncrona do SQLAlchemy 2, no estilo tipado (`Mapped` / `mapped_column`).
 
-**Por quê:** o núcleo deste desafio é concorrência — não vender o mesmo lugar duas vezes, não
-validar o mesmo ingresso duas vezes — e isso se resolve com `UPDATE` condicional dentro de uma
-transação. Esse código fica mais legível no síncrono. O volume de uma avaliação não cobra o preço
-de I/O assíncrono, e `AsyncSession` exigiria `await` disciplinado em toda consulta e em toda
-fixture de teste.
+**Por quê:** o núcleo do desafio é concorrência resolvida com `UPDATE` condicional dentro de uma
+transação, e esse código fica mais legível no síncrono. O volume de uma avaliação não cobra o preço
+de I/O assíncrono.
 
-**O que caiu:** `AsyncSession` — melhor sob carga alta de I/O, mas um `await` esquecido bloqueia o
-event loop de um jeito difícil de diagnosticar, e a disciplina que isso exige não se paga no
-tamanho deste projeto.
+**O que caiu:** `AsyncSession` — melhor sob carga alta de I/O, mas exigiria `await` disciplinado em
+toda consulta e em toda fixture, e um `await` esquecido bloqueia o event loop de um jeito difícil de
+diagnosticar. A mesma régua manteve a integração com a Ticketmaster em `httpx` **síncrono**: um único
+caminho `async` no backend inteiro criaria duas formas de escrever rota num projeto que tem uma só.
 
-### `papel` como `VARCHAR` + `CHECK`, não enum nativo do Postgres
+### Configuração só por variável de ambiente
 
-**Decidi** que a coluna `papel` é `VARCHAR(20)` com um `CheckConstraint` nomeado
-(`papel_valido`), listando os três valores (`ORGANIZADOR`, `CLIENTE`, `PORTARIA`), em vez do tipo
-enum nativo do Postgres.
+**Decidi** que tudo que muda entre máquinas vem do ambiente, lido por uma classe `Settings` do
+Pydantic, e que nenhum segredo entra no repositório — o que é versionado é o `.env.example`. Segredo
+ausente em `AMBIENTE=producao` **derruba a aplicação na subida**.
 
-**Por quê:** o Alembic não cria nem derruba um tipo enum nativo sozinho no `downgrade()` — isso
-quebraria a garantia de que o banco pode ser reconstruído do zero (é literalmente um critério de
-aceite da Story 1.3). Alterar os valores permitidos depois também exigiria `ALTER TYPE` numa ordem
-específica, mais frágil que reescrever uma migração de `CHECK`.
+**Por quê:** com o hábito estabelecido desde a primeira story, não existe o momento de tentação em
+que alguém "só comita o valor para testar". E derrubar na subida é deliberado: um deploy com a
+variável esquecida ficaria **verde**, e a falha só apareceria no dia em que alguém fosse publicar o
+primeiro evento. O modo de falhar que assusta é justamente o que funciona.
 
-**O que caiu:** o enum nativo — mais idiomático no Postgres, mas o `downgrade` frágil e a evolução
-mais custosa pesaram mais que o ganho de idiomatismo.
-
-### Alembic desde a primeira tabela, nunca `create_all` — nem em teste
-
-**Decidi** que todo schema nasce por migração Alembic versionada, sem exceção — inclusive nos
-testes, que migram o banco de teste pelo Alembic em vez de criar as tabelas a partir dos modelos.
-
-**Por quê:** `create_all` seria mais rápido de montar, mas deixaria de verificar exatamente o que
-esta story entrega: a migração em si. Sem um `downgrade()` exercitado, uma migração pode estar
-quebrada por meses sem que ninguém perceba — e seria a Story 1.8 (deploy na Railway) a descobrir
-isso da pior forma possível, no meio de um deploy.
-
-**O que caiu:** `Base.metadata.create_all`, cogitado especificamente para os testes por ser mais
-rápido de escrever. Cai fora do projeto inteiro, não só desta story — é regra para as tabelas das
-Epics 2 a 5 também.
-
-### Testes de banco contra Postgres real, migrado pelo Alembic — não SQLite em memória
-
-**Decidi** que a suíte roda `alembic downgrade base` seguido de `upgrade head` contra um banco de
-teste real (`rockhub_teste`) antes de qualquer asserção, em vez de usar SQLite em memória.
-
-**Por quê:** SQLite não tem UUID nativo, não tem `TIMESTAMPTZ` e trata `CHECK` de outro jeito —
-passaria verde sem provar nada sobre o schema que a migração de verdade cria. O custo que eu aceitei
-foi que `uv run pytest` passa a exigir o Compose no ar, e isso está documentado no
-[README do backend](backend/README.md#testes).
-
-**O que caiu:** SQLite em memória — mais rápido e sem dependência externa, mas testando um banco
-que não é o de produção. `create_all` para os testes caiu pelo mesmo motivo da decisão anterior.
+**O que caiu:** um `config.py` com valores por ambiente versionado — mais cômodo de ler, e é
+exatamente o arquivo em que segredo acaba caindo. E **nunca derrubar, sempre degradar**, que é mais
+tolerante e esconderia o esquecimento até o pior momento possível.
 
 ### Senha em Argon2id, não bcrypt nem SHA com sal
 
-**Decidi** gravar senha como hash **Argon2id**, pelo `argon2-cffi`, com os parâmetros padrão da
-biblioteca — que já são o perfil de baixa memória da RFC 9106.
+**Decidi** gravar senha como hash **Argon2id**, pelo `argon2-cffi`.
 
-**Por quê:** Argon2id é o vencedor da Password Hashing Competition e a recomendação atual do OWASP,
-e é o único dos candidatos que resiste tanto a ataque por GPU quanto a ataque por hardware dedicado,
-porque custa **memória** além de tempo. Na prática ele me dá de graça três coisas que eu teria que
-construir e defender sozinho: sal aleatório por hash (por isso a mesma senha hasheada duas vezes dá
-strings diferentes, e por isso não existe coluna de sal no banco — ele viaja dentro da própria
-string), todos os parâmetros embutidos no hash (posso endurecê-los depois sem invalidar o que já
-está gravado), e um custo deliberado de ~50ms por verificação.
+**Por quê:** é o vencedor da Password Hashing Competition e a recomendação atual do OWASP, e o único
+dos candidatos que resiste tanto a ataque por GPU quanto a hardware dedicado, porque custa **memória**
+além de tempo. Ele me dá de graça três coisas que eu teria que construir e defender sozinho: sal
+aleatório por hash (por isso não existe coluna de sal no banco), parâmetros embutidos no próprio hash
+(dá para endurecê-los depois sem invalidar o que já está gravado) e um custo deliberado de ~50ms por
+verificação.
 
-**O que caiu:** **bcrypt**, que ainda é perfeitamente aceitável, mas trunca a senha em 72 bytes
-silenciosamente e não impõe custo de memória. E **SHA-256 com sal**, que é o erro clássico: parece
-seguro porque é criptografia de verdade, mas é rápido *por projeto* — e velocidade é exatamente a
-propriedade errada aqui, porque quem tem o banco vazado testa bilhões de palpites por segundo.
-Descartei junto o `passlib`, que é o wrapper que a documentação antiga do FastAPI usa: está sem
-lançamento desde 2020, quebrou com o bcrypt 4, e não acrescenta nada sobre a API direta do
-`argon2-cffi`.
-
-**O custo que aceitei:** ~50ms e ~64 MB por verificação de senha. É o objetivo do algoritmo, não um
-problema a otimizar, mas aparece de duas formas concretas — a suíte de testes de login é
-perceptivelmente mais lenta que o resto, e isso pesa na escolha do tamanho da instância na Railway.
+**O que caiu:** **bcrypt**, ainda aceitável, mas trunca a senha em 72 bytes silenciosamente e não
+impõe custo de memória. E **SHA-256 com sal**, que é o erro clássico: parece seguro porque é
+criptografia de verdade, mas é rápido *por projeto* — e velocidade é exatamente a propriedade errada,
+porque quem tem o banco vazado testa bilhões de palpites por segundo.
 
 ### Sessão em cookie `httpOnly`, não token no `localStorage`
 
-**Decidi** que o JWT viaja num cookie `httpOnly`, `SameSite=Lax`, `Path=/`, com 8 horas de validade
-e `Secure` quando `AMBIENTE=producao`. JavaScript nunca lê o token.
+**Decidi** que o JWT viaja num cookie `httpOnly`, `SameSite=Lax`, `Path=/`, com 8 horas de validade e
+`Secure` em produção. JavaScript nunca lê o token.
 
 **Por quê:** token em `localStorage` é legível por qualquer script que rode na página — uma única
-falha de XSS, em qualquer dependência, entrega a sessão inteira. Com `httpOnly` o navegador envia o
-cookie e o JavaScript não o enxerga, então o mesmo XSS não consegue exfiltrar a credencial. E como o
-frontend é Next com Server Components, cookie é também a única forma que funciona nos dois lados:
-`localStorage` não existe no servidor, então eu acabaria com dois jeitos de autenticar — um no
-cliente, outro no servidor — que é precisamente o que o AD-15 existe para impedir.
-
-As 8 horas cobrem um turno de portaria, que é o cenário mais longo do sistema. Elas não são
-configuráveis de propósito: invariante de arquitetura com justificativa de domínio não vira knob,
-senão o valor em produção passa a divergir do documentado e ninguém descobre até alguém ser
-deslogado no meio do turno.
+falha de XSS, em qualquer dependência, entrega a sessão inteira. E como o frontend é Next com Server
+Components, cookie é também a única forma que funciona nos dois lados: `localStorage` não existe no
+servidor, então eu acabaria com dois jeitos de autenticar. As 8 horas cobrem um turno de portaria,
+que é o cenário mais longo do sistema, e não são configuráveis de propósito — invariante com
+justificativa de domínio não vira knob.
 
 **O que caiu:** `Authorization: Bearer` com o token no `localStorage`, que é o padrão que quase todo
-tutorial de SPA ensina. É mais simples de depurar (dá para ver o token) e imune a CSRF por
-construção — mas troca uma classe de ataque difícil por uma fácil, e quebraria os Server Components.
-Caiu junto o **refresh token**: resolveria a sessão expirar no meio de um uso longo, ao custo de
-mais um endpoint, mais uma tabela e uma regra de rotação para escrever e testar. Para 8 horas de
-validade num sistema avaliado em dias, expirou e faz login de novo.
+tutorial de SPA ensina: mais simples de depurar e imune a CSRF por construção, mas troca uma classe
+de ataque difícil por uma fácil e quebraria os Server Components. Caiu junto o **refresh token** —
+para 8 horas de validade num sistema avaliado em dias, expirou e faz login de novo.
 
-### PyJWT, não `python-jose` nem HMAC na mão
+### O papel vem do banco, não do que está escrito no token
 
-**Decidi** usar **PyJWT 2.13.0** para assinar e ler o token, sempre em HS256 com a lista de
-algoritmos fixa no código.
+**Decidi** que a dependência de autorização consulta o usuário no banco a cada requisição, mesmo com
+o `papel` gravado dentro do JWT.
 
-**Por quê:** é a biblioteca de JWT mantida e minimalista do ecossistema Python — para HMAC ela não
-traz dependência nenhuma a mais. E ela me protege de um erro específico: `jwt.decode` recusa rodar
-sem `algorithms=[...]` explícito. Isso não é burocracia. Aceitar o algoritmo que vem escrito *dentro
-do próprio token* é a vulnerabilidade clássica de JWT — um token forjado com `"alg": "none"` passaria
-a valer. A biblioteca me obriga a fechar essa porta.
+**Por quê:** a sessão dura 8 horas. Um papel corrigido no banco continuaria valendo o antigo por todo
+esse tempo, e a única forma de derrubar o token seria trocar o `JWT_SECRET` — deslogando todo mundo.
+Além disso, a consulta acontece de qualquer jeito, porque a dependência precisa do usuário inteiro
+para responder o `GET /auth/eu`: ler o papel do banco custa zero.
 
-**O que caiu:** **`python-jose`**, que era a recomendação antiga da documentação do FastAPI. Último
-lançamento em maio de 2025, e implementa o JOSE inteiro (JWE, JWK) — trazendo `pyasn1`, `rsa` e
-`ecdsa` para o lockfile — quando eu uso exatamente uma primitiva. E **`hmac` + `hashlib` da
-biblioteca padrão**, que teria zero dependência nova e é o mesmo mecanismo que eu vou usar na
-assinatura do QR (AD-5): caiu porque me obrigaria a escrever à mão expiração, `base64url` e
-comparação em tempo constante. Código de segurança escrito à mão, quando existe versão testada por
-muita gente, é risco sem contrapartida.
+**O que caiu:** **ler `carga["papel"]` do token**, que é o caminho curto e o que a maior parte dos
+exemplos de JWT faz. A economia é real e paga-se com uma janela de 8 horas em que a autorização está
+errada e ninguém consegue corrigir. Um teste guarda isso: um usuário gravado como `CLIENTE`, com
+token forjado dizendo `ORGANIZADOR`, recebe `403`.
 
-### Proxy `/api/*` no Next, não `SameSite=None` em produção
-
-**Decidi** que o navegador **nunca fala com o backend diretamente**. Ele chama `/api/auth/login` no
-domínio do próprio frontend, e o Next reescreve para a API do lado do servidor.
-
-**Por quê:** o deploy separa as duas metades em `rockhub.vercel.app` e `rockhub.up.railway.app`, e
-para o navegador esses são *sites diferentes* — `vercel.app` e `up.railway.app` estão os dois na
-Public Suffix List, então não existe domínio registrável em comum. Um cookie `SameSite=Lax` não é
-aceito nem reenviado nesse cruzamento. O detalhe cruel é que isso passa despercebido: em
-`localhost`, `:3000` e `:8000` são o mesmo site (porta não conta), então a suíte inteira ficaria
-verde e o login só falharia em produção. Com o proxy, o `Set-Cookie` volta pelo domínio da Vercel, o
-cookie é de origem própria, e o `SameSite=Lax` do AD-15 vale literalmente — sem exceção por
-ambiente e sem depender da política de cookie de terceiro de cada navegador, que muda por decisão de
-fornecedor.
-
-**O que caiu:** **`SameSite=None; Secure` em produção**, que é menos código e a saída óbvia. Ela
-transforma a sessão em cookie de terceiro — o Safari bloqueia isso por padrão, então o login
-simplesmente não entraria naquele navegador — e exigiria emendar o AD-15 com uma exceção por
-ambiente. Caiu também **deixar `Lax` cru e resolver no dia do deploy**: empurraria para a Story 1.9
-uma correção que mexe no frontend, descoberta no pior momento possível.
-
-**O que veio junto:** como as chamadas passaram a ser de mesma origem, CORS deixou de participar do
-caminho do navegador — mas eu **não** removi o `CORSMiddleware` do backend, que continua sendo a
-rede de proteção de qualquer chamada direta. E a variável `NEXT_PUBLIC_API_URL` virou `API_URL`,
-lida no servidor: com o proxy, o navegador não precisa mais saber o endereço da API, e manter as
-duas seria manter dois caminhos para alcançar a mesma coisa.
-
-### Credencial inválida tem uma resposta só — inclusive no tempo
-
-**Decidi** que e-mail inexistente e senha errada devolvem exatamente a mesma resposta: mesmo `401`,
-mesmo `CREDENCIAIS_INVALIDAS`, mesma mensagem. E que as duas custam o mesmo tempo.
-
-**Por quê:** a metade fácil é a mensagem — "esse e-mail não está cadastrado" entrega, para quem
-perguntar, quem tem conta no sistema. Eu garanto isso usando literalmente a *mesma construção* de
-erro nos dois caminhos, não duas strings iguais que alguém pode divergir depois; e o teste compara
-as duas respostas **entre si**, em vez de comparar cada uma com um literal.
-
-A metade que quase todo mundo esquece é o tempo. O caminho natural — não achou o usuário, levanta o
-erro na hora — responde em ~1ms para e-mail desconhecido e em ~50ms para e-mail existente com senha
-errada, porque só o segundo paga o custo do Argon2. Cinquenta vezes de diferença é medível de fora
-com um `for` e um cronômetro, e transforma o endpoint num oráculo de cadastro sem precisar de senha
-nenhuma. A correção é uma linha: quando o usuário não existe, eu confiro a senha contra um hash
-descartável e jogo o resultado fora.
-
-**O que caiu:** a resposta específica ("e-mail não cadastrado", com link para criar conta), que é
-mais gentil e é o que muito site grande faz. Ela ajuda o usuário legítimo que errou o e-mail e
-entrega a base de cadastro para qualquer um que perguntar — e num sistema com dados de compra, a
-lista de quem tem conta já é informação. Caiu também **limitar tentativas de login** por IP ou por
-conta, que seria a defesa mais direta contra força bruta: está declarado em
-[O que não está pronto](#o-que-não-está-pronto), porque é infraestrutura (contador com expiração,
-armazenamento compartilhado entre instâncias) que não se paga no prazo deste desafio.
-
-### A tela de acesso não tem a navegação do site
-
-**Decidi** partir o frontend em duas cascas: `(site)`, com o masthead completo, e `(entrada)`, que
-mostra só o logotipo. `/login` e `/cadastro` ficam na segunda.
-
-**Por quê:** a primeira versão da tela de login herdava o masthead do layout raiz, e o resultado era
-oferecer "Meus ingressos" e "Minha conta" para quem ainda não tinha entrado. São dois links que essa
-pessoa não consegue abrir, e que hoje caem no 404 — a tela pedia credencial com uma mão e apontava
-para portas trancadas com a outra. Uma tela de acesso mostra a marca e o formulário; o resto é
-ruído, e ruído numa tela de duas entradas é o que faz parecer template.
-
-**O que caiu:** dois **layouts raiz** separados, que é o outro jeito de fazer isso no App Router.
-Caiu por dois motivos concretos: a documentação do Next avisa que navegar entre layouts raiz
-diferentes força recarga completa da página, e layout raiz múltiplo exige abrir mão do
-`app/layout.tsx` — o que deixaria o `not-found.tsx` sem layout de onde herdar e obrigaria a adotar
-`global-not-found`, que ainda é experimental. Caiu também esconder o masthead com `usePathname()`:
-funcionaria em três linhas, mas transformaria o masthead inteiro num componente de cliente para
-resolver o que é uma questão de estrutura de rota.
-
-**O que eu aprendi tentando:** cheguei a mover o `not-found.tsx` para dentro de `(site)` para ele
-herdar o masthead de graça. Não funciona — só o `not-found` na raiz de `app/` atende URL que não
-casa com rota nenhuma, e o efeito foi o visitante cair no 404 padrão do Next, sem identidade. Ele
-voltou para a raiz montando a própria casca, e isso está escrito no arquivo para ninguém repetir a
-tentativa.
-
-### Só cliente cria a própria conta; organizador e portaria nascem por fora
-
-**Decidi** que o cadastro pela interface produz **sempre** uma conta `CLIENTE`. Não existe seletor de
-papel na tela, não existe campo `papel` no schema de entrada, e o papel é literal dentro do service —
-enviar `{"papel": "ORGANIZADOR"}` na requisição cria uma conta cliente do mesmo jeito, calada.
-
-**Por quê:** um seletor de papel numa tela pública é uma escalada de privilégio com aparência de
-formulário — qualquer visitante viraria organizador e passaria a publicar eventos. E o AD-7 é ainda
-mais direto sobre a portaria: ela só valida onde foi *escalada* por um organizador, então uma conta
-de portaria autocriada não faria sentido nenhum, porque não estaria ligada a evento algum. O papel é
-uma afirmação sobre confiança, e afirmação de confiança não pode vir de quem está pedindo o acesso.
-
-Fiz questão de que o campo desconhecido seja **ignorado** em vez de recusado com `422`: um `422`
-provaria que o servidor viu o campo, enquanto ignorá-lo prova que ele não tem como influenciar nada.
-A garantia mais forte é a que não depende de validação.
-
-**O que caiu:** um seletor "sou cliente / sou organizador" no cadastro, que é o que várias
-plataformas de evento fazem — elas resolvem o problema com aprovação manual ou verificação de CNPJ,
-que é exatamente a etapa que este projeto não tem. Caiu também **um cadastro de organizador separado,
-em rota própria**: é o caminho certo, e está *adiado, não descartado* — sem uma forma de decidir quem
-merece o papel, a rota seria o mesmo buraco com um endereço diferente. Até a Story 1.7, organizador e
-portaria nascem pelo script documentado em [Contas semeadas](#contas-semeadas).
-
-### Validação de e-mail escrita à mão, não `EmailStr` do Pydantic
-
-**Decidi** conferir o formato do e-mail com uma expressão regular de uma linha —
-`^[^@\s]+@[^@\s]+\.[^@\s]+$` — em vez de instalar `email-validator` para usar o `EmailStr`.
-
-**Por quê:** essa regra pega o que ela precisa pegar: `igor`, `igor@`, `igor@exemplo` sem ponto no
-domínio, e-mail com espaço no meio. Ou seja, o erro de digitação, que é o único caso realista aqui.
-`EmailStr` seria a escolha de um sistema em produção, e o custo é uma dependência a mais no lockfile
-— e este sistema não vai para produção real: ele existe para o avaliador ver que o cadastro funciona,
-e três linhas provam isso igual. **Não é RFC 5322 e não pretende ser**, e essa decisão está escrita
-como corte consciente no código, ao lado da regex, e não deixada para quem ler adivinhar.
-
-**O que caiu:** `EmailStr` + `email-validator`, mais correto e mais caro. E, do outro lado,
-**nenhuma validação no backend**, que deixaria o `type="email"` do navegador como única barreira — e
-ele desaparece num `curl`. Ficar sem validação nenhuma é o tipo de ausência que quem avalia nota em
-dez segundos.
-
-**O efeito colateral que eu gostei:** esta foi a primeira story desde a 1.1 a não acrescentar
-nenhuma dependência, em nenhuma das duas camadas.
-
-### Confirmação de senha, porque não existe recuperação de senha
-
-**Decidi** que o cadastro tem quatro campos, e o quarto é "repetir senha". A senha mínima é de **6
-caracteres**, sem exigir maiúscula, número ou símbolo.
-
-**Por quê:** as duas metades desta decisão vêm do mesmo lugar — **não há recuperação de senha neste
-projeto**, e isso não vai mudar. Uma letra digitada errada seria conta perdida para sempre: sem
-suporte, sem e-mail de redefinição, sem saída. O campo de confirmação custa uma comparação em memória
-e elimina a falha inteira. Já o piso de 6 caracteres é o que basta para um sistema que existe para
-ser avaliado, sem travar as senhas curtas que as contas semeadas da Story 1.7 vão usar.
-
-A confirmação **não chega ao backend**, e isso é parte da decisão: o formulário tem os dois valores em
-mãos, compara antes do `fetch` e nem faz a requisição. Mandá-la para a API acrescentaria um campo ao
-contrato, um validador cruzado, uma mensagem e um teste — tudo para verificar algo que nenhum outro
-cliente da API teria por que enviar. A regra de negócio é "senha com pelo menos 6 caracteres"; "duas
-caixas de texto iguais" é ergonomia de tela.
-
-**O que caiu:** **8 caracteres**, que é o piso do NIST SP 800-63B e teria sido o padrão defensável —
-6 ganhou por ser suficiente no contexto real deste sistema. **Nenhuma regra de senha**, que aceitaria
-senha de um caractere. E, no lugar da confirmação, um **botão "mostrar senha"**: menos atrito e uma
-interação a menos, mas expõe a senha na tela de quem se cadastra em público, e exigiria um componente
-novo para resolver o mesmo problema com menos garantia.
-
-### `Campo` e `Botao` extraídos no segundo formulário, não no primeiro
-
-**Decidi** que componente compartilhado nasce no **segundo uso**, nunca no primeiro. Na Story 1.4, com
-só a tela de login, o campo e o botão ficaram dentro do próprio formulário. Nesta story, com o
-cadastro, eles viraram `Campo.tsx` e `Botao.tsx` — e o login foi reescrito sobre eles.
-
-**Por quê:** dois campos num único formulário não dão evidência nenhuma sobre qual é a abstração
-certa; seis campos e dois botões entre duas telas dão. Componente extraído cedo é componente com
-`props` inventadas para casos que nunca chegam, e que a próxima story reescreve inteiro. Extrair
-depois custa reescrever código que já funciona — que é um custo real e conhecido — mas em troca a
-forma do componente sai dos usos de verdade.
-
-**O que caiu:** **repetir o CSS nas duas telas**, que é o precedente que eu mesmo abri na 1.2 com o
-404. Cairia bem aqui também, e não tocaria em arquivo já entregue — mas ao custo de duas cópias do
-mesmo campo que divergem na primeira vez que alguém ajustar uma só. O 404 e o formulário são casos
-diferentes: uma tela isolada pode divergir sem consequência; um campo de formulário que diverge entre
-o login e o cadastro racha a identidade em duas.
-
-**O risco que eu assumi, e como cobri:** reescrever o `FormularioLogin` foi o ponto mais perigoso da
-story — um `htmlFor` que perde o par com o `id`, um `autoComplete` que some, e a tela continua
-*parecendo* certa, sem nenhum teste de frontend para acusar. A cobertura foi conferir o login inteiro
-no navegador depois da extração, campo por campo, e os 40 testes anteriores do backend passarem sem
-uma linha alterada.
-
-**Um terceiro componente que eu não tinha planejado:** o `AvisoDeErro`, extraído por um critério
-diferente. `Campo` e `Botao` saíram porque se repetem; ele saiu porque a regra que o faz funcionar é
-*invisível* — a região `role="alert"` precisa existir no DOM desde o primeiro render, vazia, para que
-o leitor de tela anuncie o erro quando o texto chegar. Escrita como comentário dentro de um
-formulário, essa regra é a primeira coisa que alguém apaga por parecer óbvia ao copiar para o
-segundo. **Regra que protege acessibilidade vira componente mesmo com poucos usos**, porque é onde
-ela se protege sozinha.
-
-### Autorização é dependência na assinatura do endpoint, não `if` no corpo do handler
+### Autorização é dependência na assinatura do endpoint, não `if` no corpo
 
 **Decidi** que papel se declara, não se confere:
 
@@ -858,1075 +546,211 @@ def meus_eventos(usuario: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADO
 Não existe um `if usuario.papel == ...` dentro do corpo de handler nenhum, no projeto inteiro.
 
 **Por quê:** a proteção passa a fazer parte da *assinatura* da rota. Ela aparece na documentação
-gerada — o `/docs` sabe que a rota é restrita —, e esquecê-la vira uma linha ausente que se vê à
-distância, em vez de uma verificação que alguém precisava lembrar de escrever. É o AD-9, e a razão
-de ele existir é que autorização espalhada por handler é o tipo de coisa que funciona em 19 rotas e
-falha na vigésima, sem nada acusando.
+gerada, e esquecê-la vira uma linha ausente que se vê à distância, em vez de uma verificação que
+alguém precisava lembrar de escrever. Autorização espalhada por handler é o tipo de coisa que
+funciona em 19 rotas e falha na vigésima, sem nada acusando.
 
-**O que caiu:** **conferir o papel dentro do handler**, que é o caminho de menos código e o que
-qualquer tutorial mostra. Ele não custa nada na primeira rota; custa na décima, quando a proteção
-depende de disciplina de quem escreve, e não da estrutura. Considerei também um **middleware que
-inspeciona o caminho da URL** (`/organizador/*` exige `ORGANIZADOR`): resolveria de um lugar só, ao
-preço de manter uma tabela caminho→papel paralela às rotas — duas listas que divergem, e a
-desatualizada é sempre a que ninguém olha.
+**O que caiu:** **conferir o papel dentro do handler**, o caminho de menos código e o que qualquer
+tutorial mostra — não custa nada na primeira rota, custa na décima. E um **middleware que inspeciona
+o caminho da URL** (`/organizador/*` exige `ORGANIZADOR`): resolveria de um lugar só, ao preço de
+manter uma tabela caminho→papel paralela às rotas — duas listas que divergem, e a desatualizada é
+sempre a que ninguém olha.
 
-### O papel vem do banco, não do que está escrito no token
+### Proxy `/api/*` no Next, não `SameSite=None` em produção
 
-**Decidi** que `exigir_papel` consulta o usuário no banco a cada requisição, mesmo com o `papel`
-gravado dentro do JWT desde a Story 1.4.
+**Decidi** que o navegador **nunca fala com o backend diretamente**. Ele chama `/api/auth/login` no
+domínio do próprio frontend, e o Next reescreve para a API do lado do servidor.
 
-**Por quê:** a sessão dura 8 horas (AD-15). Um papel corrigido no banco continuaria valendo o antigo
-por todo esse tempo, e a única forma de derrubar o token seria trocar o `JWT_SECRET` — deslogando
-todo mundo. Além disso, a consulta acontece de qualquer jeito: a dependência precisa do usuário
-inteiro para responder o `GET /auth/eu`. Ler o papel do banco não custa uma consulta a mais, custa
-zero.
+**Por quê:** o deploy separa as duas metades em `vercel.app` e `up.railway.app`, e para o navegador
+esses são *sites diferentes* — os dois estão na Public Suffix List, então não existe domínio
+registrável em comum, e um cookie `SameSite=Lax` não é aceito nem reenviado nesse cruzamento. O
+detalhe cruel é que isso passa despercebido: em `localhost`, `:3000` e `:8000` são o mesmo site
+(porta não conta), então a suíte inteira ficaria verde e o login só falharia em produção. Com o
+proxy, o cookie é de origem própria e o `SameSite=Lax` vale literalmente.
 
-**O que caiu:** **ler `carga["papel"]` do token**, que é o caminho curto e é o que a maior parte dos
-exemplos de JWT faz. A economia é real (uma consulta por requisição) e paga-se com uma janela de 8
-horas em que a autorização está errada e ninguém consegue corrigir. Um teste guarda essa decisão: um
-usuário gravado como `CLIENTE`, com um token forjado dizendo `ORGANIZADOR`, recebe `403`.
+**O que caiu:** **`SameSite=None; Secure` em produção**, que é menos código e a saída óbvia — ela
+transforma a sessão em cookie de terceiro, que o Safari bloqueia por padrão, então o login
+simplesmente não entraria naquele navegador. **O que veio junto:** como as chamadas passaram a ser de
+mesma origem, o CORS deixou de participar do caminho do navegador — mas eu **não** removi o
+`CORSMiddleware`, que continua sendo a rede de proteção de qualquer chamada direta.
 
-Isso vale também para o vínculo portaria ↔ evento do AD-7, que vai ser lido do banco a cada
-validação em vez de carregado na sessão.
+### Recusa não entrega o que ela sabe
+
+**Decidi** que respostas de recusa não distinguem casos que revelariam quem existe no sistema. E-mail
+inexistente e senha errada devolvem o mesmo `401 CREDENCIAIS_INVALIDAS`, com a mesma mensagem **e no
+mesmo tempo**. Escalar um id que não existe e escalar uma conta que não é de portaria devolvem o
+mesmo `422 PORTARIA_INVALIDA`. Pedir o detalhe de um evento de outro organizador devolve o mesmo
+`404` de um UUID que nunca existiu.
+
+**Por quê:** a metade fácil é a mensagem — "esse e-mail não está cadastrado" entrega, para quem
+perguntar, quem tem conta no sistema. A metade que quase todo mundo esquece é o **tempo**: o caminho
+natural responde em ~1ms para e-mail desconhecido e ~50ms para e-mail existente com senha errada,
+porque só o segundo paga o custo do Argon2. Cinquenta vezes de diferença é medível de fora com um
+`for` e um cronômetro. A correção é uma linha: quando o usuário não existe, eu confiro a senha contra
+um hash descartável e jogo o resultado fora. Os testes comparam as duas respostas **entre si**, não
+cada uma com um literal.
+
+**O que caiu:** a resposta específica ("e-mail não cadastrado", com link para criar conta), que é
+mais gentil e é o que muito site grande faz — ela ajuda o usuário legítimo que errou o e-mail e
+entrega a base de cadastro para qualquer um que perguntar. Caiu também **distinguir os casos da
+escala** para facilitar a depuração: o ganho é meu, no console, e o custo é de quem tem conta.
+
+### A interface é um jornal noturno, e não um catálogo de e-commerce
+
+**Decidi** que a listagem de shows não tem card: são filas separadas por fio, com a data na margem
+esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Fundo preto quente,
+âmbar como acento único, raio zero e sombra zero em todo o sistema.
+
+**Por quê:** ingresso não é produto de prateleira — é o direito de entrar num lugar, numa hora. Card
+com imagem, preço e botão é vocabulário de e-commerce, e carrega junto a promessa errada. A estrutura
+de impresso diz a coisa certa sobre o que está sendo vendido, e custa o mesmo para construir. O
+desafio penaliza por escrito a interface que "parece gerada", e o que denuncia uma interface gerada
+não é ser feia: é ser bonita de um jeito só. Escolher qual dos vários bonitos era o ponto.
+
+**O que caiu:** a fileira horizontal de cards com paleta empresarial — o formato de Sympla, Eventim e
+Ingresso.com. É o que o mercado faz e o que qualquer gerador entrega por padrão, então seria a
+escolha segura. Caiu junto uma lista de padrões que proibi de propósito, anotada no
+[DESIGN.md](_bmad-output/planning-artifacts/ux-designs/ux-elite-dev-RockHub-2026-08-09/DESIGN.md):
+faixa que varre a tela, grade de 6 a 8 cards por seção, par de título gigante com textinho embaixo, e
+a linha de contexto decorativa no cabeçalho — essa última eu cheguei a montar no protótipo e removi,
+porque soava gerada. Duas direções competiram antes: um jornal de eventos londrino, editorial e
+claro, e uma parede de cartazes noturna. Nenhuma resolvia sozinha; a identidade final é a fusão —
+estrutura de impresso, cor de madrugada.
+
+### CSS escrito à mão, sem biblioteca de componentes
+
+**Decidi** não usar shadcn, MUI, Chakra nem Tailwind. O frontend tem um `globals.css` com os nove
+tokens da identidade e um `.module.css` por componente. Nenhuma fonte é baixada — Georgia para a voz
+serifada, monoespaçada do sistema para etiqueta.
+
+**Por quê:** é a mesma razão da decisão acima. Biblioteca de componentes não traz só código pronto —
+traz junto um vocabulário visual, e é exatamente o vocabulário que este projeto está tentando não
+ter. O card arredondado com sombra sutil vem de graça, e tirá-lo depois dá mais trabalho do que nunca
+tê-lo.
+
+**O que caiu:** **Tailwind**, que é o padrão do `create-next-app` e teria sido mais rápido de
+escrever — além do argumento acima, ele empurra a decisão visual para dentro do JSX, onde eu não
+consigo mais ler a identidade inteira num arquivo só. E **uma serifada de display do Google Fonts**,
+que seria mais distinta: ganhar meio grau de personalidade não paga fazer a primeira renderização
+depender de rede.
+
+### O frontend é server-first; `"use client"` é exceção justificada
+
+**Decidi** que toda tela nasce Server Component, e que estado que o usuário pode querer compartilhar,
+recarregar ou desfazer mora **na URL**. A busca do catálogo é um `<form method="get">`; a atração
+escolhida é um `<Link>` que muda a query. Ilha de cliente só onde a interação exige o navegador — o
+formulário de setores, que adiciona e remove linhas.
+
+**Por quê:** com o estado na URL, recarregar mantém, o botão voltar desfaz, e o link abre no mesmo
+lugar para outra pessoa — três coisas de graça. E o "sem spinner: a estrutura aparece e o conteúdo
+preenche" do UX é natural no servidor e artificial no cliente. A fronteira que sai daqui vale para as
+Epics 3 a 5, que vão ter mais interação (stepper de quantidade, câmera da portaria): ilha pequena
+dentro de página de servidor, com a prop serializada como fronteira.
+
+**O que caiu:** **estado no cliente com `onClick`**, que é o que qualquer formulário moderno faria —
+tiraria a escolha da URL e transformaria a tela **inteira** numa ilha, levando junto a busca, o
+catálogo e a guarda de sessão, sem nenhum deles precisar do navegador. E **Server Actions**, que
+seriam o idiomático da versão instalada: caíram por ser mecanismo novo no projeto e por não resolver
+o que motivou a ilha — o setor dinâmico continuaria exigindo número fixo de linhas.
 
 ### A guarda de rota mora na página, não em `middleware` do Next
 
-**Decidi** que cada página protegida do frontend lê a sessão e redireciona por conta própria — três
-linhas repetidas por página.
+**Decidi** que cada página protegida lê a sessão e redireciona por conta própria — três linhas
+repetidas por página — e que o redirecionamento leva o destino junto (`/login?voltar=%2Fconta`),
+filtrado para aceitar só caminho interno.
 
 **Por quê:** o middleware só consegue ver que **existe** um cookie, não que ele vale. Validar o JWT
-ali exigiria o `JWT_SECRET` no ambiente do frontend, e o AD-2 diz o contrário: o segredo que assina
-a sessão não tem por que existir na Vercel. A guarda na página pergunta ao backend, que é quem tem o
-segredo.
+ali exigiria o `JWT_SECRET` no ambiente do frontend, e o segredo que assina a sessão não tem por que
+existir na Vercel. A guarda na página pergunta ao backend, que é quem tem o segredo. Quanto ao
+`?voltar=`: é um valor que quem chega escolhe e a aplicação obedece — sem filtro é o redirecionamento
+aberto clássico, e a documentação do Next avisa que uma URL `javascript:` entregue ao `router.push`
+executa no contexto da página, o que faz disso um XSS.
 
-**O que caiu:** **o `middleware.ts` conferindo o cookie**, que é o caminho que todo tutorial de Next
-mostra e centraliza a regra num arquivo só. Além do problema do segredo, ele viraria uma segunda
-lista de rotas protegidas, paralela às páginas — e as três linhas repetidas, em compensação, ficam
-ao lado do conteúdo que protegem, que é onde quem edita a página vai olhar. Considerei também
-`unauthorized()`/`forbidden()`, que o Next 16 traz e seriam o caminho idiomático: estão atrás da
-flag experimental `authInterrupts`, e eu não ligo flag experimental por conveniência.
+**O que caiu:** **o `middleware.ts` conferindo o cookie**, que é o caminho que todo tutorial mostra e
+centraliza a regra num arquivo só — além do problema do segredo, viraria uma segunda lista de rotas
+protegidas, paralela às páginas. E `unauthorized()`/`forbidden()`, que o Next 16 traz e seriam o
+caminho idiomático: estão atrás de flag experimental, e eu não ligo flag experimental por
+conveniência.
 
-### Página protegida sem sessão redireciona **com volta**, em vez de mostrar um convite
+### O domínio é escrito em português
 
-**Decidi** que abrir `/conta` sem sessão leva para `/login?voltar=%2Fconta`, e que entrar devolve a
-pessoa ao destino original.
+**Decidi** nomear as entidades como o enunciado as chama: `evento`, `setor`, `reserva`, `ingresso`,
+`portaria`. Inclusive a rota de saúde é `/saude`, e as mensagens de erro do framework foram
+traduzidas.
 
-**Por quê:** ela pediu uma página específica. Depois de provar quem é, entregar essa página é o
-mínimo — mandá-la para a raiz obriga a navegar de novo até onde já estava indo, e é atrito puro. O
-parâmetro passa por `caminhoInternoSeguro` antes de virar navegação: `?voltar=` é um valor que quem
-chega escolhe e a aplicação obedece, e sem filtro é o redirecionamento aberto clássico — um link
-para o meu domínio que joga a pessoa em outro site logo depois de ela digitar a senha. Pior: a
-documentação do Next avisa que uma URL `javascript:` entregue ao `router.push` executa no contexto
-da página, o que faz disso um XSS.
+**Por quê:** quem avalia lê o enunciado em português e depois o código. Sem tradução no meio, a
+correspondência é direta e não sobra dúvida sobre qual requisito cada parte atende.
 
-**O que caiu:** **mostrar a página com um convite a entrar**, sem redirecionar. É mais simples, não
-tem parâmetro e não tem o que validar — e perde o lugar de onde a pessoa veio. E **redirecionar sem
-devolver**, que é o mais barato dos três e tem a mesma perda, sem nem a economia de código do
-segundo.
+**O que caiu:** o inglês por convenção de mercado. Criaria um dicionário mental entre requisito e
+código — `sector` é setor ou seção? `gate` é portaria ou portão? — em troca de nada que o projeto
+aproveite.
 
-### As contas de avaliação vêm de um script à parte, não de uma migração
+### A configuração de deploy mora no painel, não versionada
 
-**Decidi** que as contas de avaliação nascem de `backend/seeds/semear.py`, chamado à mão por
-`uv run python -m seeds.semear`.
-
-**Por quê:** conta de avaliação é *dado*, e migração é *schema*. Um script separado pode rodar de
-novo quando alguém apagar uma conta sem querer, é lido por quem avalia sem precisar entender Alembic,
-e o passo extra no README custa uma linha — que é o preço mais barato desta lista.
-
-**O que caiu:** **uma migração Alembic de dados**, que seria zero passo a mais e faria o deploy semear
-sozinho. Ela mistura dado com schema, roda **uma vez na vida** (conta apagada não volta nunca), e um
-`alembic downgrade base` levaria as contas junto com as tabelas. Caiu também **semear no startup do
-FastAPI**, que dispensaria o comando de release na Railway: semearia a cada `--reload` durante o
-desenvolvimento e ataria o seed ao ciclo de vida da aplicação — o dia em que o seed falhasse, a API
-não subiria.
-
-### A idempotência do seed é uma consulta, não uma limpeza
-
-**Decidi** que o seed pergunta "já existe esse e-mail?" e, se existir, **não escreve nada** — nem
-nome, nem senha, nem papel. Não há `DELETE`, `TRUNCATE`, `UPDATE` nem `drop` em lugar nenhum de
-`seeds/`.
-
-**Por quê:** este é o primeiro código do projeto escrito para rodar **contra o banco de produção,
-repetidamente, sem supervisão** — na Story 1.8 ele entra na sequência de cada deploy. Um seed que
-limpasse a tabela antes de inserir funcionaria perfeitamente hoje e, no primeiro redeploy, apagaria a
-conta de quem estivesse avaliando no meio de uma compra. A restrição `UNIQUE` do e-mail, criada na
-Story 1.3, é o que sustenta isso de graça.
-
-**O que caiu:** **limpar a tabela antes de inserir**, que é o padrão de seed mais comum e garante um
-estado conhecido a cada execução — garantia que não vale nada se o preço for destruir dado real. Caiu
-junto uma opção `--forcar` que recriaria tudo: é o `TRUNCATE` com outro nome, e quem quiser banco
-limpo já tem `docker compose down -v`. E caiu **"atualizar" a conta que já existe** para deixá-la
-igual ao script — parece zelo e, em produção, significa trocar a senha de alguém sem avisar. Quando
-o e-mail existe com papel diferente do esperado, o script **avisa na saída e continua**, porque
-silêncio ali viraria "o organizador não funciona" sem pista nenhuma.
-
-### As contas semeadas têm nome de gente, e uma senha só, publicada aqui
-
-**Decidi** que as contas semeadas são pessoas — Helena Marques, Bruno Tavares, Marina Aoki, Jonas
-Ribeiro e, desde a Story 2.5, Ana Sampaio —, com e-mail que diz o papel (`organizador@rockhub.dev`)
-e **a mesma senha** em todas, impressa na tabela de [Contas semeadas](#contas-semeadas).
-
-**Por quê:** o nome dessas contas aparece na tela, e a identidade visual manda nome próprio em
-serifada (é a regra UX-DR2). "Organizador RockHub" em Georgia, no lugar onde deveria estar o nome de
-uma pessoa, é exatamente a cara de dado de mentira que o desafio penaliza — o e-mail já diz o papel,
-então o nome não precisa dizer. A senha única é sobre a outra ponta: a tabela do README precisa ser
-copiável às onze da noite sem erro, e quatro senhas diferentes é quatro vezes mais chance de errar
-uma. Ela passa no mínimo de 6 caracteres que a própria interface exige, então não abre exceção para o
-seed.
-
-**O que caiu:** **nomes genéricos pelo papel**, que seriam mais óbvios de ler numa lista e mais
-honestos sobre serem dado de teste — perderam pela tipografia. **Uma senha por conta**, mais realista
-e sem ganho nenhum aqui. E **deixar o seed configurável por variável de ambiente** (`SEED_SENHA`,
-`SEED_EMAIL_ORGANIZADOR`), que parece a escolha flexível e é justamente o jeito de as credenciais
-divergirem do README sem ninguém notar — o pior desfecho possível para um dado que existe para ser
-copiado de um documento.
-
-Isso **não** enfraquece a regra de segredo do projeto, e a distinção é a decisão: senha de conta
-semeada é dado de avaliação publicado de propósito; `JWT_SECRET` e `TICKETMASTER_API_KEY` continuam
-só no ambiente, fora do repositório. Pelo mesmo raciocínio o comando **não imprime a senha** no
-terminal: ele roda no deploy da Railway, e o que ele imprime vai para o log — credencial em log é
-hábito que se leva junto para o dia em que a credencial importa.
-
-### A Railway constrói pelo Railpack, sem `Dockerfile` meu
-
-**Decidi** deixar a Railway detectar e construir o backend com o builder dela, o Railpack, em vez de
-escrever um `Dockerfile`. Não há arquivo de build neste repositório.
-
-**Por quê:** o Railpack lê exatamente os três arquivos que já existem em `backend/` desde a Story
-1.1 — `pyproject.toml`, `uv.lock` e `.python-version` — e monta a imagem com o Python 3.12 e as
-versões travadas do lockfile. Ele ainda instala com `--no-dev` e `--locked`, o que me dá duas
-garantias de graça: `pytest` não sobe para produção, e o build **falha** se o lockfile divergir do
-`pyproject.toml`. Escrever um `Dockerfile` seria reimplementar isso à mão, com uma chance a mais de
-errar a versão do Python ou esquecer o `--frozen`.
-
-**O que caiu:** o **`Dockerfile` próprio** a partir da imagem oficial do `uv`. Ele é a escolha mais
-defensável em projeto de vida longa, porque o build fica idêntico na minha máquina e no servidor e
-imune a mudança de heurística do fornecedor — perdeu por ser mais um arquivo para manter e explicar
-num projeto de sete dias, com ganho zero enquanto o Railpack acerta. Caiu também o **Nixpacks
-explícito**, o builder anterior da Railway: mais congelado, com suporte a `uv` mais frágil, e já
-fora do padrão.
-
-**O que isso me custou:** uma pesquisa que eu não teria feito com `Dockerfile`. O Railpack instala o
-`uv` só na fase de build e **não o deixa na imagem final** — os comandos de produção precisam chamar
-`alembic`, `uvicorn` e `python` direto, e um `uv run` ali falha com `uv: not found`. Está escrito no
-[README do backend](backend/README.md#por-que-os-comandos-não-usam-uv-run), porque é a primeira
-"correção" que alguém tentaria fazer.
-
-### Migração e seed rodam no Pre-deploy, não junto com a aplicação
-
-**Decidi** que `alembic upgrade head && python -m seeds.semear` é o **Pre-deploy Command** do
-serviço, separado do comando que sobe o `uvicorn`.
-
-**Por quê:** o Pre-deploy roda num contêiner à parte, depois do build e **antes** de o tráfego ser
-trocado para a versão nova. Se ele falhar, o deploy não prossegue e a versão anterior continua
-atendendo. É exatamente a garantia que eu queria: migração quebrada **impede** a subida, em vez de
-subir com o schema errado. E ele roda uma vez por deploy, não uma vez por réplica.
-
-**O que caiu:** encadear tudo no comando de partida (`sh -c "alembic … && seed && uvicorn"`). É mais
-portátil — funciona em qualquer plataforma, sem depender de um recurso da Railway — e foi por pouco.
-Perdeu porque roda a cada réplica e a cada reinício automático, e porque migração quebrada ali vira
-contêiner em ciclo de reinício: em vez de barrar a versão nova, **derruba a que estava funcionando**.
-Caiu também um script de release versionado chamado pelo Pre-deploy, que deixaria o conteúdo legível
-no repositório ao custo de duplicar o que o painel já mostra.
-
-**A consequência que veio de graça:** duas decisões da Story 1.7 deixaram de ser precaução teórica.
-O seed sair em `0` mesmo quando avisa sobre papel divergente é o que impede um aviso de derrubar o
-deploy inteiro; e ele não imprimir a senha é o que impede credencial de cair no log de deploy da
-Railway. As duas foram escritas prevendo este uso, e é aqui que elas passam a valer.
-
-### A configuração de deploy mora no painel, nas duas plataformas
-
-**Decidi** não versionar `railway.json`, `railway.toml` nem `vercel.json`. Builder, `Root
-Directory`, branch, variáveis, comandos e health check estão configurados nos painéis da Railway e
-da Vercel, e descritos campo por campo em [Deploy na
-Railway](backend/README.md#deploy-na-railway) e [Deploy na Vercel](frontend/README.md#deploy-na-vercel).
+**Decidi** não versionar `railway.json`, `railway.toml` nem `vercel.json`. Builder, `Root Directory`,
+branch, variáveis, comandos e health check estão nos painéis, e descritos campo por campo em
+[Deploy na Railway](backend/README.md#deploy-na-railway) e
+[Deploy na Vercel](frontend/README.md#deploy-na-vercel). A migração e o seed rodam no **Pre-deploy**,
+separados do comando que sobe a aplicação.
 
 **Por quê:** o painel **sobrescreve** o arquivo quando alguém edita por lá, e é por lá que se edita
 no meio de um deploy que falhou, às pressas. Duas fontes para a mesma verdade divergem em silêncio, e
-a desatualizada é sempre a que fica no repositório — parecendo documentação correta.
+a desatualizada é sempre a que fica no repositório, parecendo documentação correta. Quanto ao
+Pre-deploy: ele roda num contêiner à parte, **antes** de o tráfego ser trocado — migração quebrada
+impede a subida em vez de derrubar a versão que estava funcionando.
 
 **O que caiu:** o **`railway.json` versionado**, que é a escolha de infraestrutura-como-código e teria
-uma vantagem real — recriar o serviço viraria reimportar o repositório, e quem avalia leria a
-configuração do deploy junto do código.
-
-**O custo que aceitei, e como o cobri:** a configuração some se o serviço for apagado, e não aparece
-em nenhum diff. É precisamente por isso que as seções de deploy dos dois READMEs não são um resumo —
-elas têm os nomes exatos dos campos, os valores, a ordem e os erros que cada omissão produz.
-Documentação substituindo arquivo só funciona se for detalhada a ponto de ser executável por quem
-nunca viu o painel; menos que isso, eu teria escolhido errado.
-
-**A Story 1.9 cobrou essa aposta e ela pagou.** Configurar a Vercel foi o mesmo exercício da Railway
-num painel diferente, e os **dois** erros que eu já tinha cometido lá — `Root Directory` não
-preenchido e branch de produção errada — apareceram de novo, idênticos. Eles estavam documentados
-como armadilha desde a Story 1.8, então custaram minutos em vez de uma noite. Uma seção de README
-que só descrevesse o final feliz não teria servido para nada ali.
-
-### O `CORS_ORIGENS` lista a origem da Vercel, mesmo o CORS não estando no caminho do navegador
-
-**Decidi** acrescentar `https://elite-dev-rock-hub.vercel.app` ao `CORS_ORIGENS` do backend, ao lado
-do `http://localhost:3000` de desenvolvimento.
-
-**Por quê:** é o estado correto do sistema. No dia em que qualquer coisa chamar a API diretamente —
-um `curl` de demonstração, uma página futura sem proxy, um cliente de terceiro — a resposta certa já
-está configurada, em vez de virar meia hora de depuração num momento ruim. E o critério de aceite
-pede CORS e `SameSite` configurados com todas as letras.
-
-**O que caiu:** **manter só o `localhost`** — e essa alternativa tem a verdade técnica do lado dela.
-Desde o proxy da Story 1.4 o navegador não fala com a Railway, então a variável não participa de
-absolutamente nada que exista hoje, e mexer nela custa um redeploy do backend por um efeito
-observável nulo. Perdeu para o argumento de estado correto, mas foi decisão apertada, e registro
-assim porque a alternativa não era ruim — era só menos completa.
-
-**O que eu fiz questão de escrever junto:** que **não é isso que faz o login funcionar** entre os
-dois fornecedores. CORS é uma política do navegador sobre requisição para outra origem, e em produção
-não existe nenhuma: o navegador chama o próprio domínio da Vercel, e quem fala com a Railway é o
-servidor do Next — servidor a servidor, sem navegador no meio. Quem faz o cookie sobreviver é o
-proxy. Deixar o README sugerir que o CORS é o conserto apagaria a razão de o proxy existir, e no
-primeiro login quebrado alguém iria mexer na variável errada.
-
-### Publiquei a branch da epic, não a `main` — até a Epic 1 ser revisada
-
-> **Encerrada em 2026-08-11.** Depois do code review, a Epic 1 entrou na `main` e a Production
-> Branch dos dois painéis passou a apontar para ela. O registro abaixo fica porque o raciocínio
-> continua valendo: **a revisão vem antes da publicação, nunca o contrário.** Da Epic 2 em diante o
-> efeito é o mesmo por outro caminho — a branch da epic só chega na `main` depois de revisada, e é a
-> `main` que publica. Nenhum campo de painel precisa ser tocado de novo.
-
-**Decidi** apontar a Production Branch dos dois painéis para
-`epic-1---fundacao-acesso-e-primeiro-deploy`, e definir o `API_URL` da Vercel para Production **e**
-Preview, com o mesmo valor.
-
-**Por quê:** é ordem de eventos. O merge da Epic 1 acontece **depois** do code review da epic, e o
-deploy é a última story antes dele. Publicar da `main` hoje significaria mesclar código ainda não
-revisado só para conseguir fazer deploy — inverter a revisão e a publicação por conveniência de
-configuração.
-
-**O que caiu:** **mesclar na `main` antes e publicar dali**, que é o que as duas plataformas assumem
-sozinhas e o que quem avalia espera encontrar. O custo que eu assumi é um campo divergente em dois
-painéis, que precisa ser trocado quando a epic entrar na `main` — e é por isso que ele está escrito
-nos dois READMEs de camada, em vez de virar surpresa. **Foi cobrado e pago:** a troca aconteceu no
-merge da Epic 1, e custou o previsto — um campo em cada painel, achado no lugar em que o README
-dizia que ele estaria.
-
-**E uma terceira via que eu cheguei a considerar depois, e descartei:** uma branch de pré-produção
-permanente, juntando as epics antes de promover para a `main`. Caiu por duas razões. A `main` ficaria
-parecendo um projeto sem código para quem clona ou abre o repositório — o oposto do que ela deveria
-demonstrar. E, sem um segundo banco, a pré-produção compartilharia o PostgreSQL da produção: uma
-migração ruim quebraria as duas do mesmo jeito, só que com um passo a mais no caminho. Seria
-isolamento aparente. A segurança que ela prometia já vem de quatro lugares que existem — a branch por
-epic, o code review como portão, o Pre-deploy que barra migração quebrada antes de trocar o tráfego,
-e o Preview que a Vercel dá de graça em toda branch.
-
-Sobre o Preview: caiu **defini-lo só para Production**, que manteria o banco de produção fora do
-alcance de qualquer build de branch. Perdeu porque o Preview cairia no padrão `http://localhost:8000`
-do `next.config.ts` e ficaria com o login quebrado **sem erro visível** — a tela abre, o formulário
-envia, e nada acontece. Preview quebrado é pior que Preview inexistente. A consequência que veio
-junto — Preview escreve no banco de produção — está em [O que não está
-pronto](#o-que-não-está-pronto).
-
-### O `.gitignore` do Python engoliu `frontend/src/lib/`, e eu ancorei o padrão em vez de abrir exceção
-
-**Decidi** trocar `lib/` e `lib64/` por `/lib/` e `/lib64/` no `.gitignore` da raiz, com a barra
-inicial prendendo os dois padrões à raiz do repositório.
-
-**Por quê:** o `.gitignore` deste projeto nasceu do template Python do GitHub, que traz `lib/` na
-seção de empacotamento. Padrão sem barra no início **casa em qualquer profundidade** — então ele não
-estava ignorando artefato de build do Python, estava ignorando **`frontend/src/lib/`**, desde a
-Story 1.2. Os três arquivos que moram lá (`api.ts`, `sessao.ts`, `caminho.ts`) existiam na minha
-máquina e nunca entraram no repositório. Com a barra, o padrão volta a significar o que o template
-queria dizer.
-
-**O que caiu:** **`!frontend/src/lib/` no fim do arquivo**, que consertaria este caso em uma linha
-sem tocar no template. Perdeu porque deixa a armadilha armada: o padrão continua errado, e a próxima
-pasta `lib/` aninhada — em qualquer camada, em qualquer epic — some do mesmo jeito e sem aviso. Uma
-exceção conserta um sintoma; a âncora conserta a causa.
-
-**E o code review da epic cobrou esse argumento.** Eu tinha ancorado dois padrões — `lib/` e
-`lib64/` — e declarado a causa consertada. Só que os vizinhos deles no mesmo template continuavam
-soltos: `build/`, `dist/`, `parts/`, `sdist/`, `var/`, `wheels/`, `htmlcov/`, `cover/`, `instance/`,
-`target/` e `out/`. Nenhum estava engolindo nada naquele momento, e foi exatamente por isso que
-passaram: eu conferi o sintoma, que tinha sumido, em vez da causa, que continuava lá em dez outros
-lugares. Um `frontend/public/cover/` para capas de evento na Epic 2 teria reproduzido o mesmo
-desastre, com o mesmo diagnóstico de duas horas. Ancorei todos, e a regra virou linha no
-`CLAUDE.md`: **padrão de artefato de build entra com `/`.**
-
-**O que eu não ancorei, de propósito:** os padrões de cache e de virtualenv — `__pycache__/`,
-`.venv`, `node_modules/`, `env/`, `venv/`, `.pytest_cache/`. Esses **precisam** casar em qualquer
-profundidade, porque é justamente em profundidade que eles nascem: `backend/.venv` e
-`frontend/node_modules` só ficam de fora do repositório enquanto o padrão for solto. Ancorá-los por
-simetria seria trocar um erro por outro maior — commitar uma virtualenv inteira. A distinção que
-ficou: **artefato de build se ancora; cache que nasce ao lado do código, não.**
-
-**A verificação que eu passei a ter:** cruzar todos os padrões do `.gitignore` contra a árvore real
-de diretórios, em vez de conferir caso a caso. É o que transforma "não vejo problema" em "não existe
-colisão", e leva segundos.
-
-**Como isso apareceu, e é a parte que interessa:** o build da Vercel falhou com `Module not found`
-em sete arquivos, e o denominador comum era exato — os sete importam de `@/lib`, e nenhum import de
-`@/components` aparecia no rastro. **Nada na minha máquina podia ter pego isso.** `npm run build`,
-`tsc --noEmit`, ESLint e os 85 testes do backend passam todos, porque os arquivos estão no disco. Só
-um clone limpo revela, e o primeiro clone limpo deste projeto foi o da Vercel. É o argumento mais
-concreto que eu tenho a favor de publicar cedo: o deploy fez, na Story 1.9, um trabalho de teste que
-nenhuma suíte deste projeto faria.
-
-### O pool confere se a conexão está viva antes de entregá-la
-
-**Decidi** criar a engine com `pool_pre_ping=True` e `pool_recycle=1800`, em vez dos padrões do
-SQLAlchemy.
-
-**Por quê:** os padrões são `pool_pre_ping=False` e `pool_recycle=-1` — ou seja, o pool guarda a
-conexão para sempre e nunca confere se ela ainda existe. O Postgres da Railway reinicia por
-manutenção, e a rede interna derruba conexão ociosa. O resultado é o pior cenário possível para
-este projeto: **a primeira requisição depois de um período parado responde `500`**, e a segunda
-funciona. Quem avalia abre o link dias depois do meu último deploy, tenta entrar, leva um erro, e a
-retentativa que consertaria já não acontece — a impressão foi dada. O `pre_ping` custa um `SELECT 1`
-por checkout, e é o preço mais barato desta lista inteira.
-
-**O que caiu:** **deixar nos padrões e confiar na retentativa**, que é o que o SQLAlchemy assume — ele
-invalida o pool ao detectar o desconecte, então o problema "se resolve sozinho" na segunda tentativa.
-Perdeu porque a segunda tentativa é minha suposição, não comportamento de quem está avaliando. Caiu
-também **`pool_recycle` sozinho, sem o `pre_ping`**: recycle cobre a conexão que vai morrer de velha,
-e não a que já morreu porque o servidor do outro lado reiniciou. São dois problemas, e o segundo é o
-que acontece na Railway.
-
-**Como isso apareceu:** não foi teste nem uso — foi o code review da Epic 1, e as duas camadas de
-revisão chegaram nele por caminhos diferentes. É um defeito que nenhuma suíte deste projeto pegaria,
-porque ele exige tempo passando entre duas requisições.
-
-### O `500` também tem o formato de erro da API, e o framework fala português
-
-**Decidi** registrar um quarto handler, para `Exception`, e traduzir a mensagem que o Starlette gera
-sozinho para `404` e `405`.
-
-**Por quê:** o README afirma, na decisão sobre o formato de erro, que **toda** resposta de erro sai
-como `{"erro": {...}}`. Não era verdade. Os três handlers cobriam domínio, `HTTPException` e
-validação; qualquer outra falha subia até o `ServerErrorMiddleware` do Starlette e voltava como
-`Internal Server Error` em **texto puro** — a única resposta da API fora do próprio contrato, e
-justamente a que aparece quando o banco cai. Pelo mesmo motivo, `404` e `405` respondiam `"Not
-Found"` e `"Method Not Allowed"`: as únicas strings em inglês de um sistema em que até a rota de
-saúde é `/saude`, e as primeiras que alguém encontra explorando o `/docs`.
-
-O corpo do `500` **não** carrega a causa. Mensagem de exceção traz host, usuário e nome de tabela com
-frequência demais para virar resposta HTTP; o rastro inteiro vai para o log, e um teste garante que
-nem o IP nem a senha do texto de exemplo aparecem no corpo.
-
-**O que caiu:** **deixar o `500` como estava e corrigir o README**, que é a alternativa honesta e
-custava uma frase. Perdeu porque a promessa era a decisão certa — o frontend tem um caminho só para
-tratar erro justamente por causa dela —, e era a implementação que estava incompleta. Caiu também
-**devolver a mensagem da exceção no corpo** para facilitar o diagnóstico: ajuda quem depura e entrega
-o interior do sistema para qualquer um que provoque uma falha.
-
-### A trava do banco de teste roda antes do `DROP`, não depois
-
-**Decidi** verificar o nome do banco dentro da fixture de sessão, antes do `alembic downgrade base`.
-
-**Por quê:** eu já tinha um teste chamado `test_banco_de_teste_e_o_rockhub_teste`, e ele me dava uma
-sensação de segurança que não existia — **teste roda depois da fixture**, e a fixture começa
-apagando as tabelas. Ele relatava o desastre em vez de impedi-lo. O cenário concreto: `DATABASE_URL_TESTE`
-exportada apontando para a Railway (é a variável mais fácil de errar, porque o `.env.example`
-documenta o formato dela ao lado do de produção), um `uv run pytest` distraído, e o banco de produção
-migrado do zero. A verificação é pelo **nome** do banco e não pelo host, porque `localhost` não
-garante nada — um túnel de porta aponta para qualquer lugar.
-
-**O que caiu:** **confiar no teste que já existia**, que é o que eu estava fazendo. E **conferir o
-host em vez do nome**, que parece mais rigoroso e é mais fácil de furar.
-
-### O favicon é a identidade reduzida a uma letra
-
-**Decidi** trocar o `favicon.ico` do `create-next-app` por um `icon.svg` próprio: "R" em âmbar
-(`--ambar`) sobre o breu (`--breu`), na serifada do sistema.
-
-**Por quê:** o arquivo do scaffold era o triângulo da Vercel, e ele sobreviveu até a Story 1.9 — a
-marca de outro produto na aba do navegador do projeto que está sendo avaliado, presente em qualquer
-screenshot. A redução carrega os dois marcadores da identidade e nada mais: o preto quente e o âmbar,
-na voz serifada. Uma letra só, porque 16px não comporta o fio duplo do masthead nem a palavra inteira
-— a essa altura qualquer estrutura vira borrão. É SVG e não `.ico` porque o formato aceita as fontes
-de sistema, e nenhuma fonte é baixada aqui também (UX-DR2).
-
-**O que caiu:** **apagar o arquivo e não pôr nada**, que já seria melhor que exibir a marca errada e
-custava zero. Perdeu por meio grau de acabamento numa peça que aparece em toda captura de tela. Caiu
-também **um símbolo desenhado** em vez da letra: qualquer forma que eu inventasse seria vocabulário
-novo, e a identidade deste projeto é tipográfica de ponta a ponta.
-
-### `httpx` síncrono para a Ticketmaster, não `AsyncClient` nem `urllib`
-
-**Decidi** que `app/integrations/ticketmaster.py` usa `httpx.Client` síncrono, promovido de
-dependência de `dev` para dependência de runtime.
-
-**Por quê:** `AsyncClient` daria concorrência real na chamada externa, mas seria o **único** caminho
-`async` do backend inteiro — a rota da Story 2.2 viraria `async def` e não poderia tocar a `Session`
-síncrona no mesmo escopo sem rodeio, criando duas formas de escrever rota num projeto que tem uma só.
-O ganho é teórico: o organizador busca no catálogo uma vez por evento publicado, não em volume.
-
-**O que caiu:** **`AsyncClient`**, pelo motivo acima. E **`urllib` da biblioteca padrão**, que pareceria
-"zero dependência nova" e é uma alegação falsa aqui — o `httpx` já estava travado no `uv.lock` desde a
-Story 1.1, puxado pelo `TestClient` do FastAPI. Ele exigiria montar query string, timeout e hierarquia
-de erro à mão, e o teste perderia o `httpx.MockTransport`, que recebe a `Request` de verdade montada
-pelo código de produção.
-
-### O endpoint da Discovery é `/events.json`, não `/attractions.json`
-
-**Decidi** consultar `GET /discovery/v2/events.json` — apresentações, não artistas.
-
-**Por quê:** é o único dos dois que devolve local e cidade junto do evento. Sem eles, o organizador
-digitaria os dois à mão na Story 2.4, e o campo `cidade` da tabela `evento` (Story 2.3) nasceria sem
-origem no catálogo — contrariando a cópia de dado que o AD-1 pede.
-
-**O que caiu:** **`/attractions.json`**, que busca o artista em vez do show e não carrega local nem
-cidade. E **os dois endpoints, com aba na busca**: cobriria buscar por show e por artista, ao custo de
-dobrar schema, conversor e testes numa story dimensionada para um commit.
-
-### Chave da Ticketmaster ausente derruba a produção, e é opcional em `local`
-
-**Decidi** que `Settings` recusa subir com `AMBIENTE=producao` e `TICKETMASTER_API_KEY` vazia — o
-mesmo padrão do `JWT_SECRET` — e que em `local` a chave pode faltar: a busca responde
-`CATALOGO_INDISPONIVEL` em vez de travar a inicialização.
-
-**Por quê:** um deploy com a variável esquecida ficaria **verde**, e a falha só apareceria no dia em
-que alguém fosse publicar o primeiro evento — o modo de falhar que assusta é justamente o que
-funciona. Em `local`, exigir a chave sempre entraria em atrito direto com a NFR1: quem clona o
-repositório só para avaliar não deveria precisar de conta no portal da Ticketmaster para o backend
-subir.
-
-**O que caiu:** **nunca derrubar, sempre degradar** — mais tolerante, e verdadeiro que catálogo
-indisponível não impede login nem compra. Perdeu porque esconderia o esquecimento até o pior momento
-possível. E **obrigatória em todo ambiente**, mais consistente, mas fecharia a porta para quem só quer
-rodar a avaliação localmente.
-
-O validador é um `model_validator` **novo**, não uma extensão do que já recusa o `JWT_SECRET` de
-exemplo: são dois motivos diferentes de não subir, e uma mensagem fundida manda quem depura procurar
-a causa errada.
-
-### Nenhuma rota nesta story — o cliente da Ticketmaster nasce sem superfície HTTP
-
-**Decidi** que a Story 2.1 entrega só `app/integrations/ticketmaster.py` e o schema
-`ItemDoCatalogo`, sem `GET /organizador/catalogo?q=` — essa rota é da Story 2.2.
-
-**Por quê:** um commit por story é o que o desafio avalia no histórico. Expor a rota aqui moveria um
-critério de aceite do `epics.md` de uma story para outra, e engordaria a 2.1 além do que ela foi
-dimensionada para entregar.
-
-**O que caiu:** **já expor a rota no mesmo commit**, que permitiria conferir a busca no `/docs` desde
-já. O custo é maior que o ganho: a story deixaria de ser um commit e passaria a ser dois critérios
-emendados. A prova desta story é a suíte, não o `curl` — dezesseis afirmações de teste para menos de
-cem linhas de código de produção.
-
-### O router do catálogo chama a integração direto, sem `services/catalogo.py`
-
-**Decidi** que `app/api/organizador.py` importa `app.integrations.ticketmaster` e devolve o
-resultado numa linha (`return ticketmaster.buscar_eventos(q)`), pulando a camada de `services` que
-o resto do backend usa sem exceção.
-
-**Por quê:** `buscar_eventos` já faz tudo que um service faria — `.strip()` no termo,
-curto-circuito de termo vazio antes de qualquer I/O, limite, conversão para `ItemDoCatalogo` e
-tradução de toda falha em `ErroDeDominio`. Não sobra regra de negócio para lugar nenhum, e é a
-própria espinha da arquitetura que rejeita interpor "camada de repasse" — a mesma frase que já
-justificava não ter `app/repositories/`. Seria inconsistente aceitar aqui o que recusei ali só
-porque o nome da pasta é outro.
-
-**O que caiu:** um **service fino**, só para manter a seta `routers → services → models` literal e
-uniforme — ao custo de um módulo cujo corpo inteiro seria `return ticketmaster.buscar_eventos(q)`,
-a definição de camada de repasse. E um **service com trabalho real**, subindo o `strip`, o limite e
-o filtro de país para dentro dele: deixaria o diagrama verdadeiro, mas reabriria
-`ticketmaster.py` — entregue e revisado na story anterior — e moveria dois critérios de aceite da
-2.1 de arquivo, por uma story do tamanho de um commit. **A exceção vale só para o catálogo**: a
-Story 2.4 grava evento e setor no banco, tem transação e invariante, e por isso tem service, sem
-discussão.
-
-### A busca do organizador é `<form method="get">`, não um Client Component
-
-**Decidi** que a tela `/organizador/publicar` busca por um `<form method="get">` num Server
-Component, sem `"use client"` nenhum.
-
-**Por quê:** o termo fica na URL — a página é recarregável, compartilhável, e o botão voltar
-funciona — e a tela continua Server Component por padrão, a convenção do projeto desde a Story 1.2.
-Quando a Story 2.4 acrescentar os passos 2 e 3 do fluxo de publicação, o estado de "qual atração foi
-escolhida" continua morando num lugar só.
-
-**O que caiu:** um **Client Component com `chamarApi`**, que reusaria `lib/api.ts`, `AvisoDeErro` e
-o tratamento de erro por `codigo` que já existem, e buscaria sem recarregar a página. Perdeu por
-três razões: a busca deixaria de estar na URL; a tela inteira viraria ilha de cliente, contra a
-convenção que todas as outras telas seguem; e o "sem spinner: a estrutura aparece e o conteúdo
-preenche" do `EXPERIENCE.md` é natural no servidor e artificial no cliente.
-
-### A tela do organizador mora em `/organizador/publicar`, dentro da casca `(site)`
-
-**Decidi** o caminho `/organizador/publicar`, na mesma casca com masthead que o resto do site
-autenticado usa.
-
-**Por quê:** `/publicar` seria mais curto, mas deixaria a Story 2.6 ("Meus eventos") sem opção boa
-de rota — `/meus-eventos` fica perto demais de `/meus-ingressos` da Epic 4, e confundir as duas em
-texto corrido é fácil. E o `EXPERIENCE.md` é explícito: o organizador usa "a mesma casca do cliente,
-com navegação própria" — um grupo de rotas `(organizador)` com layout próprio criaria uma terceira
-casca para manter sem que nada a justificasse.
-
-**O que caiu:** **`/publicar`** — mais curto, com o papel implícito pela sessão, mas empurra a 2.6
-para um nome de rota ruim. E um **grupo `(organizador)` com layout próprio**, que contraria
-literalmente o `EXPERIENCE.md`.
-
-### `countryCode=BR` fixo na busca da Discovery
-
-**Decidi** acrescentar `countryCode=BR` à chamada da Ticketmaster, ao lado de `apikey`, `keyword`,
-`size` e `locale`.
-
-**Por quê:** sem ele, buscar "metallica" devolve os vinte primeiros shows do mundo — quase todos nos
-Estados Unidos — e nenhum brasileiro entra no `size=20`. A tela pareceria quebrada justamente para
-quem estiver avaliando.
-
-**O que caiu:** **sem filtro nenhum**, que é literalmente o que o `epics.md` especifica e não
-esconderia resultado algum — mas o sintoma acima seria exatamente o que apareceria na primeira busca
-de teste. E um **filtro visível, marcado por padrão** (um campo "só Brasil" na tela): mais honesto
-com os dois lados da decisão, ao custo de mais um parâmetro na rota, mais um campo na tela e mais
-dois testes, numa story dimensionada como um commit. **A limitação assumida**: um show fora do
-Brasil não aparece nesta busca — está também em [O que não está
-pronto](#o-que-não-está-pronto).
-
-### Publicação exige atração do catálogo — sem cadastro manual de evento
-
-**Decidi** que o organizador só publica um evento a partir de uma atração encontrada no catálogo da
-Ticketmaster. Não existe, e não vai existir, um caminho de "não achei — cadastro na mão" com nome,
-imagem e local digitados livremente.
-
-**Por quê:** é o que o enunciado do desafio descreve literalmente — "o organizador monta um evento
-**a partir de** um catálogo de shows [...] vindo de uma API externa" — e é o que o `AD-1` da
-arquitetura pressupõe: o dado do catálogo vira cópia no banco no momento da publicação, o que só
-faz sentido existindo uma atração de origem. Confirmei isso depois de notar, testando a Story 2.2,
-que o `countryCode=BR` limita a busca a shows com data real marcada aqui — e que, por exemplo, um
-cover de banda tocando num bar da esquina nunca vai aparecer nela.
-
-**O que caiu:** um segundo caminho na tela de publicação, tipo "não encontrou? cadastre
-manualmente" — cobriria casos reais como cover, evento independente ou show sem página na
-Ticketmaster, mas abriria um formulário novo (nome, atração, imagem opcional, validação própria)
-que a Story 2.4 não estava dimensionada para ter, e sairia do que o enunciado pede para demonstrar.
-Fica fora do escopo deste desafio, registrado como limitação abaixo.
-
-### A busca do organizador lista exemplos reais mesmo sem termo digitado
-
-**Decidi** — revisando a Story 2.2 no mesmo dia, depois de testar a tela pela primeira vez — que
-`GET /organizador/catalogo` sem `q` não devolve mais `[]`: chama a Ticketmaster sem `keyword` e com
-`sort=date,asc`, e devolve os próximos eventos do catálogo no Brasil. A tela `/organizador/publicar`
-chega mostrando esses exemplos, em vez de um convite "busque pelo nome do show" antes de qualquer
-resultado aparecer.
-
-**Por quê:** testando a primeira versão, o padrão original — nenhuma chamada até alguém digitar
-algo — deixava o organizador sem noção nenhuma do que existe no catálogo até começar a buscar. Ver
-exemplos reais assim que a tela abre é mais útil do que um campo vazio esperando um termo, e
-continua respeitando a decisão de que publicação exige atração de um catálogo de verdade (acima):
-os exemplos **são** o catálogo, não dado inventado.
-
-**O que caiu:** a versão original desta story, que fazia exatamente o oposto — nenhuma requisição
-sem termo, para poupar a cota de 5.000 chamadas/dia. Ela continua correta como raciocínio de cota;
-perdeu porque a tela sem nenhum exemplo pareceu vazia demais na prática. E uma **fileira de termos
-sugeridos, clicáveis** ("chips" com nomes como Metallica, Baco Exu do Blues): preservaria a cota de
-quem só abre a tela para olhar, sem gastar chamada até o clique — mas exigiria manter uma lista de
-sugestões própria (fixa no código, ou alimentada de algum outro lugar, que é escopo novo) e não
-mostraria nenhum exemplo real antes do clique, só nomes.
-
-### O catálogo filtra por classificação, e o filtro é híbrido
-
-**Decidi** que toda chamada à Discovery leva `segmentId=KZFzniwnSyZfZ7v7nJ` (o segmento *Music* da
-taxonomia deles), e que `genreId=KnvZfZ7vAeA` (*Rock*, filho de Music) entra **só quando não há termo
-digitado** — ou seja, só na vitrine que abre a tela.
-
-**Por quê:** dois problemas, um de produto e um de identidade. Medindo contra a API em 11/08/2026,
-`countryCode=BR` sozinho devolvia 168 eventos, e o primeiro da lista era o *SP2B — São Paulo Beyond
-Business*, uma feira de negócios. A primeira coisa que alguém vê no fluxo de publicação era um
-evento corporativo anunciado como sugestão de show para vender ingresso. E o segundo problema é que
-o produto se chama RockHub e o catálogo não tinha relação nenhuma com rock — um filtro de gênero é a
-diferença entre um nome e um recorte.
-
-O que decidiu o **híbrido**, em vez do gênero fixo em tudo, foi uma contraprova que eu medi:
-
-```
-keyword=rosalia  +  segmentId=Music                 ->  1 resultado
-keyword=rosalia  +  segmentId=Music + genreId=Rock  ->  0 resultados
-```
-
-Com o gênero preso também na busca por termo, o organizador que digita o nome exato do show que quer
-publicar **não acha** — e a tela não tem como explicar por quê, porque ela não sabe que existe um
-filtro de gênero atrás. Campo de busca que não acha o que a pessoa digitou é lido como defeito,
-sempre. A vitrine é o contrário: ali ninguém pediu nada específico, e mostrar rock é o recorte do
-produto se apresentando. É o único lugar onde o filtro de gênero informa em vez de frustrar.
-
-**O que caiu:**
-
-- **`classificationName=Rock`** — é o parâmetro que a maioria usaria, e é o errado. Ele faz match
-  textual difuso contra segmento, gênero, subgênero e tipo: testei, e devolve Rosalía (`World`) e
-  Tiago Iorc (`Pop`) num filtro chamado Rock. Usá-lo demonstraria menos conhecimento da API, não mais
-- **`genreId=Rock` sempre, inclusive na busca** — o produto viraria literalmente o que o nome diz, e
-  o recorte é defensável. Caiu por dois números: **13 eventos no catálogo inteiro**, e busca por
-  termo devolvendo vazio para qualquer coisa que não fosse rock brasileiro. Soma-se que a taxonomia
-  deles erra — *Ivan Lins* vem classificado como `Rock` — então o recorte rígido exclui por engano
-  tanto quanto inclui
-- **Só `segmentId=Music`** — resolve o problema de produto (a feira sai) e não resolve o de
-  identidade: RockHub seguiria sendo só um nome. Continua sendo metade da decisão que adotei
-- **Não fazer nada** — zero risco e zero trabalho, ao custo de o avaliador abrir a tela de publicação
-  e ver uma feira de negócios como primeira sugestão
-
-Os dois ids são dado de terceiro fixado no meu código. Estão como constantes nomeadas, com o motivo
-ao lado e o ponteiro para `GET /discovery/v2/classifications.json`, que é por onde se reconfere a
-árvore se um dia a busca vier vazia sem explicação.
-
-### Essa mudança virou uma techspec avulsa, e não uma Story 2.7
-
-**Decidi** implementar o filtro acima como um commit `feat` fora da numeração da Epic 2, com a
-especificação em [docs/techspec-filtro-do-catalogo.md](docs/techspec-filtro-do-catalogo.md), em vez
-de criar uma Story 2.7 no `epics.md` e no `sprint-status.yaml`.
-
-**Por quê:** o tamanho não é de story — são seis linhas de código, quatro testes e dois parágrafos de
-README. O que uma story me daria e eu não queria perder são duas coisas: **o porquê registrado
-enquanto está fresco** e **critérios de pronto explícitos**. A techspec dá as duas, e é honesta sobre
-o que aconteceu: eu abri a tela da Story 2.2 pronta, vi uma feira de negócios no topo e resolvi
-ali. O planejamento não previu isso porque não tinha como prever — só aparece com a tela na frente.
-
-**O que caiu:**
-
-- **Uma Story 2.7 no `epics.md`** — manteria tudo num lugar só, com numeração uniforme e o
-  `sprint-status.yaml` como fonte única. Caiu porque o `epics.md` é artefato de **planejamento**,
-  escrito antes da implementação; enfiar uma story nele depois faz o plano parecer que previu algo
-  que ele não previu. Prefiro que o histórico mostre o plano como ele foi feito, e a descoberta como
-  ela aconteceu — inclusive porque a descoberta é a parte mais interessante das duas
-- **Um commit sem spec nenhuma, só a mensagem** — é o mais barato, zero cerimônia. Caiu porque o
-  *porquê* evapora: daqui a três dias ninguém sabe por que `segmentId` é incondicional e `genreId`
-  não é, e a próxima pessoa "simplifica" movendo os dois para fora do `if`. O teste do `genreId`
-  **ausente** na busca por termo existe exatamente para acusar isso, e a techspec existe para
-  explicar por que aquele teste importa
-- **Embutir na Story 2.4**, que é a próxima e ainda não começou — pegaria carona num commit já
-  planejado, sem artefato novo. Caiu porque a 2.4 é sobre publicar um evento, e misturar um filtro de
-  catálogo nela faz o histórico de commits mentir sobre o que cada commit fez. Um commit, um assunto
-
-Para o rastro não se perder, ela é citada em três lugares: um comentário no bloco da Epic 2 do
-`sprint-status.yaml`, uma linha no Change Log da Story 2.2 (dona dos arquivos tocados) e a própria
-mensagem do commit.
-
-### O id da Ticketmaster saiu da tela do organizador
-
-**Decidi** remover o `id_externo` da linha de origem de cada resultado do catálogo. Ela era
-`Ticketmaster · ZFIMVHTNMZ17KBX_ · Qualistage · Rio de Janeiro` e passou a ser
-`Ticketmaster · Qualistage · Rio de Janeiro`.
-
-**Por quê:** aquele código identifica o show para o **meu código**, não para quem está escolhendo o
-que publicar. Quem olha a tela reconhece o show pelo nome, pela casa e pela cidade — que já estão
-logo ali do lado. O id não ajuda a decidir nada, e um hash de API no meio de uma tela que imita
-jornal impresso é ruído justamente na parte que carrega a identidade do produto.
-
-**O que caiu:** **mantê-lo, por rastreabilidade** — com o id na tela, dá para conferir o evento
-direto na Discovery se algum dia a publicação sair errada. Caiu porque ninguém no fluxo avaliado faz
-isso, e o id não sumiu do sistema: continua vindo da API, continua sendo a `key` de React da lista e
-continua indo para `origem_externa_id` na publicação. E **mostrá-lo só no `title`, ao passar o
-mouse** — preservaria a conferência sem o ruído, mas é invisível no toque e acrescenta um mecanismo
-para uma necessidade que ninguém demonstrou ter.
-
-### `publicado_em` anulável: rascunho existe no banco, mesmo sem tela que o crie
-
-**Decidi** que `evento.publicado_em` é uma coluna `TIMESTAMPTZ` **anulável**, e que `NULL` significa
-"ainda não publicado". Não existe enum de status, e o estado de publicação é essa coluna estar
-preenchida ou não.
-
-**Por quê:** a Story 3.1 tem um critério de aceite que diz, literalmente, *"eventos não publicados
-não aparecem na programação"*. Com a coluna obrigatória, esse critério vira vacuidade — não
-existiria evento não publicado para provar coisa nenhuma, e o teste passaria sem testar nada. Com
-ela anulável, insiro um evento com `publicado_em = NULL` e provo que a programação o ignora. Custa
-uma coluna anulável e me dá um critério verificável.
-
-**O que caiu:** **`NOT NULL` com `server_default=now()`**, que é mais honesto com o produto que
-existe hoje — publicar é o único caminho de criação, a Story 2.4 grava o evento já no ar, e seria
-uma coluna a menos para tratar em toda consulta. E também **um enum `StatusEvento`**, que pareceria
-mais explícito e é na verdade uma terceira forma de dizer a mesma coisa: o enum, a coluna de data e
-a consulta teriam que concordar para sempre. O custo que assumi na escolha: existe um estado no
-banco — o rascunho — que nenhuma tela do sistema produz.
-
-### `origem_externa_id` sem `UNIQUE`, porque turnê não é duplicata
-
-**Decidi** que a coluna que guarda o id da atração no catálogo da Ticketmaster é anulável e **não
-tem restrição de unicidade**.
-
-**Por quê:** a mesma atração do catálogo vira legitimamente dois eventos — uma data em São Paulo e
-outra no Rio. Isso é uma turnê, não um engano, e uma constraint `UNIQUE` proibiria o caso real para
-proteger contra um erro hipotético.
-
-**O que caiu:** **`UNIQUE`**, que evitaria o organizador publicar a mesma atração duas vezes sem
-querer durante a avaliação — caiu porque quebra a turnê, e porque o erro que ele veria na segunda
-data seria um `IntegrityError` cru que a Story 2.4 teria que traduzir em mensagem. E **`NOT NULL`
-sem unicidade**, que descreve exatamente o fluxo da Epic 2 (todo evento nasce do catálogo) — caiu
-por travar no banco uma regra que é de produto e pode mudar sem migração. Essa regra existe, mas
-mora no service da 2.4, onde ela pode virar uma mensagem decente. Convive de propósito com
-[Publicação exige atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento):
-o banco aceita, o produto recusa.
-
-### Apagar evento leva os setores junto (`ON DELETE CASCADE`)
-
-**Decidi** que a chave estrangeira de `setor` para `evento` tem `ON DELETE CASCADE`, e que o
-`relationship` do ORM leva `passive_deletes=True` para concordar com o banco.
-
-**Por quê:** setor é **composição**, não associação. Um "Pista" sem evento não significa nada — não
-é um registro órfão recuperável, é lixo. O schema deve dizer isso; se ele declarasse uma relação
-mais frouxa do que a real, quem lesse o banco teria uma informação errada sobre o domínio.
-
-**O que caiu:** **`RESTRICT`, que é o padrão** — nada some por acidente, e como nenhuma story apaga
-evento a diferença só apareceria em SQL rodado à mão. Caiu por descrever mal a relação. O custo que
-assumi: apagar um evento por engano leva os setores junto, sem aviso. E há uma pegadinha que essa
-escolha traz e que registrei porque quase passou batido — `CASCADE` no banco **não basta**: com um
-`relationship` comum, o SQLAlchemy tenta desassociar os setores antes de apagar e estoura no
-`NOT NULL` sem nunca chegar ao `CASCADE`. As duas metades precisam concordar, e o teste apaga pela
-sessão justamente para provar isso.
-
-### Quatro constraints no `setor`, não só o `CHECK` que a arquitetura exige
-
-**Decidi** que a tabela `setor` nasce com quatro restrições no banco: o `CHECK` de estoque do AD-3
-(`vendidos` entre zero e `capacidade`), `capacidade > 0`, `preco_centavos >= 0`, e nome único **por
-evento**.
-
-**Por quê:** o `CHECK` do AD-3 existe como rede de segurança — ele vale para o caminho que escapar
-da validação da aplicação. Se esse raciocínio justifica uma constraint, justifica as outras duas
-pelo mesmo motivo: capacidade zero e preço negativo são estados que eu não quero que existam,
-independentemente de qual caminho de código tentou criá-los.
-
-**O que caiu:** **só o `CHECK` do AD-3**, que é o mínimo que o planejamento pedia, deixando
-capacidade e preço para a validação Pydantic da Story 2.4 — onde o erro sai numa mensagem bonita em
-vez de um `IntegrityError`. Caiu porque a validação bonita continua existindo: as duas camadas não
-competem, e a de baixo é a que sobra quando a de cima é contornada. E **as três sem a unicidade de
-nome**, que permitiria dois "Pista" no mesmo evento — o que **pode** ser proposital (dois lotes com
-preços diferentes) — caiu porque a tela do cliente na Story 3.4 mostraria dois itens de nome
-idêntico e ele escolheria no escuro. Se um dia lotes existirem, eles vão precisar de nome próprio
-de qualquer jeito.
-
-### A atração escolhida viaja pela URL, não em estado do cliente
-
-**Decidi** que clicar numa fila do catálogo é seguir um `<Link>`: a escolha vai para a URL
-(`?q=baco&escolhido=G5vYZ9a1kd`), a página re-renderiza no servidor e o passo 2 aparece.
-
-**Por quê:** é a mesma decisão que já tomei para a busca da Story 2.2, e ela paga as mesmas três
-coisas de graça — recarregar mantém a escolha, o botão voltar a desfaz, e o link abre no mesmo lugar
-para outra pessoa. Estender a decisão que já está tomada custa zero; contradizê-la na tela seguinte
-custaria explicar por que a busca é recarregável e a escolha não é.
-
-**Uma correção que veio de usar a tela:** na primeira versão, escolher uma atração fazia o passo 2
-nascer **abaixo da dobra**, e clicar na fila parecia não fazer nada — o formulário só era encontrado
-por quem rolasse a página até o fim. O destino do link passou a terminar em `#passo-2`. Repare que a
-correção **não** foi um `onClick` rolando a página com JavaScript: como a escolha é navegação, bastou
-dizer para onde a navegação vai. Foi a decisão de manter tudo na URL que deixou o conserto ser uma
-âncora em vez de uma ilha de cliente.
-
-**O que caiu:** **estado no cliente com `onClick`** — mostraria o passo 2 sem recarregar, e é o que
-qualquer formulário moderno faria. Caiu por duas coisas: tiraria a escolha da URL (recarregar perde,
-voltar não desfaz, o link não abre no mesmo lugar) e transformaria a tela **inteira** numa ilha de
-cliente, contra a convenção "Server Component por padrão" — a busca, o catálogo e a guarda de sessão
-iriam junto, sem nenhum deles precisar do navegador. E **uma rota própria,
-`/organizador/publicar/[id_externo]`** — mais limpa de ler e a mais parecida com um wizard de
-verdade; caiu porque a atração precisaria ser buscada de novo por id na Discovery, o que significa um
-endpoint novo na integração e mais uma chamada de cota por publicação, ou então ter todos os campos
-repassados pela URL, que é a mesma coisa com mais barulho.
-
-### O formulário de publicação é a primeira ilha `"use client"` do organizador
-
-**Decidi** que o passo 2 é um Client Component que chama a API por `chamarApi`, dentro de uma página
-que continua sendo Server Component.
-
-**Por quê:** linha de setor que aparece e some ao clicar é interação que exige o navegador — é
-exatamente o caso que a arquitetura reserva para `"use client"`. E o desenho que sai daqui vale para
-as Epics 3 a 5, que vão ter mais disso (stepper de quantidade, câmera da portaria): ilha pequena
-dentro de página de servidor, com a prop serializada como fronteira.
-
-**O que caiu:** **Server Action do Next** — manteria a tela sem JavaScript nenhum e é o idiomático da
-versão instalada; caiu por ser mecanismo novo no projeto (nenhuma story usou até aqui) e por não
-resolver o problema que motivou a ilha: o setor dinâmico continuaria exigindo número fixo de linhas.
-E **cinco linhas de setor fixas, sem JavaScript** — o mais simples de tudo; caiu porque ainda
-precisaria de Server Action ou route handler para o `POST`, e mataria o `+ Adicionar setor` que o
-protótipo desenha.
-
-### A rota publica de fato, mesmo com o AD-7 chegando só na story seguinte
-
-**Decidi** que `POST /organizador/eventos` carimba `publicado_em` no ato, e que a exigência de
-portaria escalada (AD-7) entra na Story 2.5, na mesma rota.
-
-**Por quê:** feito assim o risco real é baixo, então é melhor fazer agora para não sobrar trabalho
-nas próximas stories. A janela dura **uma** story, dentro de uma branch que só eu publico — não
-existe ninguém de fora criando evento nesse intervalo, e o pior caso é um evento de teste sem
-portaria, que eu mesmo apago. Segurar o carimbo até a 2.5 pagaria essa janela com retrabalho
-garantido: a 2.5 teria que reabrir o service, a rota e a tela de confirmação que a 2.4 acabou de
-escrever, só para mudar um carimbo de lugar.
-
-**O que caiu:** **gravar rascunho e deixar a 2.5 publicar** — o AD-7 valeria desde o primeiro minuto
-e nunca existiria evento publicado sem alguém autorizado a validar. Caiu pelo motivo acima, e porque
-a 2.4 terminaria sem nada visível no produto: um botão "Publicar evento" que não publica. **O custo
-continua real e está registrado** em [O que não está pronto](#o-que-não-está-pronto): entre a 2.4 e
-a 2.5 dá para publicar sem portaria, e os eventos criados nessa janela ficam sem vínculo. Preferi
-uma dívida datada a uma omissão.
-
-### Publicar termina numa confirmação na própria tela, sem redirecionar
-
-**Decidi** que a resposta de sucesso substitui o formulário por uma confirmação com os números
-exatos do que foi gravado — nome, data por extenso, local, cidade e cada setor com capacidade e
-preço. O caminho de volta é um `Publicar outro →`.
-
-**Por quê:** o organizador acabou de digitar quinze números e precisa conferir o que foi parar no
-banco. Mostrar o que **o servidor devolveu**, e não o que ele digitou, é a única forma de a
-confirmação valer alguma coisa.
-
-**O que caiu:** **`redirect("/")`** — uma linha, e é o padrão de todo formulário. Caiu porque a raiz
-é o estado vazio da programação até a Story 3.1: publicar para cair numa tela que diz "a programação
-entra no ar quando os primeiros eventos forem publicados" pareceria defeito, logo depois de
-justamente publicar um. E **adiantar `/organizador/meus-eventos`** — resolveria o destino de vez;
-caiu porque invade a Story 2.6 inteira, que tem AC próprio (não mostrar evento de outro organizador)
-e estouraria o recorte de um commit por story.
-
-### Preço digitado em reais, convertido para centavos antes do `POST`
-
-**Decidi** que o campo aceita `120,00` e o cliente converte para `12000` antes de enviar. A API só
-conhece `preco_centavos: int`.
-
-**Por quê:** o AD-11 existe para manter dinheiro longe de ponto flutuante, e a fronteira é o lugar
-certo para a conversão acontecer. Do lado de fora, quem digita escreve como escreveria num cartaz;
-do lado de dentro, todo valor monetário do projeto é inteiro, sem exceção.
-
-**O que caiu:** **aceitar reais na API e converter no backend** — tiraria o parsing do cliente; caiu
-porque põe ponto flutuante no contrato, que é exatamente o que o AD-11 impede, e criaria dois campos
-monetários com unidades diferentes no mesmo projeto. E **pedir centavos direto ao organizador** —
-zero conversão e zero ambiguidade, ao custo de ele fazer a conta de cabeça a cada setor. A regra da
-conversão evita adivinhar: com vírgula, ela é o decimal e o ponto é milhar; sem vírgula, o ponto é o
-decimal — e `"1.234"`, que é ambíguo, é recusado em vez de virar 123.400 por chute.
-
-### Data e horário são dois campos, não um `datetime-local`
-
-**Decidi** dois campos com rótulos próprios, como o protótipo desenha, juntados em um instante ISO
-com offset antes do envio.
-
-**Por quê:** é o que o protótipo mostra, e o horário fica legível em tela pequena.
-
-**O que caiu:** **um `<input type="datetime-local">`** — um campo a menos e uma junção a menos; caiu
-porque o widget nativo varia bastante entre navegadores, e eu perderia o controle de como o campo
-mais importante do formulário aparece. A junção que sobrou tem uma armadilha que registrei porque
-ela só apareceria em produção: `new Date("2026-08-14")` é lido como **UTC** e
-`new Date("2026-08-14T21:00")` como **hora local** — mandar só a data faria um show das 21h em São
-Paulo virar 18h na tela de quem compra.
-
-### Nome e imagem travados; casa de show e cidade pré-preenchidas e editáveis
-
-**Decidi** que o passo 2 mostra nome e imagem do catálogo como **texto travado**, e que `local` e
-`cidade` chegam preenchidos com o que o catálogo trouxe, mas podem ser trocados.
-
-**Por quê:** turnê. A mesma atração do catálogo vira várias datas, em casas e cidades diferentes — o
-registro da Discovery traz a casa de *uma* data, que não é necessariamente a que o organizador está
-publicando. Quem sabe onde o show dele acontece é ele, não a Ticketmaster. É o mesmo raciocínio que
-fez `origem_externa_id` nascer **sem** `UNIQUE` na Story 2.3.
-
-**O que caiu:** **tudo editável, inclusive o nome** — o catálogo viraria sugestão de preenchimento e
-cobriria mais casos; caiu porque esvazia a decisão que já está registrada aqui em [Publicação exige
-atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento): com o
-nome livre, o cadastro manual volta pela porta dos fundos, e o ingresso emitido poderia dizer um nome
-que a listagem não diz. E **nada pré-preenchido** — evitaria que um dado errado do catálogo passasse
-despercebido, ao custo de redigitar o que a Ticketmaster já informou certo na maioria das vezes.
-
-### "Evento sem setor" é regra do service, não `min_length` do Pydantic
-
-**Decidi** que a lista de setores chega ao schema **sem** `min_length=1`, e que quem recusa a lista
-vazia é o service, com o código `EVENTO_SEM_SETOR`.
-
-**Por quê:** o contrato do frontend é o `codigo`, não a mensagem. `min_length` responderia `422` com
-`DADOS_INVALIDOS`, o código genérico de "algum campo está errado", e a tela não teria como dizer o
-que faltou. O critério que fixei aqui vale para as Epics 3 a 5 inteiras: **validação de estrutura é
-do Pydantic; regra de negócio é do service** — e regra de negócio tem nome próprio. Pelo mesmo
-motivo o campo tem `default_factory=list`: sem isso, mandar `[]` e não mandar nada teriam respostas
-diferentes para a mesma situação.
-
-**O que caiu:** **`Field(min_length=1)`**, que é a linha que qualquer um escreveria e resolve em um
-caractere. Caiu pelo código errado. E, junto dela, a tentação de deixar o banco responder pelo nome
-de setor repetido: a `uq_setor_evento_id_nome` da 2.3 sozinha transformaria um erro de digitação do
-organizador num `500` — `IntegrityError` no `commit` sobe até o handler genérico. Conferir os nomes
-no service, antes de qualquer `INSERT`, é o que faz isso virar um `422` legível e não deixa evento
-órfão no banco.
-
-### O organizador escolhe a portaria numa lista, com busca pelo nome — não digitando o e-mail
-
-**Decidi** que quem pode ser escalado vem de uma rota própria, `GET /organizador/portarias`, e que a
-tela mostra essa lista para marcar, com um campo de busca rotulado *"Consulte pelo nome da conta"*.
-
-**Por quê:** é o único desenho em que o organizador não precisa saber nada de cor. Ele reconhece a
-pessoa pelo nome, marca, e pronto. O rótulo diz explicitamente o que se digita ali porque essa é
-justamente a dúvida que sobraria — nome ou e-mail? — e um campo de busca que devolve vazio por causa
-disso parece quebrado.
-
-**O que caiu:** **mandar `portaria_emails: [...]` e deixar o backend resolver** — nenhuma rota nova,
-nenhuma lista exposta, e a tela ficaria com um campo de texto e mais nada. Caiu porque obriga o
-organizador a decorar o e-mail de cada porteiro, e uma letra errada vira `422` sem pista de qual
-conta existe: erro que a pessoa não tem como corrigir sozinha, porque a resposta não pode dizer quais
-e-mails existem sem virar um oráculo de contas.
-
-**O custo que assumi:** qualquer organizador enxerga nome e e-mail de **todas** as contas de portaria
-do sistema. Numa plataforma com vários organizadores isso viraria escopo por organizador — "só quem
-eu convidei" —, que exige convite, que é outra epic. Aqui é custo consciente, e está registrado.
-
-### A escala aceita várias pessoas, e não uma só
-
-**Decidi** que um evento pode ter vários usuários de portaria escalados, numa tabela de associação
-`evento_portaria` com chave primária composta.
-
-**Por quê:** o AD-7 fala em "ao menos um", e uma porta de show real tem mais de um operador. O modelo
-já é N:N; escolher um só seria desenhar a interface contra o próprio banco.
-
-**O que caiu:** **um `<select>` de escolha única**, que é o que o protótipo desenha — menos tela,
-menos estado, menos teste. Caiu porque a interface passaria a ser a única coisa impedindo o que o
-banco permite, e **não há tela de editar evento** para corrigir depois: um evento com uma pessoa só
-escalada, e ela faltando na noite do show, é um evento sem portaria. Quando a única barreira é a
-tela, a barreira dura até alguém chamar a API.
-
-### Escalar quem não é portaria e escalar quem não existe respondem a mesma coisa
-
-**Decidi** um código só, `PORTARIA_INVALIDA`, para os dois casos — e a **mesma mensagem**, não só o
-mesmo código.
-
-**Por quê:** é a mesma disciplina do login, que não diz se o e-mail existe. Se a resposta separasse
-"esse id não existe" de "essa conta não é de portaria", quem tivesse uma sessão de organizador
-poderia varrer UUIDs e descobrir quais já foram gente. Uma consulta só (`id.in_(ids)` **e** `papel ==
-PORTARIA`) resolve as duas perguntas de uma vez, e um teste compara os dois corpos de erro para
-garantir que continuam idênticos.
-
-**O que caiu:** **distinguir os dois**, que ajudaria a depurar e é o que qualquer API interna faria.
-Caiu porque o ganho é meu, no console, e o custo é de quem tem conta no sistema. Também caiu
-**listar quais ids falharam** na mensagem: mesma coisa, com o agravante de entregar a resposta pronta.
-
-### Ids repetidos são deduplicados em silêncio, ao contrário de setor repetido
-
-**Decidi** que mandar a mesma pessoa duas vezes em `portaria_ids` grava uma linha e responde `201`,
-enquanto dois setores de mesmo nome continuam sendo `422 SETOR_DUPLICADO`.
-
-**Por quê:** a diferença é de intenção, não de forma. Dois setores com o mesmo nome são duas
-intenções em conflito — qual das duas capacidades vale, qual dos dois preços? Não há resposta certa,
-e escolher uma seria adivinhar. A mesma pessoa marcada duas vezes é uma intenção só, dita duas vezes:
-ela está escalada. Recusar seria pedir que alguém corrigisse um formulário que já dizia o que queria
-dizer.
-
-**O que caiu:** **`PORTARIA_DUPLICADA`, por simetria com o setor** — teria a vantagem de as duas
-listas se comportarem igual, o que é mais fácil de documentar. Caiu porque simetria de forma não é
-simetria de significado, e a regra que sobraria seria "seja consistente" em vez de "faça sentido". E
-caiu **deixar a chave primária composta responder**: ela impede a linha duplicada, mas com
-`IntegrityError` no `commit`, ou seja, um `500` no lugar de um `201` legítimo.
-
-### O seed ganhou uma segunda conta de portaria, e o enunciado pede uma
-
-**Decidi** semear `Ana Sampaio · portaria2@rockhub.dev`, além do Jonas Ribeiro que já existia desde a
-Story 1.7.
-
-**Por quê:** com uma conta só, a tela de escalação vira um item obrigatório que não se pode não
-marcar — e, principalmente, o cenário que o AD-7 existe para provar (a portaria A não valida o evento
-da portaria B) dependeria de quem avalia criar uma conta de portaria na mão. Conta de portaria **não
-se cria pela interface**, por decisão já registrada. Sem a segunda semeada, esse cenário simplesmente
-não é demonstrável. O NFR2 pede uma; duas continuam atendendo, com um cenário a mais em pé.
-
-**O que caiu:** **deixar só uma**, exatamente o que o enunciado pede — menos alteração no seed, no
-README e nos testes. Caiu porque economizaria cinco linhas e custaria a demonstração da invariante
-mais específica desta plataforma. É o tipo de economia que aparece como falta na hora da avaliação.
-
-### O título do passo 3 mora na ilha de cliente, e os dos passos 1 e 2 na página
-
-**Decidi** que `3 · Escale a portaria` é renderizado dentro do `FormularioPublicacao`, enquanto
-`1 · Escolha no catálogo` e `2 · Data, local e setores` ficam na `page.tsx`.
-
-**Por quê:** o passo 3 precisa desaparecer junto com o formulário quando a confirmação toma o lugar
-dele. Um "3 · Escale a portaria" sobrando acima de um recibo de evento publicado é uma instrução para
-fazer o que já foi feito.
-
-**O que caiu:** **manter os três títulos na página**, que é mais consistente de ler no código e é o
-que eu faria por reflexo. Caiu pelo motivo acima — consistência de arquivo perdendo para consistência
-de tela. E caiu **passar um sinal de "já publicou" da ilha para a página**, que resolveria mantendo
-os títulos juntos: exigiria estado subindo de um Client Component para um Server Component, que é
-exatamente a direção que essa fronteira não tem.
-
-### "Meus eventos" só deixa ver, e "gerenciar" aqui quer dizer acompanhar
-
-**Decidi** que a Story 2.6 é leitura pura: duas rotas de `GET`, duas telas, nenhuma rota de escrita,
-nenhuma migração. Depois de publicado, nem os dados do evento nem a escala da portaria mudam.
-
-**Por quê:** é o que os dois blocos de critério do `epics.md` pedem — ver cada evento com data,
-local, setores e números exatos, e não ver os eventos de outro organizador —, e mantém a story do
-tamanho de um commit, que é a régua desta epic inteira. O "gerenciar" do título vira **acompanhar**,
-e isso está dito na tela: não há botão de editar, cancelar ou trocar a escala. Botão que não faz nada
-é pior que botão ausente.
-
-**O que caiu:** **ver + trocar a escala depois de publicar**, que fecharia a pergunta que ficou
-aberta na 2.5 — evento publicado na janela do AD-7 fica sem portaria para sempre. Caiu porque custa
-rota de escrita, uma invariante nova ("não deixar a escala chegar a zero"), mais uma tela e uma dúzia
-de testes, numa story que deveria ser um commit. E caiu **ver + editar o evento inteiro**, que é a
-tela de editar evento já registrada como corte consciente: a regra difícil ali é capacidade não poder
-cair abaixo de `vendidos`, e isso é história para duas stories, não meia.
-
-### A lista é enxuta e o detalhe é uma página, não uma lista só com tudo dentro
-
-**Decidi** partir em duas telas: `/organizador/eventos` mostra data, nome, local e o total
-`vendidos/capacidade`; `/organizador/eventos/[id]` abre os setores um a um e mostra quem está
-escalado na porta.
-
-**Por quê:** é o desenho mais próximo do que uma plataforma real teria, e é **onde a edição moraria**
-se ela vier numa story futura — a rota do detalhe já existiria, e não precisaria ser inventada
-depois. A lista continua escaneável, que é o serviço que ela presta.
-
-**O que caiu:** **uma tela só, com os setores embutidos em cada fila** — que é literalmente o que o
-critério do `epics.md` descreve, uma rota e uma chamada, menos código em todo lugar. Caiu porque a
-fila deixa de ser fila: com três setores por evento e dez eventos, a lista vira um paredão de números
-onde não dá para achar o show de sexta. O UX-DR3 existe justamente para que a listagem seja
-escaneável, e um paredão de números é o oposto disso.
-
-### A lista se parte em "Em cartaz" e "Já aconteceram", e o corte é feito na tela
-
-**Decidi** duas seções na mesma tela: `Em cartaz` (data futura, ordem crescente) e `Já aconteceram`
-(data passada, ordem decrescente). Seção sem nenhum evento não é renderizada. A API não sabe de nada
-disso — ela devolve a lista inteira, em ordem crescente.
-
-**Por quê:** o organizador continua com o histórico dele à mão, sem que ele ocupe o topo da operação
-de hoje. Custa uma comparação de data na tela e nenhum campo novo. E o corte pertence a quem lê: "o
-que interessa agora" depende do relógio de quem está olhando, não de uma regra gravada no servidor.
-
-**O que caiu:** **uma lista só, por data crescente** — menos código, menos texto, menos tudo. Caiu
-porque um show de 2024 apareceria no meio da operação de hoje. E caiu **filtrar no backend,
-devolvendo só os futuros**, que deixaria a tela mais limpa ainda: o organizador **perderia** o
-histórico, um evento sumiria da conta dele sem explicação, e eu teria posto no backend uma regra de
-"o que interessa agora" que a Epic 5, com o painel do turno, vai querer diferente.
-
-### `Meus eventos` entrou no masthead, e a confirmação de publicação continua sem redirecionar
-
-**Decidi** duas coisas juntas: a navegação do organizador passa a ser `Início · Meus eventos ·
-Publicar evento · Minha conta`, e a tela de confirmação da publicação ganha `Ver meus eventos →` ao
-lado de `Publicar outro →` — **sem** trocar a confirmação por um salto para a lista.
-
-**Por quê:** o link estava fora do masthead desde a Story 2.2 por um motivo só — ele cairia em 404 —,
-e esse motivo acabou. `Meus eventos` vem antes de `Publicar evento` porque acompanhar o que está no
-ar é o que se faz todo dia; publicar é eventual. Quanto à confirmação: ela é o **recibo** da
-publicação, e é a única vez que o organizador vê o inventário e **quem ficou com a porta**. Não há
-tela de editar evento onde conferir isso depois.
-
-**O que caiu:** **redirecionar para a lista depois de publicar**, com o evento recém-criado no topo —
-que é o que a maioria dos sistemas faz, e o que eu faria por reflexo. Caiu porque apagaria a tela que
-a 2.4 e a 2.5 construíram: a lista mostra os totais, não a escala, e quem publicou perderia a única
-confirmação de quem vai validar o ingresso na porta. E caiu **mexer só no masthead, sem tocar na
-confirmação** — menos alteração em código já revisado, mas deixaria quem acabou de publicar sem
-caminho para o que acabou de criar.
+uma vantagem real: recriar o serviço viraria reimportar o repositório. **O custo que aceitei, e como
+cobri:** a configuração some se o serviço for apagado e não aparece em nenhum diff — por isso as
+seções de deploy dos dois READMEs não são resumo, são os nomes exatos dos campos, os valores e os
+erros que cada omissão produz. **A aposta foi cobrada e pagou:** configurar a Vercel reproduziu os
+**dois** erros que eu já tinha cometido na Railway — `Root Directory` vazio e branch de produção
+errada. Estavam documentados como armadilha, e custaram minutos em vez de uma noite.
 
 ## O que não está pronto
 
-Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
-[docs/decisoes-tecnicas.md](docs/decisoes-tecnicas.md):
+O enunciado pede que o que não estiver pronto seja dito. Estes são **cortes conscientes**, não
+esquecimentos:
 
 | O quê | Por quê |
 |---|---|
-| **Mapa de assentos** | O desafio aceita venda por quantidade em setores. A plataforma é focada em shows — pista, VIP, camarote — onde assento numerado não é o padrão |
-| **Editar evento ou trocar a escala depois de publicar** | **Não existe, e agora existe a tela onde alguém procuraria.** Desde a Story 2.6 o organizador tem `Meus eventos`, com a lista e o detalhe de cada show — e nenhuma das duas telas edita coisa alguma: publicado é publicado. Nem os dados do evento (nome, data, local, capacidade, preço), nem quem valida na porta. O vínculo com a portaria é definido **uma vez**, no ato da publicação, e num sistema real seria preciso escalar e remover porteiros depois. Ficou de fora por custo: a rota de escrita traz uma invariante nova ("a escala não pode chegar a zero"), e editar capacidade traz a regra de ela não poder cair abaixo de `vendidos` — as duas coisas são história para duas stories, não para o fim de uma epic. O raciocínio completo, com as alternativas, está em ["Meus eventos" só deixa ver](#meus-eventos-só-deixa-ver-e-gerenciar-aqui-quer-dizer-acompanhar) |
-| **Evento publicado entre a Story 2.4 e a 2.5 fica sem portaria para sempre** | **A janela fechou; o resíduo é o que sobrou dela.** Publicar exige portaria escalada desde a Story 2.5 — `POST /organizador/eventos` responde `422 EVENTO_SEM_PORTARIA` sem ao menos um escalado, e o AD-7 vale por inteiro. O que **não** volta atrás é o que foi publicado enquanto a exigência não existia: a migração cria a tabela vazia, nada é escalado retroativamente, e não há tela de editar evento (linha acima) por onde consertar. Esses eventos não são validáveis na Epic 5, e o conserto é apagá-los e publicar de novo (`docker compose exec db psql -U rockhub -d rockhub -c "delete from evento;"` no banco local). A janela foi assumida por escrito, e o raciocínio dela continua registrado em [A rota publica de fato](#a-rota-publica-de-fato-mesmo-com-o-ad-7-chegando-só-na-story-seguinte) |
-| **Cancelamento pelo cliente** | O modelo já suporta; faltam endpoint e tela |
+| **Mapa de assentos** | Escolhi venda por quantidade em setores, que o desafio aceita. O raciocínio está em [Setores por quantidade](#setores-por-quantidade-não-mapa-de-assentos) |
+| **Editar evento ou trocar a escala depois de publicar** | Desde a Story 2.6 existe a tela onde alguém procuraria — `Meus eventos`, com lista e detalhe — e nenhuma das duas edita nada. Publicado é publicado. A rota de escrita traria uma invariante nova ("a escala não pode chegar a zero") e editar capacidade traria a regra de ela não poder cair abaixo de `vendidos`: são duas stories, não meia |
+| **Evento publicado entre a Story 2.4 e a 2.5 fica sem portaria** | A janela fechou — publicar exige portaria escalada desde a 2.5. O que não volta atrás é o que foi publicado antes: nada é escalado retroativamente e não há tela de edição. O conserto é apagar e publicar de novo |
+| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das contas, e o seed continua criando só contas. O impedimento técnico acabou na Story 2.3; o que falta é decidir qual show, com que setores e em qual story isso entra. O fluxo de publicar pela interface existe e funciona, mas não substitui o seed: travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar |
+| **Cancelamento pelo cliente** | O modelo já suporta (a reserva tem estado que devolve estoque); faltam endpoint e tela |
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
-| **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
-| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
-| **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Organizador nasce pelo seed de [Contas semeadas](#contas-semeadas), que é como o próprio enunciado o pede. **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
-| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — deixou de ser hipotética na Story 2.4: o fluxo existe e funciona de ponta a ponta, e desde a 2.5 o evento já nasce com portaria escalada, ou seja, validável na Epic 5. Mesmo assim ela não substitui o seed, porque travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
-| **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
-| **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
-| **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` existe para o organizador desde a Story 2.2 e `Meus eventos` desde a 2.6, quando a tela dele passou a existir — `Meus ingressos` e `Turnos` (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |
-| **Busca do organizador limitada ao Brasil** | `GET /organizador/catalogo` (Story 2.2) fixa `countryCode=BR` na chamada à Discovery. Um show fora do Brasil não aparece nesta busca — decisão registrada em [`countryCode=BR` fixo na busca da Discovery](#countrycodebr-fixo-na-busca-da-discovery), com a alternativa de filtro visível que ficou de fora por custar mais do que uma story de um commit comporta |
-| **Busca por artista sem show marcado no Brasil devolve vazio** | `metallica` e `coldplay` dão zero resultados, e **não é o filtro de classificação**: conferi os dois sem `segmentId` nenhum e continuam em zero. Eles simplesmente não têm evento no catálogo brasileiro da Ticketmaster hoje. A tela mostra "Nenhum show encontrado para essa busca", que é verdade, mas não distingue "não existe no catálogo" de "existe e meu filtro escondeu" — separar os dois exigiria uma segunda chamada sem filtro só para descobrir qual dos casos é, e gastar cota para melhorar uma mensagem de erro não se paga |
-| **Evento sem entrada no catálogo da Ticketmaster** | Não dá para publicar um show que não esteja no catálogo — um cover de bar, um evento independente, uma festa sem página na Ticketmaster. É consequência direta de o enunciado pedir que o evento nasça "a partir de" a API externa, e está detalhado em [Publicação exige atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento), com a alternativa (cadastro manual) que ficou de fora |
+| **Limite de tentativas de login** | Não há bloqueio por IP nem por conta. É a defesa direta contra força bruta e exige contador com expiração compartilhado entre instâncias — infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
+| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail. É por não existir que o cadastro tem confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
+| **Cadastro de organizador pela interface** | **Adiado, não descartado** — sem uma forma de decidir quem merece o papel, a rota separada seria o mesmo buraco com outro endereço. **Portaria fica de fora em qualquer cenário**, porque ela só valida onde foi escalada |
+| **Enumeração de e-mail no cadastro** | O `409` revela que aquele e-mail tem conta — o que o login gasta um hash fantasma para não revelar. É inevitável: o login esconde porque as duas respostas cabem numa frase só; o cadastro ou diz que o e-mail já existe, ou mente. A mitigação padrão exige verificação por e-mail, que está fora do escopo |
+| **Busca do organizador limitada ao Brasil** | `countryCode=BR` é fixo na chamada à Discovery. Sem ele, buscar "metallica" devolve os vinte primeiros shows do mundo e nenhum brasileiro entra — a tela pareceria quebrada justamente para quem avalia. O custo é que um show fora do Brasil não aparece |
+| **Evento sem entrada no catálogo da Ticketmaster** | Não dá para publicar um cover de bar ou um evento independente. É consequência direta de o enunciado pedir que o evento nasça "a partir de" a API externa |
 | **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
-| **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**, porque o `API_URL` está definido com o mesmo valor em Production e Preview. Uma conta criada num Preview é uma conta no banco real. A alternativa — definir a variável só para Production — deixaria todo Preview com o login quebrado em silêncio, que é pior; e um segundo serviço Railway com banco próprio é infraestrutura que não se paga em sete dias. A mitigação que existe hoje: no plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |
-| **Domínio próprio** | A aplicação vive em `elite-dev-rock-hub.vercel.app` e a API em `elite-dev-rockhub-production.up.railway.app`. Domínio custa dinheiro e propagação de DNS, e não acrescenta nada ao que está sendo avaliado |
-| **Integração contínua** | Não há GitHub Actions nem suíte rodando antes do deploy. Um push na branch publicada dispara o build direto, e quem garante que os testes passam sou eu, na minha máquina. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade desde a Story 1.3 — é infraestrutura que não se paga em sete dias. O que existe no lugar: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender, então schema errado não entra no ar |
-| **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |
+| **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**. A alternativa deixaria todo Preview com o login quebrado em silêncio, que é pior; um segundo banco é infraestrutura que não se paga em sete dias. No plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |
+| **Integração contínua** | Não há GitHub Actions. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade. O que existe no lugar: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender |
+| **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |
+| **Domínio próprio** | Custa dinheiro e propagação de DNS, e não acrescenta nada ao que está sendo avaliado |
+
+## Uso de IA
+
+O enunciado pede que eu conte quais ferramentas usei, em que partes, e o que foi feito sem IA.
+
+**Ferramentas:** Claude Code, com o **BMAD Method v6.10.0** instalado e configurado em português.
+Opus para planejamento e specs, Sonnet para implementação de código.
+
+**Onde entrou:** o fluxo BMAD produziu, nesta ordem, a sessão de brainstorming, a espinha de
+arquitetura (AD-1 a AD-14), o design de UX com protótipo navegável, as 6 epics com 38 stories, e o
+plano de sprint. Depois, story a story, o `bmad-dev-story` implementou o código a partir da spec, e o
+`bmad-code-review` revisou ao fim de cada epic. Todos esses artefatos estão versionados em
+[`_bmad-output/`](_bmad-output/) — inclusive os `.memlog.md`, que registram a sessão completa, com o
+que foi considerado e recusado no caminho.
+
+**O que foi meu, sem IA:** as decisões. Stack, modelo de venda, identidade visual, recorte de escopo,
+o que entra e o que fica de fora — cada item desta seção de decisões foi escolha minha, e a seção
+existe para mostrar o raciocínio por trás delas. Também são meus o versionamento (todo commit foi
+escrito e feito à mão, um por story) e a condução: os agentes produziram spec e código a partir de
+direção minha, e o que eles propuseram sem eu ter escolhido foi recusado.
+
+Esta seção é fechada na Story 6.3, com o detalhamento por camada.
