@@ -1454,6 +1454,80 @@ continua indo para `origem_externa_id` na publicação. E **mostrá-lo só no `t
 mouse** — preservaria a conferência sem o ruído, mas é invisível no toque e acrescenta um mecanismo
 para uma necessidade que ninguém demonstrou ter.
 
+### `publicado_em` anulável: rascunho existe no banco, mesmo sem tela que o crie
+
+**Decidi** que `evento.publicado_em` é uma coluna `TIMESTAMPTZ` **anulável**, e que `NULL` significa
+"ainda não publicado". Não existe enum de status, e o estado de publicação é essa coluna estar
+preenchida ou não.
+
+**Por quê:** a Story 3.1 tem um critério de aceite que diz, literalmente, *"eventos não publicados
+não aparecem na programação"*. Com a coluna obrigatória, esse critério vira vacuidade — não
+existiria evento não publicado para provar coisa nenhuma, e o teste passaria sem testar nada. Com
+ela anulável, insiro um evento com `publicado_em = NULL` e provo que a programação o ignora. Custa
+uma coluna anulável e me dá um critério verificável.
+
+**O que caiu:** **`NOT NULL` com `server_default=now()`**, que é mais honesto com o produto que
+existe hoje — publicar é o único caminho de criação, a Story 2.4 grava o evento já no ar, e seria
+uma coluna a menos para tratar em toda consulta. E também **um enum `StatusEvento`**, que pareceria
+mais explícito e é na verdade uma terceira forma de dizer a mesma coisa: o enum, a coluna de data e
+a consulta teriam que concordar para sempre. O custo que assumi na escolha: existe um estado no
+banco — o rascunho — que nenhuma tela do sistema produz.
+
+### `origem_externa_id` sem `UNIQUE`, porque turnê não é duplicata
+
+**Decidi** que a coluna que guarda o id da atração no catálogo da Ticketmaster é anulável e **não
+tem restrição de unicidade**.
+
+**Por quê:** a mesma atração do catálogo vira legitimamente dois eventos — uma data em São Paulo e
+outra no Rio. Isso é uma turnê, não um engano, e uma constraint `UNIQUE` proibiria o caso real para
+proteger contra um erro hipotético.
+
+**O que caiu:** **`UNIQUE`**, que evitaria o organizador publicar a mesma atração duas vezes sem
+querer durante a avaliação — caiu porque quebra a turnê, e porque o erro que ele veria na segunda
+data seria um `IntegrityError` cru que a Story 2.4 teria que traduzir em mensagem. E **`NOT NULL`
+sem unicidade**, que descreve exatamente o fluxo da Epic 2 (todo evento nasce do catálogo) — caiu
+por travar no banco uma regra que é de produto e pode mudar sem migração. Essa regra existe, mas
+mora no service da 2.4, onde ela pode virar uma mensagem decente. Convive de propósito com
+[Publicação exige atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento):
+o banco aceita, o produto recusa.
+
+### Apagar evento leva os setores junto (`ON DELETE CASCADE`)
+
+**Decidi** que a chave estrangeira de `setor` para `evento` tem `ON DELETE CASCADE`, e que o
+`relationship` do ORM leva `passive_deletes=True` para concordar com o banco.
+
+**Por quê:** setor é **composição**, não associação. Um "Pista" sem evento não significa nada — não
+é um registro órfão recuperável, é lixo. O schema deve dizer isso; se ele declarasse uma relação
+mais frouxa do que a real, quem lesse o banco teria uma informação errada sobre o domínio.
+
+**O que caiu:** **`RESTRICT`, que é o padrão** — nada some por acidente, e como nenhuma story apaga
+evento a diferença só apareceria em SQL rodado à mão. Caiu por descrever mal a relação. O custo que
+assumi: apagar um evento por engano leva os setores junto, sem aviso. E há uma pegadinha que essa
+escolha traz e que registrei porque quase passou batido — `CASCADE` no banco **não basta**: com um
+`relationship` comum, o SQLAlchemy tenta desassociar os setores antes de apagar e estoura no
+`NOT NULL` sem nunca chegar ao `CASCADE`. As duas metades precisam concordar, e o teste apaga pela
+sessão justamente para provar isso.
+
+### Quatro constraints no `setor`, não só o `CHECK` que a arquitetura exige
+
+**Decidi** que a tabela `setor` nasce com quatro restrições no banco: o `CHECK` de estoque do AD-3
+(`vendidos` entre zero e `capacidade`), `capacidade > 0`, `preco_centavos >= 0`, e nome único **por
+evento**.
+
+**Por quê:** o `CHECK` do AD-3 existe como rede de segurança — ele vale para o caminho que escapar
+da validação da aplicação. Se esse raciocínio justifica uma constraint, justifica as outras duas
+pelo mesmo motivo: capacidade zero e preço negativo são estados que eu não quero que existam,
+independentemente de qual caminho de código tentou criá-los.
+
+**O que caiu:** **só o `CHECK` do AD-3**, que é o mínimo que o planejamento pedia, deixando
+capacidade e preço para a validação Pydantic da Story 2.4 — onde o erro sai numa mensagem bonita em
+vez de um `IntegrityError`. Caiu porque a validação bonita continua existindo: as duas camadas não
+competem, e a de baixo é a que sobra quando a de cima é contornada. E **as três sem a unicidade de
+nome**, que permitiria dois "Pista" no mesmo evento — o que **pode** ser proposital (dois lotes com
+preços diferentes) — caiu porque a tela do cliente na Story 3.4 mostraria dois itens de nome
+idêntico e ele escolheria no escuro. Se um dia lotes existirem, eles vão precisar de nome próprio
+de qualquer jeito.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -1469,7 +1543,7 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
 | **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
 | **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Organizador nasce pelo seed de [Contas semeadas](#contas-semeadas), que é como o próprio enunciado o pede. **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
-| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**: `Evento` e `Setor` só passam a existir na Story 2.3, e não há como semear tabela que não existe. A dívida está registrada aqui de propósito, e o seed da Epic 2 acrescenta o evento ao mesmo `backend/seeds/`. A alternativa — o avaliador publicar pela interface — mostraria o fluxo do organizador funcionando, mas travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
+| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só as quatro contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — mostraria o fluxo do organizador funcionando, mas travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` já existe para o organizador desde a Story 2.2 — mas `Meus eventos` (Story 2.6) e `Turnos` para a portaria (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |

@@ -4,7 +4,7 @@ baseline_commit: "e1aceff — feat: Story 2.2 - Buscar atracao no catalogo (bran
 
 # Story 2.3: Modelo de evento e setor
 
-Status: ready-for-dev
+Status: review
 
 Epic 2 — Publicação de eventos pelo organizador · **A segunda story de fundação da epic, e a
 primeira migração desde a 1.3.** Hoje o organizador acha o show no catálogo e não pode fazer nada
@@ -107,96 +107,96 @@ existem — e isso é o recorte, não uma falta.
 
 ## Tasks / Subtasks
 
-- [ ] **T1. `app/models/evento.py` — `Evento` e `Setor`** (AC: 1, 2, 3, 4, 5, 6, 7, 8)
-  - [ ] Arquivo novo, **as duas classes juntas**. `Setor` não tem vida fora de `Evento` — ver
+- [x] **T1. `app/models/evento.py` — `Evento` e `Setor`** (AC: 1, 2, 3, 4, 5, 6, 7, 8)
+  - [x] Arquivo novo, **as duas classes juntas**. `Setor` não tem vida fora de `Evento` — ver
         *Suposições declaradas*
-  - [ ] Docstring do módulo explicando o que o arquivo resolve, no estilo de `models/usuario.py`:
+  - [x] Docstring do módulo explicando o que o arquivo resolve, no estilo de `models/usuario.py`:
         preço e capacidade pertencem ao **setor** (AD-12), `vendidos` é a **única** fonte de verdade
         da disponibilidade (AD-13), e o `CHECK` é rede de segurança do AD-3 — não a regra em si, que
         vive no `UPDATE` condicional do service da Epic 3
-  - [ ] `Evento`: colunas exatamente conforme a tabela em *As duas tabelas, coluna a coluna*.
+  - [x] `Evento`: colunas exatamente conforme a tabela em *As duas tabelas, coluna a coluna*.
         Nada além delas
-  - [ ] `Setor`: idem, com as **quatro** constraints em `__table_args__`
-  - [ ] Estilo tipado do SQLAlchemy 2.0: `Mapped[...]` + `mapped_column(...)`. **Nunca** o
+  - [x] `Setor`: idem, com as **quatro** constraints em `__table_args__`
+  - [x] Estilo tipado do SQLAlchemy 2.0: `Mapped[...]` + `mapped_column(...)`. **Nunca** o
         `Column()` do estilo 1.x — é a convenção fixada na Story 1.3
-  - [ ] `relationship` nos dois lados, com `back_populates`, `cascade="all, delete-orphan"` e
+  - [x] `relationship` nos dois lados, com `back_populates`, `cascade="all, delete-orphan"` e
         `passive_deletes=True`. O motivo do `passive_deletes` está em *Armadilhas*, armadilha 3 —
         sem ele o ORM desfaz o `CASCADE` que a migração declarou
-  - [ ] `app/models/__init__.py`: reexportar `Evento` e `Setor` e acrescentá-los ao `__all__`.
+  - [x] `app/models/__init__.py`: reexportar `Evento` e `Setor` e acrescentá-los ao `__all__`.
         **É o import que o `migrations/env.py` usa** — sem ele o `--autogenerate` produz migração
         vazia (armadilha 1)
 
-- [ ] **T2. A migração** (AC: 1, 10)
-  - [ ] `cd backend && uv run alembic revision --autogenerate -m "cria tabelas evento e setor"`
-  - [ ] Conferir no arquivo gerado, linha a linha — `--autogenerate` é ponto de partida, não
+- [x] **T2. A migração** (AC: 1, 10)
+  - [x] `cd backend && uv run alembic revision --autogenerate -m "cria tabelas evento e setor"`
+  - [x] Conferir no arquivo gerado, linha a linha — `--autogenerate` é ponto de partida, não
         resultado:
-    - [ ] `down_revision = 'b750db91bf49'` (a migração da `usuario`), **não** `None`
-    - [ ] `evento` é criada **antes** de `setor` no `upgrade()`, e derrubada **depois** no
+    - [x] `down_revision = 'b750db91bf49'` (a migração da `usuario`), **não** `None`
+    - [x] `evento` é criada **antes** de `setor` no `upgrade()`, e derrubada **depois** no
           `downgrade()`. Ordem trocada quebra a chave estrangeira
-    - [ ] As quatro constraints do `setor` estão no `create_table`, com os nomes que a convenção
+    - [x] As quatro constraints do `setor` estão no `create_table`, com os nomes que a convenção
           produz (`ck_setor_estoque_valido`, `ck_setor_capacidade_positiva`,
           `ck_setor_preco_nao_negativo`, `uq_setor_evento_id_nome`)
-    - [ ] O `ForeignKeyConstraint` carrega `ondelete='CASCADE'`
-    - [ ] `preco_centavos` saiu como `sa.BigInteger()`, não `sa.Integer()`
-    - [ ] `data_hora`, `publicado_em` e `criado_em` saíram com `sa.DateTime(timezone=True)`
-    - [ ] O índice de `setor.evento_id` está lá (`op.create_index`) — e o `downgrade()` o derruba
-  - [ ] `uv run alembic upgrade head` e conferir no `psql`: `\d evento` e `\d setor`
-  - [ ] **Uma migração só.** Não crie duas revisões "para separar as tabelas": elas nascem juntas,
+    - [x] O `ForeignKeyConstraint` carrega `ondelete='CASCADE'`
+    - [x] `preco_centavos` saiu como `sa.BigInteger()`, não `sa.Integer()`
+    - [x] `data_hora`, `publicado_em` e `criado_em` saíram com `sa.DateTime(timezone=True)`
+    - [x] O índice de `setor.evento_id` está lá (`op.create_index`) — e o `downgrade()` o derruba
+  - [x] `uv run alembic upgrade head` e conferir no `psql`: `\d evento` e `\d setor`
+  - [x] **Uma migração só.** Não crie duas revisões "para separar as tabelas": elas nascem juntas,
         uma depende da outra, e um `downgrade` no meio deixaria `setor` órfã
 
-- [ ] **T3. Testes de schema em `tests/test_migracoes.py`** (AC: 1, 3, 10)
-  - [ ] Estender o arquivo existente, **sem reescrever** os quatro testes que já estão lá
-  - [ ] `evento` e `setor` aparecem em `inspetor.get_table_names()`
-  - [ ] Tipos por `inspect`: `preco_centavos` é `BIGINT`; `data_hora`, `publicado_em` e `criado_em`
+- [x] **T3. Testes de schema em `tests/test_migracoes.py`** (AC: 1, 3, 10)
+  - [x] Estender o arquivo existente, **sem reescrever** os quatro testes que já estão lá
+  - [x] `evento` e `setor` aparecem em `inspetor.get_table_names()`
+  - [x] Tipos por `inspect`: `preco_centavos` é `BIGINT`; `data_hora`, `publicado_em` e `criado_em`
         têm `timezone is True`; `id` das duas é UUID
-  - [ ] `publicado_em` é `nullable`; `data_hora` e `criado_em` não são
-  - [ ] A chave estrangeira de `setor` aponta para `evento` com `ondelete='CASCADE'`
+  - [x] `publicado_em` é `nullable`; `data_hora` e `criado_em` não são
+  - [x] A chave estrangeira de `setor` aponta para `evento` com `ondelete='CASCADE'`
         (`inspetor.get_foreign_keys("setor")` → `options["ondelete"]`)
-  - [ ] ⚠️ **`test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz` precisa passar a afirmar
+  - [x] ⚠️ **`test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz` precisa passar a afirmar
         as três tabelas**, não só `usuario`. Ele é o AC10, e hoje uma migração nova quebrada
         passaria por ele sem ser notada
 
-- [ ] **T4. `tests/test_evento.py` — as invariantes que o banco garante** (AC: 2, 4, 5, 6, 7, 8, 9)
-  - [ ] Arquivo novo, no espírito do `test_usuario.py`: *"invariantes que o banco garante, não o
+- [x] **T4. `tests/test_evento.py` — as invariantes que o banco garante** (AC: 2, 4, 5, 6, 7, 8, 9)
+  - [x] Arquivo novo, no espírito do `test_usuario.py`: *"invariantes que o banco garante, não o
         Python"*
-  - [ ] Helper local `_evento(sessao, organizador, **campos)` gravando um evento com `flush()`.
+  - [x] Helper local `_evento(sessao, organizador, **campos)` gravando um evento com `flush()`.
         **Não** mexa no `conftest.py` — a convenção do projeto é extrair no segundo consumidor, e
         esta story tem um só (precedente de `Campo` e `Botao`, registrado no README da raiz)
-  - [ ] O organizador vem de `fabricar_usuario(PapelUsuario.ORGANIZADOR)`, fixture que já existe.
+  - [x] O organizador vem de `fabricar_usuario(PapelUsuario.ORGANIZADOR)`, fixture que já existe.
         ⚠️ O e-mail padrão dela é fixo — dois usuários no mesmo teste precisam de e-mails distintos
-  - [ ] Os dez casos da tabela em *Testing*, um teste cada
-  - [ ] `pytest.raises(IntegrityError)` no `flush()`, como o `test_usuario.py` faz. O `SAVEPOINT`
+  - [x] Os dez casos da tabela em *Testing*, um teste cada
+  - [x] `pytest.raises(IntegrityError)` no `flush()`, como o `test_usuario.py` faz. O `SAVEPOINT`
         reaberto do `conftest.py` já cobre o `flush()` que falha de propósito — não invente
         `rollback` manual
 
-- [ ] **T5. Verificação** (AC: 10, 11)
-  - [ ] `uv run alembic downgrade base` → `uv run alembic upgrade head`, sem erro (AC10 literal)
-  - [ ] `uv run pytest` **inteiro**, com o Compose no ar. Registrar o número final
-  - [ ] Busca por `create_all` em `backend/` → **zero**, inclusive em teste
-  - [ ] Busca por `float`, `Numeric` e `Float` nos modelos → **zero** em campo monetário (AC3)
-  - [ ] ⚠️ Conferir que `app/models/evento.py`, a migração nova e `tests/test_evento.py` **estão
+- [x] **T5. Verificação** (AC: 10, 11)
+  - [x] `uv run alembic downgrade base` → `uv run alembic upgrade head`, sem erro (AC10 literal)
+  - [x] `uv run pytest` **inteiro**, com o Compose no ar. Registrar o número final
+  - [x] Busca por `create_all` em `backend/` → **zero**, inclusive em teste
+  - [x] Busca por `float`, `Numeric` e `Float` nos modelos → **zero** em campo monetário (AC3)
+  - [x] ⚠️ Conferir que `app/models/evento.py`, a migração nova e `tests/test_evento.py` **estão
         rastreados** pelo git antes de dar a story por pronta — `.gitignore` nascido de template
         Python já engoliu pasta uma vez neste projeto (Story 1.9)
 
-- [ ] **T6. Os READMEs** (AC: 12) — obrigatório, regra do projeto
-  - [ ] `backend/README.md`:
-    - [ ] Seção nova **Evento e setor** (depois de *Catálogo da Ticketmaster*): as duas tabelas
+- [x] **T6. Os READMEs** (AC: 12) — obrigatório, regra do projeto
+  - [x] `backend/README.md`:
+    - [x] Seção nova **Evento e setor** (depois de *Catálogo da Ticketmaster*): as duas tabelas
           coluna a coluna, as quatro constraints com o motivo de cada uma, o `CASCADE`, e a frase
           que evita a próxima dúvida — *nada na aplicação lê ou escreve nessas tabelas ainda*
-    - [ ] *Estrutura*: `models/evento.py` na árvore, com o comentário de uma linha no padrão das
+    - [x] *Estrutura*: `models/evento.py` na árvore, com o comentário de uma linha no padrão das
           outras entradas
-    - [ ] *Testes*: o número novo, e `test_evento.py` na lista
-    - [ ] *Histórico desta camada*: entrada **Story 2.3**, no formato das anteriores
-  - [ ] `README.md` da raiz:
-    - [ ] Quatro decisões novas em *Decisões: por que isso e não aquilo*, cada uma com **o que
+    - [x] *Testes*: o número novo, e `test_evento.py` na lista
+    - [x] *Histórico desta camada*: entrada **Story 2.3**, no formato das anteriores
+  - [x] `README.md` da raiz:
+    - [x] Quatro decisões novas em *Decisões: por que isso e não aquilo*, cada uma com **o que
           caiu e por quê** — a matéria-prima está em *Decisões que o Igor tomou*
-    - [ ] ⚠️ *O que não está pronto*: a linha **"Evento publicado entre os dados semeados"** diz
+    - [x] ⚠️ *O que não está pronto*: a linha **"Evento publicado entre os dados semeados"** diz
           hoje que *"`Evento` e `Setor` só passam a existir na Story 2.3"*. Isso deixa de ser
           verdade com esta story — reescreva a frase mantendo a dívida (o seed continua sem evento),
           não apague a linha
-  - [ ] **`frontend/README.md` não muda, e é intencional** — nenhum arquivo de `frontend/` foi
+  - [x] **`frontend/README.md` não muda, e é intencional** — nenhum arquivo de `frontend/` foi
         tocado. Precedente literal da Story 1.3. Não invente conteúdo para cumprir a regra dos três
-  - [ ] Primeira pessoa em tudo, como o Igor escrevendo
+  - [x] Primeira pessoa em tudo, como o Igor escrevendo
 
 ## Dev Notes
 
@@ -636,14 +636,94 @@ Nenhuma bloqueia esta story.
 
 ### Agent Model Used
 
+claude-opus-5[1m] (Claude Opus 5, 1M context) — implementação via `bmad-dev-story`.
+
 ### Debug Log References
+
+Ciclo red-green-refactor: `tests/test_evento.py` escrito primeiro e executado contra o repositório
+sem o modelo, falhando em coleta com `ModuleNotFoundError: No module named 'app.models.evento'`
+(fase RED confirmada). Só então entraram o modelo, o reexport e a migração; os 11 testes passaram
+na primeira execução seguinte.
+
+`--autogenerate` gerou `b91316d771ae` sem necessidade de correção manual. Os oito pontos da
+checklist da T2 foram conferidos no arquivo gerado e depois no banco real, por `\d evento` e
+`\d setor` no `psql` do container: as quatro constraints saíram com os nomes esperados,
+`preco_centavos` saiu `bigint`, a FK saiu com `ON DELETE CASCADE`, e o índice `ix_setor_evento_id`
+está criado no `upgrade()` e derrubado no `downgrade()`.
+
+Armadilha 8 (Windows App Control) confirmada nesta máquina: todos os comandos rodaram como
+`uv run python -m alembic ...` e `uv run python -m pytest`.
 
 ### Completion Notes List
 
+**Entregue: só o schema, como a story pede.** Duas tabelas, uma migração, quinze testes novos.
+Nenhuma rota, service, schema Pydantic, seed ou arquivo de `frontend/`. Nenhuma dependência nova —
+`pyproject.toml` e `uv.lock` não mudaram.
+
+**Suíte final: 140 testes**, todos passando (`uv run python -m pytest`, com o Compose no ar).
+
+⚠️ **A baseline da story estava desatualizada, e vale o Igor saber.** A seção *Testing* registra
+"121 testes passando, conferido em 2026-08-11" e o AC11 pede que "os **121** testes anteriores
+continuem verdes". A baseline real no momento em que comecei era **125**: os quatro testes do filtro
+de classificação do catálogo (commit avulso `7120ad0`, a techspec fora da numeração) entraram depois
+que a story foi escrita, e o `backend/README.md` já registrava 125. Fiz a conta pelos dois lados —
+140 finais menos 15 novos = 125 de baseline, e o `--collect-only` dos dois arquivos que toquei
+devolve exatamente 18 (11 de `test_evento.py` + 7 de `test_migracoes.py`, dos quais 3 já existiam).
+Nenhum teste anterior quebrou; o que mudou foi só o número de partida. Registrei **140** no
+`backend/README.md`.
+
+**As quatro decisões do Igor foram implementadas como escritas, sem ajuste.** Em particular, não
+"consertei" `origem_externa_id` para `NOT NULL`: a tensão declarada na story está preservada — o
+banco aceita evento sem origem externa, e a regra de que todo evento nasce de uma atração do
+catálogo vive no service da Story 2.4.
+
+**Uma coisa que a story previu e se confirmou:** o teste de ida e volta do `downgrade` afirmava só
+`usuario`. Se eu não o tivesse estendido, uma migração com o `downgrade()` quebrado passaria por ele
+em silêncio — e esta é justamente a primeira story a encadear duas revisões. Agora ele lista as três
+tabelas nominalmente, e a docstring do arquivo avisa que toda migração futura entra na lista.
+
+**Uma asserção a mais do que a story pediu, no AC9.** Além de provar que o `UPDATE` condicional
+afeta zero linhas quando se pede mais do que resta, o teste prova que ele afeta **uma** linha quando
+cabe. Sem esse segundo caso, um `WHERE` que nunca casasse com nada também passaria no teste.
+
+**Sobre a T5 e o git:** não rodei nenhum comando git — é regra do projeto. Conferi por leitura do
+`.gitignore` que nenhum padrão casa com os três arquivos novos: `*.py[codz]` pega `.pyc`/`.pyo`/
+`.pyd`/`.pyz` e não `.py`, e não existe padrão `versions/`, `models/` nem `migrations/`. Os
+padrões de empacotamento continuam todos ancorados com `/`, como a Epic 1 deixou.
+
+**Verificações do AC10:** `downgrade base` → `upgrade head` no banco de desenvolvimento, sem erro,
+com as duas revisões descendo e subindo na ordem certa. Busca por `create_all` em `backend/`: zero
+ocorrências em código (só as menções nos READMEs explicando por que ele não existe). Busca por
+`Float`, `Numeric` e `float` em `app/models/`: zero — a única ocorrência é o comentário em
+`evento.py` dizendo para nunca usá-los.
+
+**Não há linter configurado neste projeto** (`pyproject.toml` só declara `[tool.pytest.ini_options]`,
+e `ruff` não está instalado), então não havia checagem de estilo a rodar além da suíte.
+
 ### File List
+
+**Novos**
+
+- `backend/app/models/evento.py`
+- `backend/migrations/versions/20260811_b91316d771ae_cria_tabelas_evento_e_setor.py`
+- `backend/tests/test_evento.py`
+
+**Modificados**
+
+- `backend/app/models/__init__.py`
+- `backend/tests/test_migracoes.py`
+- `backend/README.md`
+- `README.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/2-3-modelo-de-evento-e-setor.md`
+
+**Intencionalmente não tocados:** `frontend/` inteiro, `app/main.py`, `app/api/`, `app/services/`,
+`app/schemas/`, `app/integrations/`, `app/core/`, `seeds/`, `tests/conftest.py`, `alembic.ini`,
+`migrations/env.py`, `docker-compose.yml`, `pyproject.toml`, `uv.lock`.
 
 ## Change Log
 
 | Data | Mudança |
 |---|---|
+| 2026-08-11 | Story 2.3 implementada. Modelos `Evento` e `Setor` em `app/models/evento.py`, migração `b91316d771ae` (filha de `b750db91bf49`) criando as duas tabelas com as quatro constraints, o `ON DELETE CASCADE` e o índice da FK, e quinze testes novos: onze em `tests/test_evento.py` (invariantes que o banco garante, incluindo o `UPDATE` condicional do AD-3) e quatro em `tests/test_migracoes.py` (schema por `inspect`), mais o teste de ida e volta do `downgrade` estendido para afirmar as três tabelas em vez de só `usuario`. Suíte de 125 para **140**. Baseline real era 125 e não os 121 registrados na story — os quatro testes do filtro de classificação entraram depois que ela foi escrita. Os três READMEs tratados: seção *Evento e setor* e entrada de histórico no `backend/README.md`, quatro decisões com alternativa descartada no `README.md` da raiz mais a reescrita da linha do evento semeado, e `frontend/README.md` intocado de propósito |
 | 2026-08-11 | Story 2.3 criada e contextualizada. Quatro decisões do Igor incorporadas: `publicado_em` anulável, permitindo rascunho no schema (em vez de `NOT NULL` com `server_default=now()`, que é mais honesto com o produto de hoje mas tornaria vacuidade o AC da Story 3.1, *"eventos não publicados não aparecem"* — sem estado não publicado não há o que provar); `origem_externa_id` anulável e sem unicidade (em vez de `UNIQUE`, que protegeria contra duplicata acidental mas quebraria o caso da turnê — mesma atração, duas datas — devolvendo um `IntegrityError` cru para a 2.4 traduzir; ou de `NOT NULL`, que é o fluxo real da epic mas trava no banco uma regra de produto que pode mudar sem migração); `ON DELETE CASCADE` na FK de `setor` (em vez de `RESTRICT`, que nada apagaria por acidente mas declararia associação onde existe composição — um "Pista" sem evento não significa nada); e quatro constraints no `setor` em vez de só o `CHECK` do AD-3 (a alternativa mínima deixaria capacidade e preço para o Pydantic da 2.4, onde o erro sai bonito — caiu porque a rede de segurança do AD-3 existe exatamente para o caminho que escapa do schema; e a variante sem unicidade de nome permitiria dois "Pista" no mesmo evento, deixando o cliente escolher no escuro na tela da 3.4). Nove ACs acrescentados aos três do `epics.md`, entre eles o AC9 — o `UPDATE` condicional do AD-3 provado na story em que a tabela nasce, porque a forma da tabela existe só para torná-lo possível. Cinco suposições declaradas (as duas classes no mesmo arquivo, `criado_em` no evento, `setor` sem `criado_em`, índice só na FK, nenhum enum de status) e três perguntas registradas para as stories seguintes. Tensão declarada em destaque: `origem_externa_id` anulável convive de propósito com a decisão de README *"publicação exige atração do catálogo"* — a regra vive no service da 2.4, não no banco |

@@ -225,6 +225,7 @@ backend/
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
+      evento.py       # Evento + Setor — preço e capacidade pertencem ao setor
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
@@ -243,6 +244,7 @@ backend/
     semear.py          # as quatro contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
+    test_evento.py     # invariantes de evento e setor que o banco garante
     test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
   alembic.ini
   pyproject.toml
@@ -603,6 +605,97 @@ Zero rede na suíte: `tests/test_ticketmaster.py` e `tests/test_organizador_cata
 cliente por `httpx.MockTransport`, que recebe a `httpx.Request` de verdade — construída pelo código
 de produção, com a query string montada por ele — em vez de um `monkeypatch` em `httpx.get`.
 
+## Evento e setor
+
+Duas tabelas, criadas juntas na Story 2.3 pela migração `b91316d771ae` — a primeira desde a
+`usuario`, e a primeira do projeto com chave estrangeira e relacionamento no ORM.
+
+⚠️ **Nada na aplicação lê ou escreve nessas tabelas ainda.** Não há rota, service, schema Pydantic
+nem tela que as toque: publicar evento é a Story 2.4. O que existe aqui é só o schema, e é
+intencional — o formato do banco nasce antes do comportamento que o consome.
+
+**`evento`** — o show, com os campos do catálogo já **copiados** para dentro (AD-1: a Ticketmaster
+é consultada uma vez, na publicação, e nunca mais):
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` | Chave primária, gerada no Python com `uuid.uuid4` |
+| `organizador_id` | `uuid`, `NOT NULL` | FK para `usuario.id`, **sem `ondelete`** |
+| `nome` | `varchar(200)`, `NOT NULL` | O nome do show |
+| `data_hora` | `timestamptz`, `NOT NULL` | UTC (AD-11) |
+| `local` | `varchar(200)`, `NOT NULL` | A casa de show — quem preenche é o organizador |
+| `cidade` | `varchar(120)`, anulável | A Discovery pode não trazer |
+| `imagem_url` | `varchar(500)`, anulável | Idem |
+| `origem_externa_id` | `varchar(64)`, anulável | O id da atração no catálogo, **sem unicidade** |
+| `publicado_em` | `timestamptz`, anulável | `NULL` = rascunho |
+| `criado_em` | `timestamptz`, `NOT NULL`, `DEFAULT now()` | |
+
+**`setor`** — a faixa de ingresso. É aqui que moram preço e capacidade, nunca no evento (AD-12):
+é o que permite Pista e Camarote no mesmo show com lotações e valores diferentes.
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | `uuid` | Chave primária |
+| `evento_id` | `uuid`, `NOT NULL`, indexado | FK para `evento.id` com `ON DELETE CASCADE` |
+| `nome` | `varchar(80)`, `NOT NULL` | "Pista", "Camarote" — único **por evento** |
+| `capacidade` | `integer`, `NOT NULL` | `> 0` |
+| `vendidos` | `integer`, `NOT NULL`, `DEFAULT 0` | A única fonte de verdade da disponibilidade (AD-13) |
+| `preco_centavos` | `bigint`, `NOT NULL` | Centavos inteiros, `>= 0` (AD-11) |
+
+**Disponível é `capacidade - vendidos`, calculado na hora.** Não existe coluna `disponivel`, e é
+proibido derivar a conta com `COUNT` sobre reservas — duas fontes para o mesmo número é uma a mais
+do que se quer, e a segunda sempre discorda da primeira em algum caminho.
+
+### As quatro constraints do `setor`, e o motivo de cada uma
+
+| Constraint | Regra | Por que existe |
+|---|---|---|
+| `ck_setor_estoque_valido` | `vendidos >= 0 AND vendidos <= capacidade` | AD-3. É **rede de segurança**, não a regra: a regra é o `UPDATE` condicional abaixo. Esta constraint é o que sobra de pé se algum caminho da aplicação escapar dele |
+| `ck_setor_capacidade_positiva` | `capacidade > 0` | Setor com capacidade zero nasce esgotado, aparece na tela do cliente e ninguém entende por que não dá para comprar |
+| `ck_setor_preco_nao_negativo` | `preco_centavos >= 0` | Preço negativo é dinheiro andando para trás |
+| `uq_setor_evento_id_nome` | `(evento_id, nome)` único | Dois "Pista" no mesmo evento deixariam o cliente escolhendo no escuro na tela da Story 3.4. **Por evento, não global**: outro show pode ter uma Pista |
+
+⚠️ **O nome da `UniqueConstraint` vai escrito à mão, e é o único lugar do projeto onde isso
+acontece.** O template `uq` da convenção da `Base` é `uq_%(table_name)s_%(column_0_name)s`, que usa
+só a **primeira** coluna: sem nome explícito a constraint sairia `uq_setor_evento_id` — que parece
+dizer "um setor por evento", exatamente o oposto do que ela faz. Os três `CheckConstraint` não
+precisam disso, porque o template `ck` já carrega o nome que passo.
+
+### O `UPDATE` condicional do AD-3, testado antes de existir consumidor
+
+```sql
+UPDATE setor SET vendidos = vendidos + :q
+ WHERE id = :id AND vendidos + :q <= capacidade
+```
+
+**Zero linhas afetadas é o sinal de "sem estoque"** — não uma exceção, não um `SELECT` antes. Quem
+executa isso é o service da Epic 3; nenhuma story da Epic 2 chega perto dele. Mesmo assim testei o
+`UPDATE` aqui, na story em que a tabela nasce, e o motivo é direto: `capacidade` e `vendidos` são
+colunas separadas — em vez de um `disponivel` decrescente — **só** para tornar essa operação
+atômica possível. Uma tabela que nasce sem provar a operação que justifica seu formato é uma tabela
+que ninguém sabe se está certa.
+
+Repare que o `CHECK` nunca chega a ser violado nesse caminho: quem barra é a condição do `WHERE`. O
+`CHECK` fica de rede para quem esquecer o `WHERE`.
+
+### `ON DELETE CASCADE` no banco exige `passive_deletes` no ORM
+
+Esta é a armadilha sutil das duas tabelas, e vale saber antes de mexer no `relationship`. Com um
+`relationship` comum, apagar um `Evento` pela sessão faz o SQLAlchemy carregar os setores e emitir
+`UPDATE setor SET evento_id = NULL` **antes** do `DELETE` — que estoura no `NOT NULL` e nunca chega
+no `CASCADE` que a migração declarou. As duas metades precisam concordar:
+
+```python
+setores: Mapped[list["Setor"]] = relationship(
+    back_populates="evento",
+    cascade="all, delete-orphan",
+    passive_deletes=True,   # ← manda o SQLAlchemy confiar no banco
+)
+```
+
+O teste disso apaga **pela sessão** (`sessao.delete(evento)`) e confere a contagem por SQL cru.
+Apagar por SQL cru provaria só a metade que já se sabe.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -673,13 +766,19 @@ cd backend
 uv run pytest
 ```
 
-São **125 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
-origens de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o
-hash e o token de sessão, as quatro rotas de autenticação, a dependência de papel, o seed de
-avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
+São **140 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
+`Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
+papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
 [Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
 classificação) e a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
 também offline).
+
+`test_evento.py` (Story 2.3) prova as invariantes que **o banco** garante, não o Python: as quatro
+constraints do `setor` recusando cada estado proibido com `IntegrityError`, o `CASCADE` levando os
+setores junto quando o evento é apagado pela sessão, o rascunho com `publicado_em` em `NULL`, e o
+`UPDATE` condicional do AD-3 afetando zero linhas quando se pede mais do que resta. Precisa do
+Compose no ar — é Postgres real, não um dublê.
 
 ### O que `test_seed.py` prova
 
@@ -1376,3 +1475,37 @@ fora do `else` não quebraria nada e a busca passaria a esconder resultado legí
 Uma linha de frontend mudou junto, e é a única: tirei o `id_externo` da linha de origem de cada
 resultado. Está em [`frontend/README.md`](../frontend/README.md) e o porquê no [README da
 raiz](../README.md#o-id-da-ticketmaster-saiu-da-tela-do-organizador).
+
+### Story 2.3 — modelo de evento e setor
+
+Uma story só de schema: duas tabelas, uma migração, quinze testes, **zero comportamento**. Nenhuma
+rota, nenhum service, nenhum schema Pydantic, nenhuma tela. Depois de duas stories dando ao
+organizador a capacidade de achar o show no catálogo, ele continua sem poder fazer nada com o que
+achou — e vai continuar até a 2.4. O recorte é deliberado: o formato do banco é a decisão mais cara
+de desfazer do projeto, e ela merecia uma story inteira em vez de virar subproduto da tela de
+publicar. Tudo sobre as duas tabelas está em [Evento e setor](#evento-e-setor); as quatro decisões
+de modelagem, com a alternativa descartada de cada uma, estão no [README da
+raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+**O `--autogenerate` acertou de primeira, e mesmo assim conferi linha a linha.** Oito pontos:
+`down_revision` apontando para `b750db91bf49` em vez de `None`, `evento` criada antes de `setor` no
+`upgrade()` e derrubada depois no `downgrade()`, as quatro constraints com os nomes que a convenção
+produz, o `ondelete='CASCADE'` na FK, `sa.BigInteger()` e não `sa.Integer()` no preço, as três
+colunas de data com `timezone=True`, e o índice de `setor.evento_id` criado e derrubado. Registro
+que não precisou de correção manual justamente porque a próxima pode precisar: a migração da
+`usuario` também saiu limpa, e daí não se conclui nada sobre a seguinte.
+
+**Estendi o teste de ida e volta do `downgrade`, e essa foi a correção que mais valeu a pena.** Ele
+afirmava só que `usuario` sumia e voltava. Uma migração nova com o `downgrade()` quebrado passaria
+por ele sem que ninguém notasse — que é exatamente o cenário desta story, a primeira a encadear
+duas revisões. Agora ele lista as três tabelas nominalmente, e toda migração futura entra na lista.
+
+**Escolhi provar o tipo do banco, não o do Python.** `preco_centavos` ser `BigInteger` no modelo não
+prova nada sobre a coluna que existe no Postgres: `test_migracoes.py` lê o tipo por `inspect` e
+afirma `BIGINT`. É a única forma de a decisão do AD-11 sobreviver a um `--autogenerate` distraído
+daqui a três stories.
+
+Quinze testes novos (onze em `test_evento.py`, quatro em `test_migracoes.py`), a suíte foi de 125
+para **140**. Nenhuma dependência entrou — `pyproject.toml` e `uv.lock` não mudaram. E o
+`frontend/` não foi tocado em nenhum arquivo, o que é o motivo de o README dele não mudar nesta
+story: precedente literal da 1.3.
