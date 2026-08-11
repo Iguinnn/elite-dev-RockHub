@@ -622,6 +622,7 @@ o código.
 | `JWT_SECRET` | um valor gerado | Sem ele a aplicação não sobe, de propósito |
 | `TICKET_SIGNING_SECRET` | outro valor gerado | Ainda não lido — Story 3.9 |
 | `TICKETMASTER_API_KEY` | a chave do portal da Ticketmaster | Ainda não lida — Story 2.1 |
+| `CORS_ORIGENS` | `http://localhost:3000,https://elite-dev-rock-hub.vercel.app` | As origens autorizadas a chamar a API direto. **Não é o que faz o login funcionar** — ver abaixo |
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -644,8 +645,55 @@ validador existe desde a Story 1.4, escrito para este dia — sem ele o erro ser
 faltar `JWT_SECRET`, o deploy falha na *migração*, com uma mensagem sobre segredo — e você vai
 procurar o problema no banco.
 
-`CORS_ORIGENS` fica no padrão, e isso é deliberado: desde o proxy da Story 1.4 o navegador não fala
-com a Railway diretamente. A URL do frontend entra ali na Story 1.9.
+O valor do `CORS_ORIGENS` é **público de propósito** — origem não é segredo, e escrevê-lo aqui é o
+que torna esta seção refazível. Separador é vírgula; espaço depois não quebra, porque o
+`_separar_por_virgula` da `Settings` faz `strip()`, mas a forma canônica é sem. **Sem barra no fim e
+sem caminho**: origem é esquema + host, nunca URL. E **nada de `*`** — curinga é incompatível com
+`allow_credentials=True` desde a Story 1.1, e a sessão vive num cookie.
+
+⚠️ **Trocar essa variável exige redeploy do backend.** A `Settings` é `@lru_cache` e nasce junto com
+o processo: valor novo no painel, sem redeploy, não chega a lugar nenhum. O sintoma é conferir a
+variável no painel, vê-la certa, e o preflight continuar recusando.
+
+Como conferir de fora, sem abrir o painel:
+
+```bash
+curl -i -X OPTIONS https://elite-dev-rockhub-production.up.railway.app/auth/login \
+  -H "Origin: https://elite-dev-rock-hub.vercel.app" \
+  -H "Access-Control-Request-Method: POST"
+```
+
+`200` com um cabeçalho `access-control-allow-origin` ecoando a origem = configurado. `400` **sem**
+esse cabeçalho = a origem não está na lista, ou o redeploy não aconteceu.
+
+#### Por que essa variável não é o que faz o login funcionar
+
+Vale escrever com todas as letras, porque é a conclusão errada mais fácil de tirar — e tirá-la
+apagaria a razão de o proxy existir.
+
+Em produção, o caminho de uma requisição de login é:
+
+```
+navegador ──► elite-dev-rock-hub.vercel.app/api/auth/login      (mesma origem: sem CORS)
+                     │  rewrite do next.config.ts, no servidor da Vercel
+                     ▼
+   elite-dev-rockhub-production.up.railway.app/auth/login    (servidor↔servidor: sem CORS)
+```
+
+CORS é uma política **do navegador** sobre requisição que ele mesmo faz para outra origem. **Nenhuma
+das duas setas é isso**: a primeira é mesma origem, e a segunda não passa por navegador nenhum. O
+`CORS_ORIGENS` não está no caminho do login, e mexer nele não conserta login quebrado — o lugar de
+olhar é o `API_URL` da Vercel, e o conserto termina em redeploy.
+
+O que **de fato** faz o cookie funcionar entre os dois fornecedores é o proxy `/api/*` da Story 1.4:
+`vercel.app` e `up.railway.app` estão os dois na *Public Suffix List*, então são sites diferentes
+para o navegador, e um cookie `SameSite=Lax` não sobreviveria ao cruzamento (AD-15).
+
+**Então por que acrescentei a origem?** Porque o `CORSMiddleware` é a rede de proteção de **chamada
+direta** — um `curl` de demonstração, uma página futura sem proxy, um cliente de terceiro. A origem
+publicada existir na lista é o estado correto do sistema: no dia em que algo chamar a API sem passar
+pelo Next, a resposta certa já está configurada, em vez de virar meia hora de depuração. É
+configuração de um caminho que hoje não existe, e está aqui declarado como tal.
 
 ### 3 · Os comandos e o health check
 
@@ -992,3 +1040,33 @@ As três decisões desta story — Railpack em vez de `Dockerfile`, migração n
 encadeada no start, e configuração no painel em vez de `railway.json` versionado — estão no
 [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma com a alternativa que
 descartei.
+
+### Story 1.9 — frontend no ar na Vercel
+
+**O backend não teve uma linha alterada nesta story.** Nenhum arquivo de `app/`, `migrations/`,
+`seeds/` ou `tests/` mudou, os 85 testes continuam valendo sem ajuste, e não houve `uv sync`. O que
+mudou foi **uma variável no painel da Railway**: o `CORS_ORIGENS` passou a listar, ao lado do
+`http://localhost:3000` de desenvolvimento, a origem do frontend publicado.
+
+Registro isso aqui porque "nada mudou nesta camada, e este é o motivo" também é informação — e
+porque a variável que mudou é justamente a que convida à conclusão errada.
+
+**A decisão, e o que caiu.** A alternativa era **manter só o `localhost`**, e ela tem a verdade
+técnica do lado dela: desde o proxy da Story 1.4 o navegador não fala com a Railway, então o
+`CORS_ORIGENS` não participa de nada que exista hoje, e mexer nele custa um redeploy do backend por
+um efeito observável nulo. Caiu por duas razões. A origem publicada estar na lista é o estado
+correto do sistema — no dia em que qualquer coisa chamar a API direto, a resposta certa já está
+configurada em vez de virar depuração. E o critério de aceite pede CORS e `SameSite` configurados
+com todas as letras.
+
+**O que eu fiz questão de não deixar o README sugerir:** que o CORS é o que faz o login funcionar
+entre os dois fornecedores. Não é, e escrever isso apagaria a razão de o proxy existir. Está
+explicado em [Por que essa variável não é o que faz o login
+funcionar](#por-que-essa-variável-não-é-o-que-faz-o-login-funcionar), com o diagrama das duas setas
+— nenhuma delas é uma requisição de navegador para outra origem.
+
+A prova de que o backend estava pronto para este dia veio de fora: um `POST` em
+`https://elite-dev-rock-hub.vercel.app/api/auth/login` responde `200` com as quatro contas semeadas,
+e o `Set-Cookie` volta com `Secure` — que é o `AMBIENTE=producao` da Story 1.8 chegando até a
+aplicação — e **sem atributo `Domain=`**, que é o que o mantém como cookie de host da origem do
+frontend.

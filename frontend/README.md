@@ -10,6 +10,10 @@ de sessão fechado**: o masthead sabe quem está do outro lado, existe uma `/con
 botão de sair, e quem abre uma página protegida sem sessão é levado ao login e devolvido ao destino
 depois de entrar.
 
+**E está publicado:** <https://elite-dev-rock-hub.vercel.app> — dá para entrar por lá, com as contas
+de avaliação, sem instalar nada. Como o projeto foi configurado no painel, campo por campo, está em
+[Deploy na Vercel](#deploy-na-vercel).
+
 O histórico de decisões do projeto inteiro está no [README da raiz](../README.md). Aqui fica o que
 é específico desta camada.
 
@@ -73,21 +77,163 @@ proxy (seção abaixo) o navegador não precisa mais saber o endereço da API �
 viva seria manter dois caminhos para alcançar a mesma API, e é o tipo de coisa que produz um bug
 que só aparece em um dos dois.
 
-**Em produção, `API_URL` vai apontar para a Railway — e isso ainda não aconteceu.** A API está
-publicada desde a Story 1.8 em `https://elite-dev-rockhub-production.up.railway.app`, mas **esta
-camada não foi tocada por aquela story**: o `.env.example` continua com `localhost:8000`, e é assim
-que deve ficar, porque é o valor de desenvolvimento. O endereço de produção entra como variável de
-ambiente na Vercel, na Story 1.9, junto do deploy do frontend.
+**Em produção, `API_URL` aponta para a Railway — e isso aconteceu na Story 1.9.** O frontend está
+publicado em <https://elite-dev-rock-hub.vercel.app>, com a variável definida **no painel da
+Vercel**, para Production e Preview, valendo
+`https://elite-dev-rockhub-production.up.railway.app`. O `.env.example` daqui continua com
+`localhost:8000` de propósito: ele é o modelo de desenvolvimento, e o valor de produção mora na
+plataforma, não no repositório. O passo a passo do painel está em [Deploy na
+Vercel](#deploy-na-vercel).
 
-Um detalhe dessa variável que vai importar naquele dia: o `rewrites()` é avaliado em **tempo de
-build**, e a Vercel compila as rotas no `next build`. Trocar `API_URL` no painel depois **não** muda
-o proxy sem um redeploy — o valor fica congelado na build. Está escrito também no `next.config.ts`,
-ao lado da linha que a lê.
+Um detalhe dessa variável que importou exatamente como previsto: o `rewrites()` é avaliado em
+**tempo de build**, e a Vercel compila as rotas no `next build`. Trocar `API_URL` no painel depois
+**não** muda o proxy sem um redeploy — o valor fica congelado na build. Está escrito também no
+`next.config.ts`, ao lado da linha que a lê. A regra prática que eu levei da Story 1.9: **mexeu no
+`API_URL`, redeploy.**
 
 **Nenhuma variável `NEXT_PUBLIC_` carrega credencial.** Tudo que tem esse prefixo vai embutido no
 bundle e fica visível para qualquer visitante — é endereço público, nada mais. A chave da
 Ticketmaster e o segredo que assina os ingressos moram no backend e nunca atravessam para cá
 (AD-2).
+
+## Deploy na Vercel
+
+O frontend está no ar em **<https://elite-dev-rock-hub.vercel.app>**. **Não existe `vercel.json`
+neste repositório** — a configuração mora no painel, e esta seção é onde ela está escrita. É a mesma
+decisão que eu tomei para a Railway na Story 1.8, e o motivo está no [README da
+raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+Se você for subir a sua própria cópia, é isto, na ordem:
+
+### 1 · O projeto
+
+| Onde | Campo | Valor |
+|---|---|---|
+| `Add New` → `Project` | Import Git Repository | `elite-dev-RockHub` |
+| Configure Project | **Root Directory** | `frontend` |
+| Configure Project | Framework Preset | **Next.js** (detectado sozinho depois do Root Directory) |
+| Configure Project | Build / Output / Install Command | **não sobrescreva nenhum** |
+| Settings → Environments | **Production Branch** | a branch que você quer publicar |
+
+⚠️ **O `Root Directory` é o campo que derruba o build de quem tem pressa.** Ele não vem preenchido:
+o valor inicial é `./`, e o `frontend` que aparece em cinza no campo é *sugestão*, não valor
+gravado. Clique em `Edit`, escolha `frontend` na árvore e confirme — o campo precisa mostrar
+`frontend` depois de salvar. Sem isso a Vercel olha a raiz do monorepo, não acha `package.json`, não
+detecta framework nenhum e cai em "Other". É o mesmo passo que derrubou o meu primeiro build na
+Railway, no painel do outro fornecedor.
+
+⚠️ **A Production Branch precisa ser conferida.** A Vercel escolhe sozinha, nesta ordem: `main`,
+`master`, a branch padrão do repositório. Se o seu código está noutra branch, o primeiro deploy
+constrói a errada. Trocar o campo **não dispara deploy nenhum** e o botão `Redeploy` do deploy que
+falhou reconstrói *o mesmo commit* — para publicar a branch certa é preciso um push nela, ou
+promover a produção um deploy dela na aba Deployments.
+
+### 2 · A variável
+
+| Variável | Valor | Ambientes |
+|---|---|---|
+| `API_URL` | `https://elite-dev-rockhub-production.up.railway.app` | **Production** e **Preview** |
+
+Três detalhes que sustentam esse valor, e cada um tem um sintoma próprio quando erra:
+
+- **Sem `NEXT_PUBLIC_`.** Quem lê `API_URL` é o servidor: o `rewrites()` do `next.config.ts` e o
+  `fetch` do `sessao.ts`. Escrever `NEXT_PUBLIC_API_URL` por hábito faz o valor simplesmente não
+  chegar, e o proxy cai no padrão `localhost:8000`
+- **`https://`, nunca `http://`.** A Railway responde `301` em HTTP, e um `POST` redirecionado perde
+  o corpo em vários clientes. Falha só no login, só em produção
+- **Sem barra no fim.** O rewrite concatena `${API_URL}/:caminho*`; com barra vira
+  `https://…app//auth/login`, e o roteador do FastAPI não casa esse caminho
+
+Eu também **não** marquei a variável como *sensitive*. Ela é endereço público, não segredo (AD-2), e
+marcada como sensível o painel deixa de mostrar o valor — justamente quando você precisa conferir se
+sobrou uma barra no fim.
+
+⚠️ **Defina a variável antes do primeiro deploy**, ou faça um redeploy depois de defini-la. O
+`rewrites()` é avaliado no `next build` e o valor fica **congelado na build**. Trocar a variável no
+painel depois não muda o proxy até o próximo deploy, e não há nada no log acusando.
+
+### 3 · Qual URL publicar
+
+Settings → **Domains**. O domínio de produção é `<projeto>.vercel.app` — aqui,
+`elite-dev-rock-hub.vercel.app`. **É essa URL que vai para os READMEs.**
+
+⚠️ **Não copie a URL da tela do deploy.** A Vercel gera, por deploy, uma URL do tipo
+`<projeto>-<hash>-<escopo>.vercel.app`, e é ela que aparece em destaque quando o build termina — é a
+que se copia por reflexo. No plano Hobby a proteção padrão (*Vercel Authentication* + *Standard
+Protection*) deixa o **domínio de produção público** e **protege as URLs geradas por deploy**: quem
+abrir a errada vê uma tela de login da Vercel.
+
+A conferência custa dez segundos e evita pôr uma tela de autenticação na cara de quem avalia: abra a
+URL numa **janela anônima**. Se pedir login, é a URL errada.
+
+### 4 · Como saber que deu certo
+
+Com o deploy verde, de fora, sem abrir o navegador:
+
+```bash
+URL=https://elite-dev-rock-hub.vercel.app
+
+curl -i $URL/                       # 200, e o HTML traz o masthead
+curl -i $URL/rota-que-nao-existe    # 404 com a casca do projeto
+curl -i $URL/api/auth/eu            # 401 NAO_AUTENTICADO
+
+curl -i -X POST $URL/api/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"organizador@rockhub.dev","senha":"rockhub123"}'
+```
+
+**O login é a chamada que prova o deploy inteiro**, e é a única que vale repetir: ela só devolve
+`200` se o build leu o `API_URL`, **e** o proxy reescreveu para a Railway a partir do servidor da
+Vercel, **e** o banco de lá respondeu. Três fornecedores atravessados numa chamada.
+
+No `Set-Cookie` dessa resposta: `HttpOnly`, `Secure`, `SameSite=lax` e **nenhum `Domain=`** — cookie
+de host, da origem do frontend. Se aparecer `Domain=.up.railway.app`, alguma coisa mudou no backend.
+
+⚠️ No PowerShell, `curl` é apelido de `Invoke-WebRequest` e não entende `-i` nem `-d`. Use
+`curl.exe`, ou rode pelo Git Bash. É atrito de dois minutos que parece falha de deploy.
+
+E três coisas que **só o navegador prova**, porque nenhuma delas aparece num `curl`: o masthead
+virando `Minha conta` ao entrar e voltando a `Entrar` ao sair **sem recarregar a página** (é o
+`router.refresh()`), a aba Network mostrando `/api/...` no domínio da Vercel e nunca em
+`up.railway.app`, e `document.cookie` no console **não** mostrando o `rockhub_sessao`.
+
+### 5 · Quando falhar, onde olhar
+
+Em ordem de probabilidade, com o sintoma que cada uma produz:
+
+| Sintoma | Causa |
+|---|---|
+| Build morre em "No framework detected", ou não acha `package.json` | Falta `Root Directory = frontend` |
+| Build verde mas o site é de um commit velho, ou o build lista a raiz do monorepo | A Production Branch é a errada |
+| `Module not found` em vários arquivos de uma vez, sempre no mesmo import | Uma pasta existe na sua máquina e **não no repositório**. Foi o que aconteceu comigo — ver [Histórico](#story-19--frontend-no-ar-na-vercel) |
+| A URL pede login da Vercel | É a URL gerada por deploy, não o domínio de produção |
+| A tela abre, o login envia e nada acontece; Network mostra `500`/`502` em `/api/auth/login` | `API_URL` ausente, com `http://`, com barra no fim, ou definida **depois** do build. Nos quatro casos o conserto termina em **redeploy** |
+| Login responde `200` mas a página continua deslogada | O cookie não foi aceito. Confira `Secure` no `Set-Cookie` (vem do `AMBIENTE=producao` da Story 1.8) e que **não** há `Domain=` |
+| `404` sem a identidade do projeto | O `not-found.tsx` saiu da raiz de `app/` — é o erro documentado na Story 1.2 |
+| Preview quebrado com Production funcionando | A variável foi marcada só para Production |
+| Push que só mexe em `backend/` não gera deploy do frontend | É o *Skip deployment* de monorepo funcionando como deveria, não um defeito |
+
+### O que a Vercel faz com este projeto
+
+Lido na documentação da plataforma, não deduzido:
+
+| Fase | O que acontece |
+|---|---|
+| Clone | `git clone --depth=10` da Production Branch |
+| Root Directory | `frontend` vira a raiz do build; nada fora dela é acessível |
+| Detecção | Encontra `frontend/package.json` → Framework Preset **Next.js** |
+| Install | Detecta o gerenciador pelo `package-lock.json` → **npm** |
+| Build | `npm run build`, com Turbopack, que é o padrão do Next 16 |
+| Node | **24.x**, o LTS padrão para projeto novo. Não fixei `engines.node` |
+| Variáveis | `API_URL` disponível **no build** e **em execução** — o `rewrites()` a lê no build, o `sessao.ts` em execução |
+| Output | Automático para Next.js — nada a configurar |
+
+Duas consequências que valem no dia a dia:
+
+- **Mudança de variável só vale para deploys novos.** A documentação é literal: *"Any change you make
+  to environment variables are not applied to previous deployments"*. Somado ao `rewrites()`
+  congelado no build, dá a regra: mexeu no `API_URL`, redeploy
+- **`devDependencies` são instaladas no build** — é assim que `typescript` e os `@types` entram no
+  `next build`. Não tente excluí-las
 
 ## O proxy `/api/*`
 
@@ -95,13 +241,19 @@ Ticketmaster e o segredo que assina os ingressos moram no backend e nunca atrave
 navegador chama o domínio do próprio frontend; quem fala com o backend é o servidor do Next.
 
 ```
-navegador ──► rockhub.vercel.app/api/auth/login
+navegador ──► elite-dev-rock-hub.vercel.app/api/auth/login      (mesma origem: sem CORS)
                      │  rewrite do next.config.ts (lado do servidor)
                      ▼
-              rockhub.up.railway.app/auth/login
+   elite-dev-rockhub-production.up.railway.app/auth/login    (servidor↔servidor: sem CORS)
 
 o Set-Cookie volta pelo domínio da Vercel → cookie de origem própria → SameSite=Lax funciona
 ```
+
+**Desde a Story 1.9 esse diagrama é verificado, não previsto.** Os dois domínios são os reais, e um
+`POST` em `https://elite-dev-rock-hub.vercel.app/api/auth/login` responde `200` com o `Set-Cookie`
+vindo pelo domínio da Vercel — `HttpOnly; Max-Age=28800; Path=/; SameSite=lax; Secure`, e **sem
+atributo `Domain=`**. O proxy foi escrito na 1.4 para exatamente este dia, e não precisou de uma
+linha de ajuste para atravessar dois fornecedores.
 
 **Por que isso existe:** o AD-15 fixa a sessão como cookie `SameSite=Lax`, e `vercel.app` e
 `up.railway.app` estão os dois na *Public Suffix List* — são sites diferentes para o navegador, sem
@@ -124,8 +276,9 @@ Três consequências práticas:
 
 ⚠️ **O `destination` do rewrite é congelado no `next build`.** A Vercel compila as rotas no build, e
 é ali que `process.env.API_URL` é lido — trocar a variável no painel depois **não** muda o proxy sem
-um redeploy. O sintoma é o frontend novo apontando para a API antiga, e é o tipo de coisa que custa
-uma tarde na Story 1.9.
+um redeploy. O sintoma é o frontend novo apontando para a API antiga, e não há nada no log acusando.
+Este aviso estava escrito aqui desde a Story 1.4 dizendo que ia custar uma tarde na 1.9; **não
+custou, justamente porque estava escrito** — a variável foi definida antes do primeiro build.
 
 ## Falar com a API
 
@@ -643,3 +796,67 @@ E a lista original das telas de acesso:
   e-mail batem entre as duas rotas
 - **`Tab` percorre** nome → e-mail → senha → repetir → botão → link, com contorno âmbar em todos, e os
   links levam de uma tela à outra sem digitar URL
+
+### E a mesma lista, em produção
+
+Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. Contra
+<https://elite-dev-rock-hub.vercel.app>, o que eu confiro depois de todo deploy — e que **nenhum
+`curl` substitui**, porque as três primeiras só existem no navegador:
+
+- **O masthead muda ao entrar e ao sair, sem recarregar a página.** É o `router.refresh()` da Story
+  1.6 sobrevivendo à build de produção. Não há teste que o cubra, em ambiente nenhum
+- **A aba Network mostra `/api/...` no domínio da Vercel**, nunca em `up.railway.app`. Se aparecer o
+  domínio da Railway ali, o proxy foi contornado por alguém e o cookie vai parar de funcionar
+- **`document.cookie` no console não mostra o `rockhub_sessao`** — é o `httpOnly` valendo em
+  produção, e o cookie está no domínio da Vercel, não no da API
+- **A URL abre em janela anônima**, sem tela de login da Vercel. Se pedir, é a URL gerada por deploy
+  em vez do domínio de produção
+- **A `/conta` sem sessão cai em `/login?voltar=%2Fconta`** e devolve para a `/conta` depois de
+  entrar — o mesmo comportamento de `localhost`, agora atravessando dois fornecedores
+
+O que o `curl` cobre — raiz, 404 com a casca, `401` sem cookie, login nas quatro contas e os
+atributos do `Set-Cookie` — está em [Como saber que deu certo](#4--como-saber-que-deu-certo).
+
+## Histórico desta camada
+
+Até a Story 1.8 o histórico desta camada morava dentro de cada seção, junto do assunto — é onde ele
+é mais útil de ler. Abro a seção aqui porque a Story 1.9 não cabe em nenhuma delas: ela não mudou
+comportamento nenhum do frontend, e ainda assim é a story mais importante desta pasta até agora.
+
+### Story 1.9 — frontend no ar na Vercel
+
+**Não escrevi uma linha de `src/` nesta story, e esse era o ponto.** O proxy `/api/*` foi escrito na
+Story 1.4 exatamente para o dia em que as duas metades ficassem em fornecedores diferentes; a Story
+1.9 só deu a ele o endereço de produção, numa variável de painel. O login funcionou na primeira
+tentativa em que o build estava correto — o cookie atravessou `vercel.app` → `up.railway.app` sem
+ajuste nenhum, que é o retorno daquela decisão pagando com juros.
+
+O que essa story **não** foi: um dia de depurar cookie entre domínios. Está registrado assim de
+propósito, porque era o desfecho provável se eu tivesse deixado o `SameSite` cru para resolver no
+deploy — e eu cheguei a considerar isso na 1.4.
+
+**O tropeço real veio de onde eu não estava olhando: o `.gitignore`.** O primeiro build com a branch
+e o Root Directory já corretos falhou com `Module not found` em sete arquivos — `BotaoSair`, os dois
+formulários, as três páginas e o `Masthead`. O denominador comum era exato: **os sete importam de
+`@/lib`**, e nenhum import de `@/components` aparecia no rastro.
+
+A causa: o `.gitignore` da raiz veio do template Python do GitHub, e ele traz `lib/` na seção de
+empacotamento. Padrão sem barra no início **casa em qualquer profundidade** — então ele estava
+ignorando `frontend/src/lib/` desde a Story 1.2. Os três arquivos (`api.ts`, `sessao.ts`,
+`caminho.ts`) existiam na minha máquina e **nunca entraram no repositório**.
+
+Duas coisas que eu levo daqui:
+
+- **Nada na minha máquina podia ter pego isso.** `npm run build`, `tsc --noEmit`, ESLint e os 85
+  testes do backend passam todos, porque os arquivos estão no disco. Só um clone limpo revela — e o
+  primeiro clone limpo deste projeto foi o da Vercel. Foi o deploy fazendo trabalho de teste
+- **O conserto foi ancorar, não abrir exceção.** Troquei `lib/` e `lib64/` por `/lib/` e `/lib64/`,
+  com a barra inicial prendendo o padrão à raiz do repositório. Descartei o `!frontend/src/lib/`,
+  que consertaria este caso e deixaria a armadilha armada para a próxima pasta `lib/` aninhada, em
+  qualquer camada — e o motivo está escrito em comentário no próprio `.gitignore`, para ninguém
+  "limpar" a barra depois
+
+Os dois campos do painel que eu já sabia que iam morder morderam, os dois — `Root Directory` em `./`
+e Production Branch em `main` —, e os dois estavam previstos porque a Story 1.8 já tinha cometido os
+mesmos dois erros no painel da Railway. Estão documentados em [Deploy na Vercel](#deploy-na-vercel)
+com o sintoma de cada um. Dois fornecedores diferentes, as mesmas duas armadilhas.

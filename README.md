@@ -11,10 +11,10 @@ de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no cami
 [backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
 camada.
 
-> **Estado atual:** em construção, e **a API já está publicada** —
-> <https://elite-dev-rockhub-production.up.railway.app/docs> responde agora, com o PostgreSQL da
-> Railway migrado e semeado. O frontend ainda roda só na sua máquina; publicá-lo na Vercel é o
-> próximo passo. **O acesso está fechado pelos dois lados:** dá para criar conta em
+> **Estado atual:** em construção, e **as duas metades estão no ar** —
+> <https://elite-dev-rock-hub.vercel.app> é a aplicação, com o PostgreSQL da Railway migrado e
+> semeado por trás. Dá para abrir num navegador, entrar com uma conta de avaliação e ver a `/conta`
+> sem clonar nada. **O acesso está fechado pelos dois lados:** dá para criar conta em
 > `/cadastro` e entrar em `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o
 > navegador falando só com o domínio do frontend. Rota protegida já tem guarda por papel, e um
 > comando semeia as quatro contas de avaliação (abaixo, em
@@ -25,11 +25,20 @@ camada.
 
 ## No ar
 
-A API está publicada na Railway, com o banco no mesmo projeto:
+A aplicação está publicada na Vercel — **é esta URL que abre a interface**:
+
+**<https://elite-dev-rock-hub.vercel.app>**
+
+Entre com qualquer uma das credenciais de [Contas semeadas](#contas-semeadas). O caminho completo,
+passo a passo, está em [Roteiro de avaliação](#roteiro-de-avaliação).
+
+A API vive à parte, na Railway, com o banco no mesmo projeto:
 
 **<https://elite-dev-rockhub-production.up.railway.app>**
 
-Dá para conferir sem instalar nada:
+Você não precisa dela para usar a aplicação — o navegador nunca fala com esse endereço, e é de
+propósito ([por quê](#proxy-api-no-next-não-samesitenone-em-produção)). Ela está aqui para quem
+quiser ver o contrato da API. Dá para conferir sem instalar nada:
 
 - **[`/saude`](https://elite-dev-rockhub-production.up.railway.app/saude)** → `{"status": "ok"}`
 - **[`/docs`](https://elite-dev-rockhub-production.up.railway.app/docs)** → a documentação
@@ -45,10 +54,24 @@ curl -X POST https://elite-dev-rockhub-production.up.railway.app/auth/login \
 Essa chamada é a verificação que mais paga num comando só: ela só devolve `200` se as migrações
 rodaram, **e** o seed gravou as contas, **e** o banco em uso é o da Railway.
 
-**Interface publicada ainda não há** — a Vercel entra na próxima etapa. Por enquanto, para ver as
-telas, rode o frontend localmente pelos passos abaixo. O passo a passo de como o serviço da Railway
-foi configurado, campo por campo, está no
-[README do backend](backend/README.md#deploy-na-railway).
+E a mesma chamada **pelo domínio da Vercel** prova o sistema inteiro de uma vez:
+
+```bash
+curl -i -X POST https://elite-dev-rock-hub.vercel.app/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"organizador@rockhub.dev","senha":"rockhub123"}'
+```
+
+Ela só responde `200` se o build da Vercel leu o endereço da API, **e** o proxy `/api/*` reescreveu
+para a Railway a partir do servidor, **e** o banco de lá respondeu. Repare no `Set-Cookie`: ele volta
+pelo domínio da Vercel, com `HttpOnly`, `Secure` e `SameSite=lax` — é o cookie de sessão
+atravessando dois fornecedores, que é a coisa que este deploy existe para provar.
+
+Como cada plataforma foi configurada, campo por campo e refazível numa conta vazia, está nos READMEs
+de cada camada: [Deploy na Vercel](frontend/README.md#deploy-na-vercel) e
+[Deploy na Railway](backend/README.md#deploy-na-railway). Não há `vercel.json` nem `railway.json`
+neste repositório, e isso é decisão — o motivo está
+[abaixo](#a-configuração-de-deploy-mora-no-painel-nas-duas-plataformas).
 
 ## Como executar
 
@@ -148,8 +171,10 @@ cliente só deixaria no ar: que o ingresso de um não aparece na conta do outro 
 pessoas disputando o último ingresso de um setor produzem uma venda e uma recusa (Epic 3).
 
 **As mesmas quatro contas existem no banco da Railway**, criadas por este mesmo comando: ele roda a
-cada deploy, logo depois das migrações. Então dá para entrar com elas tanto no seu ambiente local
-quanto na [API publicada](#no-ar), com as mesmas senhas.
+cada deploy, logo depois das migrações. Então dá para entrar com elas em três lugares, com as mesmas
+senhas: no seu ambiente local, na [aplicação publicada](https://elite-dev-rock-hub.vercel.app) e
+direto no `/docs` da [API](#no-ar). As quatro foram conferidas na URL pública — cada uma responde
+`200` com o papel certo.
 
 O comando imprime uma linha por conta — `criada` na primeira execução, `mantida` nas seguintes — e
 **rodar de novo é seguro**: ele não duplica conta, não apaga nem sobrescreve nada. Se você já tinha
@@ -163,13 +188,45 @@ Dois detalhes que valem os dez segundos de leitura:
 
 **Conta criada por `/cadastro` nasce sempre `CLIENTE`**, de propósito: não há seletor de papel na
 tela, e enviar `papel` na requisição não muda nada. Se você quiser uma conta de cliente sua, abra
-<http://localhost:3000/cadastro> — nome, e-mail e senha, e já entra logado.
+<https://elite-dev-rock-hub.vercel.app/cadastro> (ou `http://localhost:3000/cadastro`, se estiver
+rodando local) — nome, e-mail e senha, e já entra logado.
 
 ## Roteiro de avaliação
 
 O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento
-e validar na portaria — é escrito quando o fluxo estiver completo. Hoje dá para verificar, começando
-pelas contas semeadas (rode `uv run python -m seeds.semear` se ainda não rodou):
+e validar na portaria — é escrito quando o fluxo estiver completo.
+
+### Sem instalar nada
+
+Abra <https://elite-dev-rock-hub.vercel.app>. São cinco minutos, sem clonar, sem Docker, sem `uv`:
+
+1. A raiz abre com a identidade aplicada — fundo escuro, masthead com o fio duplo, serifada nos
+   títulos. O masthead mostra `Início` · `Entrar`, porque você ainda não tem sessão
+2. Abra `/conta` direto na barra de endereço → você é levado para `/login?voltar=%2Fconta`. A guarda
+   de rota está valendo em produção
+3. Entre com `organizador@rockhub.dev` / `rockhub123` → você **volta para a `/conta`**, não para a
+   raiz, e ela mostra **Helena Marques** e o papel `ORGANIZADOR`. Essa conta não poderia ter nascido
+   pela interface: `/cadastro` só cria `CLIENTE`
+4. O masthead virou `Início` · `Minha conta`. Clique em `Sair` → ele volta para `Entrar`
+   **imediatamente, sem recarregar a página**
+5. Abra `/cadastro` e crie uma conta sua, com nome, e-mail e senha de no mínimo 6 caracteres → cai na
+   raiz já logado. Senhas diferentes nos dois campos mostram o erro **sem nenhuma requisição**
+6. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio da **Vercel**, com
+   `HttpOnly` marcado — e `document.cookie` no console não o mostra. Na aba Network, toda chamada saiu
+   para `/api/...` no domínio da Vercel, **nunca** para `up.railway.app`
+
+O passo 6 é o que eu pediria para olhar com atenção: a interface está na Vercel, a API na Railway, e
+mesmo assim não existe requisição entre domínios nem cookie de terceiro. O motivo está em
+[Proxy `/api/*` no Next](#proxy-api-no-next-não-samesitenone-em-produção).
+
+**O que ainda não dá para fazer por lá:** descobrir evento, comprar ingresso, receber o QR ou validar
+na portaria. Nada disso existe ainda — a Epic 2 começa a publicação de eventos. O que está pronto é o
+acesso, e é ele que este roteiro percorre.
+
+### Na sua máquina
+
+Rodando local pelos passos de [Como executar](#como-executar), e começando pelas contas semeadas
+(rode `uv run python -m seeds.semear` se ainda não rodou):
 
 1. Entrar em `http://localhost:3000/login` como `organizador@rockhub.dev` / `rockhub123` → a
    `/conta` mostra **Helena Marques** e o papel `ORGANIZADOR`. É a conta que vai publicar eventos na
@@ -184,12 +241,11 @@ pelas contas semeadas (rode `uv run python -m seeds.semear` se ainda não rodou)
 4. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
    `/auth/login`, `/auth/logout` e `/auth/eu`
 
-E sem instalar nada, direto no navegador:
+E, para ver o contrato da API sem passar pela interface:
 
 4b. Abrir <https://elite-dev-rockhub-production.up.railway.app/docs> e entrar pelo `POST /auth/login`
     com `organizador@rockhub.dev` / `rockhub123` → `200`, com `"papel": "ORGANIZADOR"`. É a mesma
-    aplicação, contra o PostgreSQL da Railway. **Tela publicada ainda não há** — ela chega junto do
-    deploy na Vercel
+    aplicação que a interface publicada consome, contra o mesmo PostgreSQL da Railway
 5. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
    caracteres) → **cai na raiz já logado**, sem precisar entrar de novo. Rodar o seed mais uma vez
    depois disso **não mexe nessa conta**: ela continua lá e continua entrando
@@ -230,7 +286,7 @@ E o ciclo da sessão, que fecha na Story 1.6:
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
 | Catálogo externo | Ticketmaster Discovery v2 *(Epic 2)* |
-| Deploy | Railway (API e banco), **no ar** · Vercel (frontend) *(Story 1.9)* |
+| Deploy | Vercel (frontend) e Railway (API e banco) — **as duas no ar** |
 
 ```text
 docker-compose.yml   # Postgres 16 local — infraestrutura do projeto inteiro, por isso na raiz
@@ -907,11 +963,12 @@ O seed sair em `0` mesmo quando avisa sobre papel divergente é o que impede um 
 deploy inteiro; e ele não imprimir a senha é o que impede credencial de cair no log de deploy da
 Railway. As duas foram escritas prevendo este uso, e é aqui que elas passam a valer.
 
-### A configuração do deploy mora no painel, e o README a descreve
+### A configuração de deploy mora no painel, nas duas plataformas
 
-**Decidi** não versionar `railway.json` nem `railway.toml`. Builder, `Root Directory`, branch,
-variáveis, os dois comandos e o health check estão configurados no painel da Railway, e descritos
-campo por campo em [Deploy na Railway](backend/README.md#deploy-na-railway).
+**Decidi** não versionar `railway.json`, `railway.toml` nem `vercel.json`. Builder, `Root
+Directory`, branch, variáveis, comandos e health check estão configurados nos painéis da Railway e
+da Vercel, e descritos campo por campo em [Deploy na
+Railway](backend/README.md#deploy-na-railway) e [Deploy na Vercel](frontend/README.md#deploy-na-vercel).
 
 **Por quê:** o painel **sobrescreve** o arquivo quando alguém edita por lá, e é por lá que se edita
 no meio de um deploy que falhou, às pressas. Duas fontes para a mesma verdade divergem em silêncio, e
@@ -922,10 +979,87 @@ uma vantagem real — recriar o serviço viraria reimportar o repositório, e qu
 configuração do deploy junto do código.
 
 **O custo que aceitei, e como o cobri:** a configuração some se o serviço for apagado, e não aparece
-em nenhum diff. É precisamente por isso que a seção do README do backend não é um resumo — ela tem os
-nomes exatos dos campos, os valores, a ordem e os erros que cada omissão produz. Documentação
-substituindo arquivo só funciona se for detalhada a ponto de ser executável por quem nunca viu o
-painel; menos que isso, eu teria escolhido errado.
+em nenhum diff. É precisamente por isso que as seções de deploy dos dois READMEs não são um resumo —
+elas têm os nomes exatos dos campos, os valores, a ordem e os erros que cada omissão produz.
+Documentação substituindo arquivo só funciona se for detalhada a ponto de ser executável por quem
+nunca viu o painel; menos que isso, eu teria escolhido errado.
+
+**A Story 1.9 cobrou essa aposta e ela pagou.** Configurar a Vercel foi o mesmo exercício da Railway
+num painel diferente, e os **dois** erros que eu já tinha cometido lá — `Root Directory` não
+preenchido e branch de produção errada — apareceram de novo, idênticos. Eles estavam documentados
+como armadilha desde a Story 1.8, então custaram minutos em vez de uma noite. Uma seção de README
+que só descrevesse o final feliz não teria servido para nada ali.
+
+### O `CORS_ORIGENS` lista a origem da Vercel, mesmo o CORS não estando no caminho do navegador
+
+**Decidi** acrescentar `https://elite-dev-rock-hub.vercel.app` ao `CORS_ORIGENS` do backend, ao lado
+do `http://localhost:3000` de desenvolvimento.
+
+**Por quê:** é o estado correto do sistema. No dia em que qualquer coisa chamar a API diretamente —
+um `curl` de demonstração, uma página futura sem proxy, um cliente de terceiro — a resposta certa já
+está configurada, em vez de virar meia hora de depuração num momento ruim. E o critério de aceite
+pede CORS e `SameSite` configurados com todas as letras.
+
+**O que caiu:** **manter só o `localhost`** — e essa alternativa tem a verdade técnica do lado dela.
+Desde o proxy da Story 1.4 o navegador não fala com a Railway, então a variável não participa de
+absolutamente nada que exista hoje, e mexer nela custa um redeploy do backend por um efeito
+observável nulo. Perdeu para o argumento de estado correto, mas foi decisão apertada, e registro
+assim porque a alternativa não era ruim — era só menos completa.
+
+**O que eu fiz questão de escrever junto:** que **não é isso que faz o login funcionar** entre os
+dois fornecedores. CORS é uma política do navegador sobre requisição para outra origem, e em produção
+não existe nenhuma: o navegador chama o próprio domínio da Vercel, e quem fala com a Railway é o
+servidor do Next — servidor a servidor, sem navegador no meio. Quem faz o cookie sobreviver é o
+proxy. Deixar o README sugerir que o CORS é o conserto apagaria a razão de o proxy existir, e no
+primeiro login quebrado alguém iria mexer na variável errada.
+
+### Publiquei a branch da epic, não a `main`
+
+**Decidi** apontar a Production Branch dos dois painéis para
+`epic-1---fundacao-acesso-e-primeiro-deploy`, e definir o `API_URL` da Vercel para Production **e**
+Preview, com o mesmo valor.
+
+**Por quê:** é ordem de eventos. O merge da Epic 1 acontece **depois** do code review da epic, e o
+deploy é a última story antes dele. Publicar da `main` hoje significaria mesclar código ainda não
+revisado só para conseguir fazer deploy — inverter a revisão e a publicação por conveniência de
+configuração.
+
+**O que caiu:** **mesclar na `main` antes e publicar dali**, que é o que as duas plataformas assumem
+sozinhas e o que quem avalia espera encontrar. O custo que eu assumi é um campo divergente em dois
+painéis, que precisa ser trocado quando a epic entrar na `main` — e é por isso que ele está escrito
+nos dois READMEs de camada, em vez de virar surpresa.
+
+Sobre o Preview: caiu **defini-lo só para Production**, que manteria o banco de produção fora do
+alcance de qualquer build de branch. Perdeu porque o Preview cairia no padrão `http://localhost:8000`
+do `next.config.ts` e ficaria com o login quebrado **sem erro visível** — a tela abre, o formulário
+envia, e nada acontece. Preview quebrado é pior que Preview inexistente. A consequência que veio
+junto — Preview escreve no banco de produção — está em [O que não está
+pronto](#o-que-não-está-pronto).
+
+### O `.gitignore` do Python engoliu `frontend/src/lib/`, e eu ancorei o padrão em vez de abrir exceção
+
+**Decidi** trocar `lib/` e `lib64/` por `/lib/` e `/lib64/` no `.gitignore` da raiz, com a barra
+inicial prendendo os dois padrões à raiz do repositório.
+
+**Por quê:** o `.gitignore` deste projeto nasceu do template Python do GitHub, que traz `lib/` na
+seção de empacotamento. Padrão sem barra no início **casa em qualquer profundidade** — então ele não
+estava ignorando artefato de build do Python, estava ignorando **`frontend/src/lib/`**, desde a
+Story 1.2. Os três arquivos que moram lá (`api.ts`, `sessao.ts`, `caminho.ts`) existiam na minha
+máquina e nunca entraram no repositório. Com a barra, o padrão volta a significar o que o template
+queria dizer.
+
+**O que caiu:** **`!frontend/src/lib/` no fim do arquivo**, que consertaria este caso em uma linha
+sem tocar no template. Perdeu porque deixa a armadilha armada: o padrão continua errado, e a próxima
+pasta `lib/` aninhada — em qualquer camada, em qualquer epic — some do mesmo jeito e sem aviso. Uma
+exceção conserta um sintoma; a âncora conserta a causa.
+
+**Como isso apareceu, e é a parte que interessa:** o build da Vercel falhou com `Module not found`
+em sete arquivos, e o denominador comum era exato — os sete importam de `@/lib`, e nenhum import de
+`@/components` aparecia no rastro. **Nada na minha máquina podia ter pego isso.** `npm run build`,
+`tsc --noEmit`, ESLint e os 85 testes do backend passam todos, porque os arquivos estão no disco. Só
+um clone limpo revela, e o primeiro clone limpo deste projeto foi o da Vercel. É o argumento mais
+concreto que eu tenho a favor de publicar cedo: o deploy fez, na Story 1.9, um trabalho de teste que
+nenhuma suíte deste projeto faria.
 
 ## O que não está pronto
 
@@ -947,6 +1081,8 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. Pelo mesmo motivo não há `Meus eventos` para organizador nem `Turnos` para portaria — navegação diferente por papel nasce nas Epics 2 e 5, com as telas |
 | **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
-| **Frontend publicado** | A API está no ar na Railway, mas a interface ainda roda só localmente — a Vercel é o passo seguinte. Até lá, o que dá para ver publicado é o `/docs` da API. Foi assim de propósito: publicar as duas metades no mesmo dia significaria depurar CORS, cookie entre domínios e build de frontend ao mesmo tempo, sem saber qual metade quebrou |
+| **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**, porque o `API_URL` está definido com o mesmo valor em Production e Preview. Uma conta criada num Preview é uma conta no banco real. A alternativa — definir a variável só para Production — deixaria todo Preview com o login quebrado em silêncio, que é pior; e um segundo serviço Railway com banco próprio é infraestrutura que não se paga em sete dias. A mitigação que existe hoje: no plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |
+| **Domínio próprio** | A aplicação vive em `elite-dev-rock-hub.vercel.app` e a API em `elite-dev-rockhub-production.up.railway.app`. Domínio custa dinheiro e propagação de DNS, e não acrescenta nada ao que está sendo avaliado |
+| **Branch de produção alinhada com a `main`** | Os dois painéis publicam a branch da epic, não a `main` — o merge vem depois do code review, e publicar da `main` hoje exigiria mesclar código não revisado. É um campo para trocar em dois painéis quando a Epic 1 entrar na `main`, e está escrito assim de propósito para não virar surpresa |
 | **Integração contínua** | Não há GitHub Actions nem suíte rodando antes do deploy. Um push na branch publicada dispara o build direto, e quem garante que os testes passam sou eu, na minha máquina. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade desde a Story 1.3 — é infraestrutura que não se paga em sete dias. O que existe no lugar: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender, então schema errado não entra no ar |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e isso é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. Em 7 dias, configurar teste de componente para cobrir markup que ainda vai mudar muito não se paga. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |

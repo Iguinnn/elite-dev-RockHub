@@ -4,7 +4,7 @@ baseline_commit: "Story 1.8 — branch epic-1---fundacao-acesso-e-primeiro-deplo
 
 # Story 1.9: Frontend no ar na Vercel
 
-Status: ready-for-dev
+Status: review
 
 Epic 1 — Fundação, acesso e primeiro deploy · **A story que fecha a epic.** A 1.8 pôs a API e o
 banco na Railway; esta põe a interface na Vercel e liga as duas metades. Ao fim dela existe **uma
@@ -135,114 +135,90 @@ produção na primeira tentativa, é aquela decisão pagando; se falhar, o lugar
 > **Ordem obrigatória.** T1 e T2 são do Igor e acontecem **antes** de tudo: sem a URL pública não há
 > o que verificar na T3 nem o que documentar. O agente começa pela T3, com a URL em mãos.
 
-- [ ] **T1. Publicar o frontend na Vercel** — *executada pelo Igor, no painel* (AC: 1, 2, 3, 7)
-  - [ ] O passo a passo completo, campo por campo, está em *O painel da Vercel, campo por campo*
-  - [ ] ⚠️ **Três campos que não podem faltar**, na ordem em que a tela os pede: `Root Directory` =
+- [x] **T1. Publicar o frontend na Vercel** — *executada pelo Igor, no painel* (AC: 1, 2, 3, 7)
+  - [x] O passo a passo completo, campo por campo, está em *O painel da Vercel, campo por campo*
+  - [x] ⚠️ **Três campos que não podem faltar**, na ordem em que a tela os pede: `Root Directory` =
         `frontend`, a variável `API_URL`, e a **Production Branch** apontando para a branch da epic
-  - [ ] Ao terminar, passe ao agente: o **domínio de produção** (`<projeto>.vercel.app`, o que
+  - [x] Ao terminar, passe ao agente: o **domínio de produção** (`<projeto>.vercel.app`, o que
         aparece em Settings → Domains — **não** o link do deploy)
-  - [ ] Se o build falhar, mande o log — a leitura está em *Quando falhar, onde olhar*
+  - [x] Se o build falhar, mande o log — a leitura está em *Quando falhar, onde olhar*
 
-- [ ] **T2. Acrescentar a origem da Vercel ao `CORS_ORIGENS`** — *executada pelo Igor, no painel da
+- [x] **T2. Acrescentar a origem da Vercel ao `CORS_ORIGENS`** — *executada pelo Igor, no painel da
       Railway* (AC: 6)
-  - [ ] Variável `CORS_ORIGENS` = `http://localhost:3000,https://<projeto>.vercel.app`
-  - [ ] Separador é **vírgula, sem espaço depois** — o `_separar_por_virgula` da `Settings` faz
-        `strip()`, então espaço não quebra, mas a forma canônica dos READMEs é sem
-  - [ ] **Sem barra no fim** e **sem caminho**: origem é esquema + host, não URL
-  - [ ] **Redeploy do backend depois de salvar.** A `Settings` é `@lru_cache` e nasce com o
-        processo — variável trocada sem redeploy não chega a lugar nenhum
-  - [ ] ⚠️ **Nada de `*`.** Curinga é incompatível com `allow_credentials=True` desde a 1.1
+  - [x] Variável `CORS_ORIGENS` = `http://localhost:3000,https://elite-dev-rock-hub.vercel.app`
+  - [x] Separador vírgula sem espaço, forma canônica dos READMEs
+  - [x] Sem barra no fim e sem caminho — origem é esquema + host
+  - [x] **Redeploy do backend feito.** O primeiro valor salvo tinha o marcador `<projeto>` colado
+        literalmente (`https://<projeto>.vercel.app`), e o preflight recusava por isso — corrigido
+        para o domínio real e redeployado
+  - [x] Nenhum `*` — preflight de origem não autorizada responde `400`, como deve
 
-- [ ] **T3. Verificar o que está no ar** (AC: 1, 4, 5)
-  - [ ] `curl -i https://<vercel>/` → `200`, e o HTML traz o masthead. Confira no corpo a presença
-        do fundo `#0E0D0C` vindo do `globals.css` — é a prova barata de que a identidade subiu
-  - [ ] `curl -i -X POST https://<vercel>/api/auth/login` com as **quatro** credenciais semeadas →
-        `200` com o papel de cada uma. **Esta é a chamada que prova a story inteira**: ela só
-        responde se o build leu o `API_URL`, se o proxy reescreveu para a Railway e se o banco de lá
-        respondeu
-  - [ ] No `Set-Cookie` dessa resposta: `HttpOnly`, `Secure`, `SameSite=lax` e **nenhum `Domain=`**.
-        Se aparecer `Domain=.up.railway.app`, alguma coisa mudou no backend — pare
-  - [ ] `curl -i https://<vercel>/api/auth/eu` **sem cookie** → `401 NAO_AUTENTICADO`
-  - [ ] `curl -i https://<vercel>/rota-que-nao-existe` → `404`, servido pelo `not-found.tsx` **com a
-        casca do projeto** (o HTML tem o masthead), não pelo 404 padrão do Next
-  - [ ] ⚠️ **Confirme que a URL abre sem autenticação da Vercel.** `curl -i` na raiz não pode
-        devolver `401`/`403` nem um HTML de `Authentication Required`. Se devolver, a URL é a
-        gerada por deploy, não o domínio de produção — peça a certa antes de escrever qualquer README
-  - [ ] Peça ao Igor a conferência que só existe no navegador: entrar, ver o masthead virar
-        `Minha conta`, abrir a `/conta`, `Sair` e ver o masthead voltar **sem recarregar** (é o
-        `router.refresh()` da 1.6, e não há teste que o cubra), e a aba Network mostrando `/api/...`
-        no domínio da Vercel
-  - [ ] ⚠️ **Não crie conta pela URL de produção para "testar"** sem necessidade. Se criar, anote —
-        a conta fica, porque o seed não apaga nada
+- [x] **T3. Verificar o que está no ar** (AC: 1, 4, 5)
+  - [x] `curl -i https://elite-dev-rock-hub.vercel.app/` → `200`, e o HTML traz o masthead. Os nove
+        tokens da identidade estão no CSS publicado (minificados em minúsculo: `#0e0d0c`, `#ede8dc`,
+        `#f2a413`, `#2a2622`, `#d93b2b`, `#3fa96b`, mais `--breu`/`--cal`/`--ambar` e Georgia)
+  - [x] `POST /api/auth/login` com as **quatro** credenciais semeadas → `200` com o papel de cada
+        uma: Helena Marques/`ORGANIZADOR`, Bruno Tavares/`CLIENTE`, Marina Aoki/`CLIENTE`, Jonas
+        Ribeiro/`PORTARIA`
+  - [x] `Set-Cookie`: `HttpOnly; Max-Age=28800; Path=/; SameSite=lax; Secure` e **nenhum `Domain=`**
+  - [x] `GET /api/auth/eu` **sem cookie** → `401 {"erro":{"codigo":"NAO_AUTENTICADO",…}}`
+  - [x] `GET /rota-que-nao-existe` → `404` com o masthead no HTML — é o `not-found.tsx` da raiz
+  - [x] ⚠️ A URL abre sem autenticação da Vercel: `200` na raiz, sem `Authentication Required` nem
+        `_vercel_sso` no corpo. É o domínio de produção, não a URL gerada por deploy
+  - [x] Conferência de navegador **feita pelo Igor em janela anônima**: entrar, masthead virar
+        `Minha conta`, `/conta`, `Sair` e o masthead voltar **sem recarregar**, e a aba Network
+        mostrando `/api/...` no domínio da Vercel
+  - [x] ⚠️ Nenhuma conta foi criada pela URL de produção. Só login, que não escreve nada
 
-- [ ] **T4. `frontend/.env.example`** (AC: 3, 8)
-  - [ ] Acrescente ao fim um bloco comentado **"Em produção (Vercel)"**: `API_URL` existe lá com a
-        URL da Railway, definida em Production **e** Preview, e o arquivo aqui continua com
-        `localhost:8000` de propósito
-  - [ ] Escreva a regra que dói descobrir depois: **sem barra no fim** — o `rewrites()` concatena
-        `${API_URL}/:caminho*`, e uma barra a mais vira `//auth/login`
-  - [ ] Mesma regra da 1.1 e da 1.8: o arquivo lista **nomes** e diz onde o valor mora
+- [x] **T4. `frontend/.env.example`** (AC: 3, 8)
+  - [x] Bloco comentado **"Em produção (Vercel)"** ao fim, com `API_URL` em Production e Preview
+  - [x] As três regras escritas: sem barra no fim, `https://` e não `http://`, sem `NEXT_PUBLIC_`
+  - [x] O valor efetivo do arquivo continua `localhost:8000`
 
-- [ ] **T5. `frontend/README.md`** (AC: 7, 8)
-  - [ ] Seção nova **Deploy na Vercel**, depois de *Variáveis de ambiente*: a tabela de campos do
-        painel, a variável, a branch de produção e o domínio. O conteúdo está em *O painel da
-        Vercel, campo por campo* — copie de lá, é para isso que ele existe
-  - [ ] Subseção **Qual URL publicar** — o domínio de produção contra a URL gerada por deploy, com o
-        sintoma de errar: tela de login da Vercel na cara de quem avalia
-  - [ ] Subseção **O proxy em produção**: o diagrama que já existe na seção *O proxy `/api/\*`*
-        deixa de ser hipotético — atualize `rockhub.vercel.app` / `rockhub.up.railway.app` para os
-        domínios reais e diga que isto está **verificado**, não previsto
-  - [ ] Em *Variáveis de ambiente*: a frase "em produção, `API_URL` vai apontar para a Railway — e
-        isso ainda não aconteceu" **está desatualizada**. Reescreva: aconteceu, é esta story, e o
-        valor mora no painel
-  - [ ] Entrada **Story 1.9** no histórico da camada, em primeira pessoa
-  - [ ] Acrescente à lista de verificação manual os itens que agora valem **em produção**, não só em
-        `localhost`
+- [x] **T5. `frontend/README.md`** (AC: 7, 8)
+  - [x] Seção **Deploy na Vercel** em cinco partes: o projeto, a variável, qual URL publicar, como
+        saber que deu certo, e quando falhar onde olhar — mais *O que a Vercel faz com este projeto*
+  - [x] Subseção **Qual URL publicar**, com a proteção de deploy do plano Hobby e a conferência em
+        janela anônima
+  - [x] O diagrama do proxy com os domínios reais, marcado como **verificado, não previsto**
+  - [x] A frase "isso ainda não aconteceu" reescrita — aconteceu, e o valor mora no painel
+  - [x] Seção **Histórico desta camada**, nova, com a entrada da Story 1.9 em primeira pessoa
+  - [x] Subseção **E a mesma lista, em produção** na verificação manual
 
-- [ ] **T6. `README.md` da raiz** (AC: 8, 10)
-  - [ ] *Estado atual*: as duas metades estão publicadas. Reescreva o parágrafo que diz "o frontend
-        ainda roda só na sua máquina"
-  - [ ] *No ar*: a seção ganha a **URL do frontend em primeiro lugar** — é ela que quem avalia abre.
-        A da API continua, como segunda linha, para quem quiser o `/docs`
-  - [ ] *Roteiro de avaliação*: um bloco novo **no topo**, "sem instalar nada", com o caminho pela
-        URL pública: entrar como organizador → `/conta` mostra Helena Marques → sair → criar conta
-        pelo `/cadastro` → entrar de novo. O roteiro local continua abaixo, para quem for rodar na
-        máquina
-  - [ ] *Contas semeadas*: as mesmas quatro entram pela URL pública
-  - [ ] *Stack e estrutura*: a linha `Deploy | Railway ... · Vercel (frontend) *(Story 1.9)*` vira as
-        duas **no ar**
-  - [ ] *Decisões*: **duas** entradas novas, cada uma com o que caiu e por quê — a configuração da
-        Vercel no painel em vez de `vercel.json` versionado; e o `CORS_ORIGENS` com a origem da
-        Vercel apesar de o CORS não estar no caminho do navegador. Matéria-prima em *Decisões que o
-        Igor tomou*
-  - [ ] *O que não está pronto*: **remova** a linha "Frontend publicado". Acrescente o que passou a
-        ser verdade: os deploys de Preview escrevem no **banco de produção** (mesma `API_URL`), e não
-        há domínio próprio
-  - [ ] **Primeira pessoa, como o Igor escrevendo**
+- [x] **T6. `README.md` da raiz** (AC: 8, 10)
+  - [x] *Estado atual*: as duas metades no ar
+  - [x] *No ar*: a URL do frontend em primeiro lugar; a da API abaixo, com a ressalva de que o
+        navegador nunca fala com ela
+  - [x] *Roteiro de avaliação*: bloco **Sem instalar nada** no topo, em 6 passos, e o roteiro local
+        abaixo como *Na sua máquina*
+  - [x] *Contas semeadas*: as quatro entram pela URL pública, conferidas
+  - [x] *Stack e estrutura*: `Vercel (frontend) e Railway (API e banco) — as duas no ar`
+  - [x] *Decisões*: **quatro** mexidas em vez de duas — a entrada da configuração no painel virou
+        decisão das duas plataformas, mais três novas: `CORS_ORIGENS`, branch da epic publicada
+        (com o Preview dentro) e o `.gitignore` que engolia `src/lib/`
+  - [x] *O que não está pronto*: "Frontend publicado" removida; entraram Preview escrevendo no banco
+        de produção, ausência de domínio próprio e a branch divergente da `main`
+  - [x] Primeira pessoa em tudo
 
-- [ ] **T7. `backend/README.md`** (AC: 6, 8)
-  - [ ] Em *Deploy na Railway*, na tabela de variáveis: `CORS_ORIGENS` passa a ter valor próprio em
-        produção, com o valor real (é origem pública, não segredo)
-  - [ ] Uma subseção curta ou nota: **por que essa variável não é o que faz o login funcionar** — o
-        navegador fala com a Vercel, o servidor do Next fala com a Railway, e CORS não participa de
-        requisição servidor-a-servidor. Ela é rede de proteção de chamada direta
-  - [ ] Entrada **Story 1.9** no *Histórico desta camada*: o backend não teve uma linha alterada;
-        o que mudou foi uma variável no painel
-  - [ ] Não invente mudança que não houve
+- [x] **T7. `backend/README.md`** (AC: 6, 8)
+  - [x] `CORS_ORIGENS` na tabela de variáveis, com o valor real
+  - [x] Subseção **Por que essa variável não é o que faz o login funcionar**, com o diagrama das
+        duas setas e o `curl` de preflight para conferir de fora
+  - [x] Entrada **Story 1.9** no *Histórico desta camada*: nenhuma linha alterada, o que mudou foi
+        uma variável no painel
+  - [x] Nenhuma mudança inventada
 
-- [ ] **T8. Verificação** (AC: todos)
-  - [ ] Busca no repositório por `vercel.json`, `Dockerfile`, `Procfile`, `.github/` → zero
-  - [ ] Busca pela URL da Vercel dentro de `frontend/src/` e `frontend/next.config.ts` → zero. Ela
-        mora no painel, não no código
-  - [ ] `frontend/.env.example` continua com `localhost:8000` como valor efetivo
-  - [ ] Nenhum arquivo de `frontend/src/`, `backend/app/`, `migrations/`, `seeds/` ou `tests/` na
-        lista de alterados. Os arquivos desta story são **quatro**, todos de documentação
-  - [ ] `npm run build` local — **só se o Igor pedir**. Ele não instala nada (o `node_modules` já
-        está lá), e é a mesma coisa que a Vercel roda; mas o build da Vercel já provou isso, e o
-        contrário desta story é gastar tempo com o que o painel confirmou
-  - [ ] Os três READMEs atualizados
+- [x] **T8. Verificação** (AC: todos)
+  - [x] `vercel.json`, `Dockerfile`, `Procfile`, `.github/`, `middleware.ts` → **zero**
+  - [x] Busca por `vercel` em `frontend/src/`, `frontend/next.config.ts` e `backend/app/` → **zero**
+  - [x] `frontend/.env.example` continua com `localhost:8000` como valor efetivo
+  - [x] Nenhum arquivo de `frontend/src/`, `backend/app/`, `migrations/`, `seeds/` ou `tests/`
+        alterado. **Cinco** arquivos em vez de quatro — o `.gitignore` entrou (ver Completion Notes)
+  - [x] `npm run build` local não foi rodado — o Igor não pediu, e o build da Vercel já provou
+  - [x] **85 testes do backend passando** (`uv run pytest -q` → `85 passed in 7.50s`)
+  - [x] Os três READMEs atualizados
 
-- [ ] **T9. Documentação** — coberta por T4, T5, T6 e T7 (obrigatório — regra do projeto)
+- [x] **T9. Documentação** — coberta por T4, T5, T6 e T7 (obrigatório — regra do projeto)
 
 ## Dev Notes
 
@@ -699,14 +675,94 @@ pede credencial e não sugere caminho por CLI autenticada. Se a story parecer bl
 
 ### Agent Model Used
 
+claude-opus-5[1m]
+
 ### Debug Log References
+
+Verificação por HTTP contra `https://elite-dev-rock-hub.vercel.app`, em 2026-08-11:
+
+| Verificação | Resultado |
+|---|---|
+| `GET /` | `200`, `X-Powered-By: Next.js`, HTML com o masthead. Sem `Authentication Required` |
+| Tokens da identidade no CSS publicado | Os nove presentes (`#0e0d0c`, `#ede8dc`, `#f2a413`, `#2a2622`, `#d93b2b`, `#3fa96b`, `--breu`…`--verde`, Georgia) |
+| `POST /api/auth/login` × 4 contas | `200` nas quatro, com nome e papel corretos |
+| `Set-Cookie` | `HttpOnly; Max-Age=28800; Path=/; SameSite=lax; Secure` — **sem `Domain=`** |
+| `GET /api/auth/eu` sem cookie | `401 NAO_AUTENTICADO` |
+| `GET /rota-que-nao-existe` | `404` com o masthead — `not-found.tsx` da raiz |
+| `OPTIONS /auth/login` na Railway, `Origin` da Vercel | `200` com `access-control-allow-origin: https://elite-dev-rock-hub.vercel.app` ✅ *(antes da correção: `400` sem o cabeçalho)* |
+| `OPTIONS /auth/login`, `Origin: http://localhost:3000` | `200` com `access-control-allow-origin` ecoado |
+| `OPTIONS /auth/login`, `Origin: https://exemplo.com` | `400` — origem não autorizada recusada, sem curinga |
+| `POST /api/auth/login` **depois** do redeploy do backend | `200`, `Set-Cookie` intacto — o redeploy não regrediu nada |
+| `uv run pytest -q` | `85 passed in 7.50s` |
+
+**Build vermelho nº 1** — Production Branch em `main` e `Root Directory` em `./`. Esperado; as duas
+armadilhas estavam previstas nas Dev Notes por terem acontecido na Story 1.8, no painel da Railway.
+
+**Build vermelho nº 2** — `Module not found` em sete arquivos, com o `Root Directory` e a branch já
+corretos. Diagnóstico pelo rastro de import: `BotaoSair.tsx:7`, `FormularioCadastro.tsx:9`,
+`FormularioLogin.tsx:9`, `(entrada)/cadastro/page.tsx:4`, `(entrada)/login/page.tsx:4`,
+`(site)/conta/page.tsx:4` e `Masthead.tsx:1` — **os sete importam de `@/lib`, e nenhum import de
+`@/components` aparecia**. Causa: `.gitignore:17` trazia `lib/` do template Python do GitHub, e
+padrão sem barra inicial casa em qualquer profundidade → `frontend/src/lib/` nunca foi versionado.
 
 ### Completion Notes List
 
+**A story provou o que se propôs a provar.** O cookie de sessão atravessa Vercel → Railway sem
+ajuste nenhum de código, e o proxy `/api/*` escrito na Story 1.4 funcionou de primeira assim que o
+build ficou correto. Nenhuma linha de `frontend/src/`, `frontend/next.config.ts`, `backend/app/`,
+`migrations/`, `seeds/` ou `tests/` foi editada — a quinta story seguida sem dependência nova.
+
+**Dois desvios do escopo previsto, ambos para registro:**
+
+1. **Cinco arquivos em vez de quatro.** O `.gitignore` da raiz entrou. Não é mudança de escopo por
+   conveniência: sem ela o deploy é impossível, porque `frontend/src/lib/` nunca esteve no
+   repositório. O AC9 pede que nenhuma linha de `frontend/src/` mude, e isso continua verdadeiro —
+   os três arquivos de `src/lib/` passaram a ser **rastreados**, não editados. A decisão de ancorar
+   `/lib/` em vez de abrir exceção com `!frontend/src/lib/` foi do Igor, e está no README da raiz com
+   a alternativa descartada.
+2. **Quatro entradas de decisão no README da raiz, não duas.** A entrada existente sobre
+   configuração no painel foi ampliada para as duas plataformas (em vez de criar uma segunda
+   quase idêntica), e entraram três novas: `CORS_ORIGENS`, branch da epic publicada com o Preview
+   dentro, e o `.gitignore`.
+
+**A descoberta que vale mais que o deploy:** o bug do `.gitignore` estava latente desde a Story 1.2 e
+**nenhuma verificação local podia encontrá-lo** — `npm run build`, `tsc --noEmit`, ESLint e os 85
+testes do backend passam todos, porque os arquivos existem no disco. Só um clone limpo revela, e o
+primeiro clone limpo deste projeto foi o da Vercel. É o argumento concreto a favor de publicar cedo,
+e está registrado nos três READMEs.
+
+**O terceiro tropeço, e ele não estava previsto em lugar nenhum: um marcador de posição colado como
+valor.** O `CORS_ORIGENS` foi salvo na Railway como
+`http://localhost:3000,https://<projeto>.vercel.app` — com o `<projeto>` literal, do jeito que a
+story o escreve para ser substituído. O preflight recusava a origem da Vercel enquanto o painel
+mostrava uma variável de aparência correta, e a metade `localhost` continuava funcionando, o que
+tornava o sintoma ainda mais confuso. Foi encontrado porque o `curl` de preflight compara **as duas**
+origens, não só a nova. Fica a lição para as seções de deploy dos READMEs: quando o valor tem
+marcador, o exemplo copiável precisa vir com o valor real ao lado — e é assim que ele está escrito
+agora em `backend/README.md`.
+
+**Os dois itens que dependiam do Igor foram fechados:** a variável corrigida e redeployada
+(preflight `200` com a origem ecoada, e `400` para origem não autorizada), e a conferência de
+navegador feita em janela anônima — masthead trocando ao entrar e ao sair sem recarregar, Network
+com `/api/...` no domínio da Vercel. Um `POST /api/auth/login` depois do redeploy confirmou que o
+reinício do backend não regrediu nada.
+
 ### File List
+
+| Arquivo | Mudança |
+|---|---|
+| `.gitignore` | `lib/` e `lib64/` → `/lib/` e `/lib64/`, com o comentário do porquê |
+| `frontend/.env.example` | +bloco comentado "Em produção (Vercel)" |
+| `frontend/README.md` | +Deploy na Vercel (5 subseções + o que a Vercel faz), +Histórico desta camada com a Story 1.9, +verificação em produção; diagrama do proxy com domínios reais; parágrafo desatualizado de `API_URL` reescrito; aviso do `next build` atualizado; intro com a URL publicada |
+| `README.md` | Estado atual, No ar, Roteiro de avaliação (bloco "Sem instalar nada"), Contas semeadas, Stack, 4 entradas de decisão, O que não está pronto |
+| `backend/README.md` | `CORS_ORIGENS` na tabela de variáveis, +Por que essa variável não é o que faz o login funcionar, +Story 1.9 no Histórico desta camada |
+
+**Rastreados pela primeira vez** (existiam no disco desde a Story 1.2, nunca no repositório):
+`frontend/src/lib/api.ts`, `frontend/src/lib/sessao.ts`, `frontend/src/lib/caminho.ts`.
 
 ## Change Log
 
 | Data | Mudança |
 |---|---|
+| 2026-08-11 | Frontend publicado em `https://elite-dev-rock-hub.vercel.app`, com `Root Directory = frontend`, `API_URL` em Production e Preview, e a branch da epic como Production Branch. Verificado por HTTP: raiz `200` com os nove tokens da identidade no CSS publicado, login `200` nas quatro contas semeadas com os papéis certos, `Set-Cookie` com `HttpOnly`/`Secure`/`SameSite=lax` e sem `Domain=`, `401` sem cookie e `404` com a casca do projeto. Documentação escrita a partir do que foi executado, nos quatro arquivos previstos. **Um quinto arquivo entrou fora do previsto:** o `.gitignore` da raiz trazia `lib/` do template Python, que casa em qualquer profundidade e mantinha `frontend/src/lib/` fora do repositório desde a Story 1.2 — o segundo build da Vercel falhou com `Module not found` nos sete arquivos que importam de `@/lib`. Consertado ancorando o padrão (`/lib/`), com `!frontend/src/lib/` descartado por deixar a armadilha armada para a próxima pasta aninhada. Nenhuma linha de `frontend/src/` ou `backend/` editada; 85 testes do backend passando. **Fechamento:** o `CORS_ORIGENS` da Railway tinha sido salvo com o marcador `<projeto>` colado literalmente, e o preflight recusava a origem da Vercel enquanto o painel parecia certo — corrigido para o domínio real e redeployado, com preflight `200` ecoando a origem e `400` para origem não autorizada. Conferência de navegador feita pelo Igor em janela anônima: masthead trocando ao entrar e ao sair sem recarregar, Network com `/api/...` no domínio da Vercel. Todos os 10 ACs cumpridos |
 | 2026-08-10 | Story 1.9 criada e contextualizada. Três decisões do Igor incorporadas: acrescentar a origem da Vercel ao `CORS_ORIGENS` da Railway (em vez de manter só o `localhost`, ainda que o CORS não esteja no caminho do navegador por causa do proxy), publicar a branch da epic na Vercel (em vez de mesclar na `main` antes do code review) e definir `API_URL` também para os deploys de Preview (em vez de só Production, o que deixaria todo Preview com o login quebrado em silêncio). Oito ACs acrescentados aos dois do `epics.md`: a URL publicada precisa ser o domínio de produção e não a URL gerada por deploy — no plano Hobby esta última fica atrás do login da Vercel, e é justamente a que aparece em destaque ao fim do build; `Root Directory = frontend` e Production Branch trocada, que são os dois erros que a Story 1.8 já cometeu no painel da Railway; `API_URL` sem `NEXT_PUBLIC_`, com `https://` e sem barra final, definida antes do build porque o `rewrites()` congela no `next build`; o `Set-Cookie` voltando pelo domínio da Vercel sem atributo `Domain=`; os três READMEs refazíveis numa conta vazia; e a fronteira de que nenhuma linha de `frontend/src/` ou `backend/app/` muda. Registrada a divisão de verificação que esta story tem e a 1.8 não tinha: o `curl` prova o proxy, o cookie e o 404, mas o `router.refresh()` do masthead e a origem das chamadas na aba Network só existem no navegador e são conferência do Igor |
