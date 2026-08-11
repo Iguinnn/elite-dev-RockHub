@@ -1359,6 +1359,101 @@ quem só abre a tela para olhar, sem gastar chamada até o clique — mas exigir
 sugestões própria (fixa no código, ou alimentada de algum outro lugar, que é escopo novo) e não
 mostraria nenhum exemplo real antes do clique, só nomes.
 
+### O catálogo filtra por classificação, e o filtro é híbrido
+
+**Decidi** que toda chamada à Discovery leva `segmentId=KZFzniwnSyZfZ7v7nJ` (o segmento *Music* da
+taxonomia deles), e que `genreId=KnvZfZ7vAeA` (*Rock*, filho de Music) entra **só quando não há termo
+digitado** — ou seja, só na vitrine que abre a tela.
+
+**Por quê:** dois problemas, um de produto e um de identidade. Medindo contra a API em 11/08/2026,
+`countryCode=BR` sozinho devolvia 168 eventos, e o primeiro da lista era o *SP2B — São Paulo Beyond
+Business*, uma feira de negócios. A primeira coisa que alguém vê no fluxo de publicação era um
+evento corporativo anunciado como sugestão de show para vender ingresso. E o segundo problema é que
+o produto se chama RockHub e o catálogo não tinha relação nenhuma com rock — um filtro de gênero é a
+diferença entre um nome e um recorte.
+
+O que decidiu o **híbrido**, em vez do gênero fixo em tudo, foi uma contraprova que eu medi:
+
+```
+keyword=rosalia  +  segmentId=Music                 ->  1 resultado
+keyword=rosalia  +  segmentId=Music + genreId=Rock  ->  0 resultados
+```
+
+Com o gênero preso também na busca por termo, o organizador que digita o nome exato do show que quer
+publicar **não acha** — e a tela não tem como explicar por quê, porque ela não sabe que existe um
+filtro de gênero atrás. Campo de busca que não acha o que a pessoa digitou é lido como defeito,
+sempre. A vitrine é o contrário: ali ninguém pediu nada específico, e mostrar rock é o recorte do
+produto se apresentando. É o único lugar onde o filtro de gênero informa em vez de frustrar.
+
+**O que caiu:**
+
+- **`classificationName=Rock`** — é o parâmetro que a maioria usaria, e é o errado. Ele faz match
+  textual difuso contra segmento, gênero, subgênero e tipo: testei, e devolve Rosalía (`World`) e
+  Tiago Iorc (`Pop`) num filtro chamado Rock. Usá-lo demonstraria menos conhecimento da API, não mais
+- **`genreId=Rock` sempre, inclusive na busca** — o produto viraria literalmente o que o nome diz, e
+  o recorte é defensável. Caiu por dois números: **13 eventos no catálogo inteiro**, e busca por
+  termo devolvendo vazio para qualquer coisa que não fosse rock brasileiro. Soma-se que a taxonomia
+  deles erra — *Ivan Lins* vem classificado como `Rock` — então o recorte rígido exclui por engano
+  tanto quanto inclui
+- **Só `segmentId=Music`** — resolve o problema de produto (a feira sai) e não resolve o de
+  identidade: RockHub seguiria sendo só um nome. Continua sendo metade da decisão que adotei
+- **Não fazer nada** — zero risco e zero trabalho, ao custo de o avaliador abrir a tela de publicação
+  e ver uma feira de negócios como primeira sugestão
+
+Os dois ids são dado de terceiro fixado no meu código. Estão como constantes nomeadas, com o motivo
+ao lado e o ponteiro para `GET /discovery/v2/classifications.json`, que é por onde se reconfere a
+árvore se um dia a busca vier vazia sem explicação.
+
+### Essa mudança virou uma techspec avulsa, e não uma Story 2.7
+
+**Decidi** implementar o filtro acima como um commit `feat` fora da numeração da Epic 2, com a
+especificação em [docs/techspec-filtro-do-catalogo.md](docs/techspec-filtro-do-catalogo.md), em vez
+de criar uma Story 2.7 no `epics.md` e no `sprint-status.yaml`.
+
+**Por quê:** o tamanho não é de story — são seis linhas de código, quatro testes e dois parágrafos de
+README. O que uma story me daria e eu não queria perder são duas coisas: **o porquê registrado
+enquanto está fresco** e **critérios de pronto explícitos**. A techspec dá as duas, e é honesta sobre
+o que aconteceu: eu abri a tela da Story 2.2 pronta, vi uma feira de negócios no topo e resolvi
+ali. O planejamento não previu isso porque não tinha como prever — só aparece com a tela na frente.
+
+**O que caiu:**
+
+- **Uma Story 2.7 no `epics.md`** — manteria tudo num lugar só, com numeração uniforme e o
+  `sprint-status.yaml` como fonte única. Caiu porque o `epics.md` é artefato de **planejamento**,
+  escrito antes da implementação; enfiar uma story nele depois faz o plano parecer que previu algo
+  que ele não previu. Prefiro que o histórico mostre o plano como ele foi feito, e a descoberta como
+  ela aconteceu — inclusive porque a descoberta é a parte mais interessante das duas
+- **Um commit sem spec nenhuma, só a mensagem** — é o mais barato, zero cerimônia. Caiu porque o
+  *porquê* evapora: daqui a três dias ninguém sabe por que `segmentId` é incondicional e `genreId`
+  não é, e a próxima pessoa "simplifica" movendo os dois para fora do `if`. O teste do `genreId`
+  **ausente** na busca por termo existe exatamente para acusar isso, e a techspec existe para
+  explicar por que aquele teste importa
+- **Embutir na Story 2.4**, que é a próxima e ainda não começou — pegaria carona num commit já
+  planejado, sem artefato novo. Caiu porque a 2.4 é sobre publicar um evento, e misturar um filtro de
+  catálogo nela faz o histórico de commits mentir sobre o que cada commit fez. Um commit, um assunto
+
+Para o rastro não se perder, ela é citada em três lugares: um comentário no bloco da Epic 2 do
+`sprint-status.yaml`, uma linha no Change Log da Story 2.2 (dona dos arquivos tocados) e a própria
+mensagem do commit.
+
+### O id da Ticketmaster saiu da tela do organizador
+
+**Decidi** remover o `id_externo` da linha de origem de cada resultado do catálogo. Ela era
+`Ticketmaster · ZFIMVHTNMZ17KBX_ · Qualistage · Rio de Janeiro` e passou a ser
+`Ticketmaster · Qualistage · Rio de Janeiro`.
+
+**Por quê:** aquele código identifica o show para o **meu código**, não para quem está escolhendo o
+que publicar. Quem olha a tela reconhece o show pelo nome, pela casa e pela cidade — que já estão
+logo ali do lado. O id não ajuda a decidir nada, e um hash de API no meio de uma tela que imita
+jornal impresso é ruído justamente na parte que carrega a identidade do produto.
+
+**O que caiu:** **mantê-lo, por rastreabilidade** — com o id na tela, dá para conferir o evento
+direto na Discovery se algum dia a publicação sair errada. Caiu porque ninguém no fluxo avaliado faz
+isso, e o id não sumiu do sistema: continua vindo da API, continua sendo a `key` de React da lista e
+continua indo para `origem_externa_id` na publicação. E **mostrá-lo só no `title`, ao passar o
+mouse** — preservaria a conferência sem o ruído, mas é invisível no toque e acrescenta um mecanismo
+para uma necessidade que ninguém demonstrou ter.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -1379,6 +1474,7 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` já existe para o organizador desde a Story 2.2 — mas `Meus eventos` (Story 2.6) e `Turnos` para a portaria (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |
 | **Busca do organizador limitada ao Brasil** | `GET /organizador/catalogo` (Story 2.2) fixa `countryCode=BR` na chamada à Discovery. Um show fora do Brasil não aparece nesta busca — decisão registrada em [`countryCode=BR` fixo na busca da Discovery](#countrycodebr-fixo-na-busca-da-discovery), com a alternativa de filtro visível que ficou de fora por custar mais do que uma story de um commit comporta |
+| **Busca por artista sem show marcado no Brasil devolve vazio** | `metallica` e `coldplay` dão zero resultados, e **não é o filtro de classificação**: conferi os dois sem `segmentId` nenhum e continuam em zero. Eles simplesmente não têm evento no catálogo brasileiro da Ticketmaster hoje. A tela mostra "Nenhum show encontrado para essa busca", que é verdade, mas não distingue "não existe no catálogo" de "existe e meu filtro escondeu" — separar os dois exigiria uma segunda chamada sem filtro só para descobrir qual dos casos é, e gastar cota para melhorar uma mensagem de erro não se paga |
 | **Evento sem entrada no catálogo da Ticketmaster** | Não dá para publicar um show que não esteja no catálogo — um cover de bar, um evento independente, uma festa sem página na Ticketmaster. É consequência direta de o enunciado pedir que o evento nasça "a partir de" a API externa, e está detalhado em [Publicação exige atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento), com a alternativa (cadastro manual) que ficou de fora |
 | **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
 | **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**, porque o `API_URL` está definido com o mesmo valor em Production e Preview. Uma conta criada num Preview é uma conta no banco real. A alternativa — definir a variável só para Production — deixaria todo Preview com o login quebrado em silêncio, que é pior; e um segundo serviço Railway com banco próprio é infraestrutura que não se paga em sete dias. A mitigação que existe hoje: no plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |

@@ -93,14 +93,13 @@ export default async function PublicarEvento({
           {resultado.itens.map((item) => {
             // A linha de origem só entra com o que existe: `local` e `cidade`
             // podem faltar, e juntar tudo com `filter` evita o "Ticketmaster ·
-            // G5VYZ9A1KD ·  · " de buracos que sobraria se algum estivesse
-            // ausente.
-            const origem = [
-              "Ticketmaster",
-              item.id_externo,
-              item.local,
-              item.cidade,
-            ]
+            //  · " de buracos que sobraria se algum estivesse ausente.
+            //
+            // O `id_externo` saiu daqui: ele identifica o show para o nosso
+            // código, não para quem está escolhendo o que publicar — quem
+            // olha reconhece pelo nome, pela casa e pela cidade, que já estão
+            // logo ao lado. Ele continua vindo da API e vira `key` abaixo.
+            const origem = ["Ticketmaster", item.local, item.cidade]
               .filter(Boolean)
               .join(" · ");
 

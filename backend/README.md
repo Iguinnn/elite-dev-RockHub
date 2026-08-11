@@ -508,11 +508,13 @@ fora dele. `buscar_eventos(termo, *, limite=20)` consulta a Discovery API e devo
 ```
 # com termo
 GET https://app.ticketmaster.com/discovery/v2/events.json
-    ?apikey=<TICKETMASTER_API_KEY>&keyword=<termo>&size=<limite>&locale=*&countryCode=BR
+    ?apikey=<TICKETMASTER_API_KEY>&keyword=<termo>&size=<limite>&locale=*
+    &countryCode=BR&segmentId=KZFzniwnSyZfZ7v7nJ
 
-# sem termo — lista de exemplos (Story 2.2, revisada)
+# sem termo — a vitrine (Story 2.2, revisada)
 GET https://app.ticketmaster.com/discovery/v2/events.json
-    ?apikey=<TICKETMASTER_API_KEY>&size=<limite>&locale=*&countryCode=BR&sort=date,asc
+    ?apikey=<TICKETMASTER_API_KEY>&size=<limite>&locale=*&sort=date,asc
+    &countryCode=BR&segmentId=KZFzniwnSyZfZ7v7nJ&genreId=KnvZfZ7vAeA
 ```
 
 **`countryCode=BR` entrou na Story 2.2**, junto com a superfície HTTP. Sem ele, buscar "metallica"
@@ -521,13 +523,41 @@ devolve os vinte primeiros shows do mundo — quase todos nos EUA — e nenhum b
 assumida**: um show fora do Brasil não aparece nesta busca. Está registrada também em [O que não
 está pronto](../README.md#o-que-não-está-pronto) do README da raiz.
 
+### O filtro de classificação é híbrido
+
+Acrescentado **fora da numeração das stories**, num commit `feat` avulso — a especificação está em
+[docs/techspec-filtro-do-catalogo.md](../docs/techspec-filtro-do-catalogo.md), e o motivo de não ser
+uma story está no [README da
+raiz](../README.md#essa-mudança-virou-uma-techspec-avulsa-e-não-uma-story-27).
+
+| Constante | Valor | Entra quando |
+|---|---|---|
+| `_SEGMENTO_MUSICA` | `KZFzniwnSyZfZ7v7nJ` (segmento *Music*) | **Sempre**, nos dois caminhos |
+| `_GENERO_ROCK` | `KnvZfZ7vAeA` (gênero *Rock*, filho de Music) | **Só sem termo** — a vitrine |
+
+Sem o segmento, o catálogo do Brasil devolve 168 eventos e o primeiro é uma feira de negócios — a
+tela de publicação abria anunciando evento corporativo como sugestão de show. Com ele, sobram os 124
+que são música de verdade.
+
+O gênero fica **fora** da busca por termo de propósito, e a razão é uma contraprova medida:
+`keyword=rosalia` com o segmento devolve 1 resultado; com segmento **e** gênero devolve 0. Quem
+digita o nome exato do show que quer publicar precisa achá-lo — a tela não tem como explicar um
+filtro de gênero que ela não sabe que existe. Na vitrine é o contrário: ninguém pediu nada
+específico, e mostrar rock é o produto se apresentando.
+
+⚠️ **Os dois ids são dado de terceiro fixado aqui no código.** São estáveis na taxonomia da
+Ticketmaster, e foram conferidos empiricamente em 11/08/2026 — não copiados de memória. Se um dia a
+busca vier vazia sem explicação, `GET /discovery/v2/classifications.json` lista a árvore inteira e é
+por onde se reconfere.
+
+Um dos quatro testes deste filtro prova o `genreId` **ausente** na busca por termo. Ele existe para
+acusar a "simplificação" de mover o parâmetro para fora do `else` — sem ele, nada quebraria e a
+busca por termo passaria a esconder resultado legítimo em silêncio.
+
 | Limite da Discovery | Valor | O que faço com ele |
 |---|---|---|
 | Por segundo | 5 req/s | Nada — uma busca por evento publicado não chega perto |
-| Por dia | 5 000 chamadas | Termo em branco não gera requisição nenhuma (ver abaixo) |
-
-**Termo vazio, só espaços, ou ausente não faz requisição — devolve `[]` direto.** Um campo de busca
-vazio não vale uma chamada da cota diária.
+| Por dia | 5 000 chamadas | Nada hoje. Toda abertura da tela gasta uma chamada (ver a revisão abaixo); 5 000/dia é folga larga para o volume de uma avaliação |
 
 **Toda falha vira o mesmo erro.** Timeout, conexão recusada, `401`, `429`, `500` ou corpo que não é
 JSON válido — os seis viram `ErroDeDominio("CATALOGO_INDISPONIVEL", ..., status_http=503)`. Quem
@@ -643,12 +673,13 @@ cd backend
 uv run pytest
 ```
 
-São **121 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **125 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o
 hash e o token de sessão, as quatro rotas de autenticação, a dependência de papel, o seed de
 avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
-[Catálogo da Ticketmaster](#catálogo-da-ticketmaster)) e a rota `GET /organizador/catalogo`
-(`test_organizador_catalogo.py`, Story 2.2, também offline).
+[Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
+classificação) e a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
+também offline).
 
 ### O que `test_seed.py` prova
 
@@ -1319,3 +1350,29 @@ O frontend desta story está documentado em [`frontend/README.md`](../frontend/R
 decisões de produto (quem chama a integração, mecânica da busca, onde mora a tela, o filtro de
 país, e a listagem sem termo) estão no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo),
 cada uma com a alternativa que descartei.
+
+### Fora da numeração — filtro de classificação no catálogo
+
+Não é story, e a escolha de não ser está registrada no [README da
+raiz](../README.md#essa-mudança-virou-uma-techspec-avulsa-e-não-uma-story-27). A especificação é
+[docs/techspec-filtro-do-catalogo.md](../docs/techspec-filtro-do-catalogo.md).
+
+Abri a tela da Story 2.2 já pronta e o primeiro item da vitrine era o *SP2B — São Paulo Beyond
+Business*: uma feira de negócios anunciada como sugestão de show para vender ingresso. O
+`countryCode=BR` filtra **onde**, e nada filtrava **o quê**.
+
+Acrescentei `segmentId=Music` em toda chamada e `genreId=Rock` só na vitrine sem termo — o híbrido
+está explicado em [O filtro de classificação é híbrido](#o-filtro-de-classificação-é-híbrido), com a
+contraprova do `rosalia` que decidiu por ele. Antes de escolher, testei os três parâmetros de
+classificação que a Discovery oferece contra a API real; o `classificationName`, que é o nome mais
+óbvio dos três, é justamente o errado — faz match textual difuso e devolve `Pop` e `World` num filtro
+chamado Rock.
+
+Quatro testes novos em `test_ticketmaster.py`, a suíte foi de 121 para **125**. O que segura a
+decisão de pé é o teste do `genreId` **ausente** na busca por termo: sem ele, mover o parâmetro para
+fora do `else` não quebraria nada e a busca passaria a esconder resultado legítimo em silêncio.
+`test_organizador_catalogo.py` não mudou — a rota não sabe que filtro existe, e é assim que deve ser.
+
+Uma linha de frontend mudou junto, e é a única: tirei o `id_externo` da linha de origem de cada
+resultado. Está em [`frontend/README.md`](../frontend/README.md) e o porquê no [README da
+raiz](../README.md#o-id-da-ticketmaster-saiu-da-tela-do-organizador).

@@ -447,3 +447,76 @@ def test_termo_com_conteudo_chama_com_keyword_e_sem_sort(
 
     assert capturado["url"].params["keyword"] == "metallica"
     assert "sort" not in capturado["url"].params
+
+
+# --------------------------------------------------------------------------- #
+# Filtro de classificação híbrido — segmentId sempre, genreId só na vitrine
+# (docs/techspec-filtro-do-catalogo.md)
+# --------------------------------------------------------------------------- #
+
+
+def test_segment_id_presente_na_busca_com_termo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    ticketmaster.buscar_eventos("metallica")
+
+    assert capturado["url"].params["segmentId"] == "KZFzniwnSyZfZ7v7nJ"
+
+
+def test_segment_id_presente_na_busca_sem_termo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    ticketmaster.buscar_eventos("")
+
+    assert capturado["url"].params["segmentId"] == "KZFzniwnSyZfZ7v7nJ"
+
+
+def test_genre_id_presente_na_vitrine_sem_termo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    ticketmaster.buscar_eventos("")
+
+    assert capturado["url"].params["genreId"] == "KnvZfZ7vAeA"
+
+
+def test_genre_id_ausente_na_busca_com_termo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """É este que prova o híbrido: sem ele, mover `genreId` para fora do
+    `else` não seria acusado por nenhum outro teste.
+    """
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    ticketmaster.buscar_eventos("rosalia")
+
+    assert "genreId" not in capturado["url"].params

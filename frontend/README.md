@@ -738,9 +738,19 @@ cover`) resolve sem essa dependência, com o
 Sem `imagem_url`, o bloco fica com o fundo `--breu2` do mesmo tamanho — a grade não pode dançar
 entre uma fila e outra.
 
-A linha de origem (`Ticketmaster · <id_externo> · <local> · <cidade>`) monta só o que existe:
-`local` e `cidade` podem ser `null`, e um `.filter(Boolean).join(" · ")` evita o
-`Ticketmaster · G5VYZ9A1KD ·  · ` cheio de buracos que sobraria de concatenar direto.
+A linha de origem (`Ticketmaster · <local> · <cidade>`) monta só o que existe: `local` e `cidade`
+podem ser `null`, e um `.filter(Boolean).join(" · ")` evita o `Ticketmaster ·  · ` cheio de buracos
+que sobraria de concatenar direto.
+
+⚠️ **O `id_externo` já esteve nessa linha, e saiu** — num commit avulso, fora da numeração das
+stories, junto do filtro de classificação do catálogo
+([techspec](../docs/techspec-filtro-do-catalogo.md)). Ela era
+`Ticketmaster · ZFIMVHTNMZ17KBX_ · Qualistage · Rio de Janeiro`. Aquele código identifica o show
+para o **código**, não para quem escolhe o que publicar: quem olha reconhece pelo nome, pela casa e
+pela cidade, que já estão do lado. O id não sumiu do sistema — continua vindo da API, continua sendo
+a `key` de React da lista e continua indo para `origem_externa_id` na publicação; só não aparece
+mais. O porquê completo, com a alternativa descartada, está no [README da
+raiz](../README.md#o-id-da-ticketmaster-saiu-da-tela-do-organizador).
 
 ### Duas guardas, e por que a segunda não é `notFound()`
 
@@ -971,9 +981,13 @@ A lista da Story 2.2, `/organizador/publicar`:
   manda para a raiz
 - **Sem sessão**, abrir `/organizador/publicar` → cai no login, e entrar leva de volta para a tela
 - **Abrir a tela sem digitar nada** → já vêm exemplos reais do catálogo, ordenados por data, sem
-  precisar buscar primeiro
+  precisar buscar primeiro — e **só show de música**, nenhuma feira de negócios ou evento
+  corporativo (é o filtro de classificação; ver a
+  [techspec](../docs/techspec-filtro-do-catalogo.md))
+- **Buscar `rosalia`** → acha. É a contraprova do filtro híbrido: se voltar vazio, o `genreId`
+  vazou do `else` e passou a valer também na busca por termo
 - **Buscar `baco`** → filas com fio, sem card, origem em versalete monoespaçada
-  (`Ticketmaster · <id_externo>`)
+  (`Ticketmaster · <local> · <cidade>`)
 - **Derrubar a Ticketmaster de propósito** (`TICKETMASTER_API_KEY` errada no `.env` do backend) →
   a tela mostra o aviso de indisponível e **não quebra**, com ou sem termo digitado
 
@@ -1088,3 +1102,22 @@ Não há teste automatizado aqui — é o corte já registrado em [Sobre não te
 aqui](#sobre-não-ter-teste-automatizado-aqui) —, mas o backend ganhou testes novos para a rota
 que esta tela consome (a suíte foi de 107 para 121, contando a revisão), documentados no [README do
 backend](../backend/README.md#story-22--buscar-a-atração-no-catálogo).
+
+### Fora da numeração — o id da Ticketmaster saiu da linha de origem
+
+Uma linha só, e ela veio de carona num commit de backend: o filtro de classificação do catálogo
+([techspec](../docs/techspec-filtro-do-catalogo.md)), que não é story e explica no [README da
+raiz](../README.md#essa-mudança-virou-uma-techspec-avulsa-e-não-uma-story-27) por que não é.
+
+Conferindo a vitrine com o filtro novo, o que me incomodou na tela não foi o filtro: era o
+`ZFIMVHTNMZ17KBX_` no meio da linha de origem de cada resultado. Ele identifica o show para o
+código, não para quem está escolhendo o que publicar — e um hash de API atravessado numa tela que
+imita jornal impresso é ruído justamente na parte que carrega a identidade. Tirei do array que monta
+a `origem`; ele continua vindo da API, continua sendo a `key` da lista e continua indo para
+`origem_externa_id` quando a Story 2.4 publicar o evento.
+
+A alternativa que caiu, com o motivo, está no [README da
+raiz](../README.md#o-id-da-ticketmaster-saiu-da-tela-do-organizador). Nenhum teste cobre isto — é o
+corte de sempre desta camada. A conferência é a lista manual de [Sobre não ter teste automatizado
+aqui](#sobre-não-ter-teste-automatizado-aqui), que ganhou duas entradas junto: a vitrine sem feira de
+negócios, e `rosalia` como prova de que o `genreId` não vazou para a busca por termo.

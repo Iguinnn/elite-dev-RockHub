@@ -33,6 +33,15 @@ _URL_EVENTOS = "https://app.ticketmaster.com/discovery/v2/events.json"
 # `locale`, muda o que a busca **acha**, não como ela é transportada.
 _PAIS = "BR"
 
+# Segmento "Music" da taxonomia da Discovery. Sem ele, a vitrine do organizador
+# abre anunciando feira de negócios e evento corporativo como sugestão de show.
+_SEGMENTO_MUSICA = "KZFzniwnSyZfZ7v7nJ"
+
+# Gênero "Rock", filho de Music. Só entra na listagem sem termo — ver
+# `buscar_eventos`. Ids conferidos em 11/08/2026; a árvore inteira está em
+# GET /discovery/v2/classifications.json, que é por onde se reconfere.
+_GENERO_ROCK = "KnvZfZ7vAeA"
+
 # 5s de inatividade é generoso para uma chamada que o organizador faz olhando a
 # tela — nem tão curto que uma rede um pouco lenta vire falso negativo, nem tão
 # longo que segure um worker do uvicorn por uma Ticketmaster travada (mesmo
@@ -135,6 +144,12 @@ def buscar_eventos(termo: str, *, limite: int = 20) -> list[ItemDoCatalogo]:
     Lista vazia (sem resultado, com ou sem termo) e catálogo indisponível
     (Ticketmaster fora do ar, ou resposta ilegível) são situações diferentes —
     a primeira devolve `[]`, a segunda levanta `ErroDeDominio`.
+
+    Filtro de classificação híbrido: `segmentId=Music` entra em toda chamada
+    (fora feira de negócios e evento corporativo do resultado); `genreId=Rock`
+    entra só quando não há termo digitado, porque prendê-lo também na busca
+    por termo esconde resultado legítimo sem explicação — `rosalia` com os
+    dois filtros juntos devolve zero, com só `segmentId` devolve um.
     """
     termo = termo.strip()
     settings = obter_settings()
@@ -144,6 +159,7 @@ def buscar_eventos(termo: str, *, limite: int = 20) -> list[ItemDoCatalogo]:
         "size": limite,
         "locale": "*",
         "countryCode": _PAIS,
+        "segmentId": _SEGMENTO_MUSICA,
     }
     if termo:
         params["keyword"] = termo
@@ -151,6 +167,7 @@ def buscar_eventos(termo: str, *, limite: int = 20) -> list[ItemDoCatalogo]:
         # Sem termo não há por que ordenar por relevância — relevância de quê?
         # Por data é o que faz a listagem parecer uma vitrine de exemplos.
         params["sort"] = "date,asc"
+        params["genreId"] = _GENERO_ROCK
 
     try:
         with _criar_cliente() as cliente:
