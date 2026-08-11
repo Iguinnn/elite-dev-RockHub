@@ -243,6 +243,93 @@
   border-top: 1px solid var(--fio);
 }
 
+/* ---- passo 3: escalar a portaria (Story 2.5) ---------------------------- */
+
+.passo3 {
+  margin-top: 46px;
+}
+
+/* Mesma anatomia do `.secTitulo` da página — título e kicker nas pontas, fio
+   embaixo. Repetido em vez de reusado porque este vive dentro da ilha: o
+   título do passo 3 some junto com o formulário, e os da página não. */
+.secTituloPasso3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTituloPasso3 h3 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.explicacaoEscala {
+  max-width: 52ch;
+  margin-top: 16px;
+  font: 17px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.filtroPortaria {
+  max-width: 420px;
+  margin-top: 20px;
+}
+
+.listaPortarias {
+  border-top: 1px solid var(--fio);
+}
+
+/* Marcação à esquerda, rótulo ocupando o resto: a linha inteira é alvo, e o
+   alvo tem 44px de altura no mínimo. Sem caixa, sem sombra, sem raio —
+   UX-DR3; o que separa uma linha da outra é o fio. */
+.linhaPortaria {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--fio);
+}
+
+.marcacao {
+  width: 17px;
+  height: 17px;
+  /* O âmbar da identidade na marcação, em vez do azul do sistema. */
+  accent-color: var(--ambar);
+  cursor: pointer;
+}
+
+.alvo {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 13px 0;
+  cursor: pointer;
+}
+
+.nomeDaConta {
+  font: 400 18px/1.2 var(--serif);
+}
+
+.emailDaConta {
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.contagemEscalados {
+  margin-top: 12px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ambar);
+}
+
 /* ---- a confirmação, no lugar do formulário ------------------------------ */
 
 .confirmacao {
@@ -285,6 +372,16 @@
 .numero {
   font: 14px/1.15 var(--mono);
   text-align: right;
+}
+
+/* Quem ficou com a porta, logo abaixo do inventário de setores. */
+.naPorta {
+  margin-top: 26px;
+}
+
+.nomesEscalados {
+  margin-top: 7px;
+  font: 18px/1.5 var(--serif);
 }
 
 .publicarOutro {
@@ -337,6 +434,26 @@
 
   .remover {
     justify-self: end;
+  }
+
+  /* Passo 3: campo de busca e lista ocupam a largura inteira, um por linha, e
+     o e-mail desce para baixo do nome em vez de espremer os dois. */
+  .filtroPortaria {
+    max-width: none;
+  }
+
+  .alvo {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    align-items: start;
+  }
+
+  .linhaPortaria {
+    align-items: start;
+  }
+
+  .marcacao {
+    margin-top: 15px;
   }
 
   .linhaInventario {

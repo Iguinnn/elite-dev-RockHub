@@ -9,10 +9,11 @@ import Campo from "@/components/Campo";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { ItemDoCatalogo } from "@/lib/catalogo";
+import type { ResultadoDasPortarias } from "@/lib/portarias";
 
 /**
- * Passo 2 da publicação: data, local e setores — e a confirmação que toma o
- * lugar do formulário quando dá certo.
+ * Passos 2 e 3 da publicação: data, local e setores; e quem valida na porta —
+ * mais a confirmação que toma o lugar dos dois quando dá certo.
  *
  * **A primeira ilha `"use client"` fora das telas de acesso**, e ela existe
  * por um motivo que dá para apontar: `+ Adicionar setor` e o `×` de remover
@@ -21,11 +22,21 @@ import type { ItemDoCatalogo } from "@/lib/catalogo";
  * renderizado no servidor; a fronteira entre os dois é a prop `item`, que
  * atravessa serializada.
  *
+ * **Um `<form>` só para os dois passos, e um `POST` só.** A escala não é um
+ * segundo envio: ou o evento nasce com quem valida na porta, ou não nasce
+ * (AD-7). Dois formulários dariam a impressão de duas ações independentes, e a
+ * primeira poderia terminar sem a segunda.
+ *
  * Os campos do evento são lidos por `FormData` no envio, sem estado, como no
- * `FormularioCadastro`. Só os setores têm `useState`, porque só eles mudam de
- * quantidade.
+ * `FormularioCadastro`. Têm `useState` só os setores, porque mudam de
+ * quantidade, e a escala, porque marcar e filtrar são interação.
+ *
+ * A prop `portarias` é a primeira vez que dado de servidor entra nesta ilha
+ * para ser **usado**, e não só exibido: a lista se filtra, se marca e vira
+ * corpo de requisição. A fronteira continua a mesma — o servidor busca, o
+ * cliente interage.
  */
-type Props = { item: ItemDoCatalogo };
+type Props = { item: ItemDoCatalogo; portarias: ResultadoDasPortarias };
 
 /** Espelha `SetorSaida` do backend (`app/schemas/evento.py`). */
 type SetorPublicado = {
@@ -35,6 +46,9 @@ type SetorPublicado = {
   vendidos: number;
   preco_centavos: number;
 };
+
+/** Espelha `PortariaSaida` do backend (`app/schemas/evento.py`). */
+type PortariaPublicada = { id: string; nome: string; email: string };
 
 /** Espelha `EventoSaida` do backend (`app/schemas/evento.py`). */
 type EventoPublicado = {
@@ -47,6 +61,7 @@ type EventoPublicado = {
   origem_externa_id: string | null;
   publicado_em: string | null;
   setores: SetorPublicado[];
+  portarias: PortariaPublicada[];
 };
 
 /** Uma linha do formulário: tudo texto, porque tudo veio de um `<input>`. */
@@ -62,6 +77,15 @@ function mensagemParaCodigo(codigo: string): string {
   }
   if (codigo === "SETOR_DUPLICADO") {
     return "Há mais de um setor com o mesmo nome. Cada setor precisa de um nome diferente.";
+  }
+  if (codigo === "EVENTO_SEM_PORTARIA") {
+    return "Escale ao menos uma conta de portaria para validar os ingressos deste evento.";
+  }
+  if (codigo === "PORTARIA_INVALIDA") {
+    // Sem dizer **qual** conta: o backend não distingue "não existe" de "não é
+    // portaria", de propósito, e a tela não inventa uma precisão que a
+    // resposta não tem. Recarregar é o conserto real — a lista mudou.
+    return "Alguma das contas escaladas não está mais disponível. Recarregue a página e escale de novo.";
   }
   if (codigo === "DADOS_INVALIDOS") {
     return "Confira os dados do formulário.";
@@ -126,7 +150,7 @@ function momentoDaPublicacao(iso: string): string {
   return `Publicado em ${dia}, ${hora}`;
 }
 
-export default function FormularioPublicacao({ item }: Props) {
+export default function FormularioPublicacao({ item, portarias }: Props) {
   // Uma linha, não três. O protótipo mostra três porque desenha o resultado
   // final; uma linha vazia mais o `+ Adicionar setor` já comunica como
   // funciona, sem sugerir que faltam duas.
@@ -137,6 +161,31 @@ export default function FormularioPublicacao({ item }: Props) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [publicado, setPublicado] = useState<EventoPublicado | null>(null);
+
+  // ⚠️ **A escala é um conjunto de ids, e a lista filtrada é só a vista.** Se a
+  // marcação fosse derivada da lista visível — por índice, por exemplo —
+  // digitar no campo de busca apagaria quem já estava escalado. Marcar "Ana",
+  // procurar "jonas", marcar "Jonas" e publicar tem que gravar os dois.
+  const [escalados, setEscalados] = useState<Set<string>>(new Set());
+  const [filtro, setFiltro] = useState("");
+
+  const contas = portarias.estado === "ok" ? portarias.itens : [];
+  const termo = filtro.trim().toLowerCase();
+  // Filtro em memória, sem ida à rede: a lista inteira já veio do servidor, e
+  // são poucas contas. Um `?q=` no endpoint seria a saída se ela crescesse.
+  const contasVisiveis = termo
+    ? contas.filter((conta) => conta.nome.toLowerCase().includes(termo))
+    : contas;
+
+  function alternarEscalado(id: string) {
+    setEscalados((atuais) => {
+      const proximos = new Set(atuais);
+      if (!proximos.delete(id)) {
+        proximos.add(id);
+      }
+      return proximos;
+    });
+  }
 
   function acrescentarSetor() {
     setSetores((atuais) => [
@@ -202,6 +251,15 @@ export default function FormularioPublicacao({ item }: Props) {
       setoresConvertidos.push({ nome, capacidade, preco_centavos: centavos });
     }
 
+    // O AD-7 conferido aqui também, e não só no servidor: a recusa acontece
+    // sem ida à rede, com o formulário inteiro preenchido do lado de cá.
+    if (escalados.size === 0) {
+      setErro(
+        "Escale ao menos uma conta de portaria — só quem estiver escalado poderá validar os ingressos.",
+      );
+      return;
+    }
+
     setEnviando(true);
 
     try {
@@ -219,6 +277,7 @@ export default function FormularioPublicacao({ item }: Props) {
           // jeito de dizer a mesma coisa.
           cidade: cidade || null,
           setores: setoresConvertidos,
+          portaria_ids: [...escalados],
         }),
       });
 
@@ -264,6 +323,16 @@ export default function FormularioPublicacao({ item }: Props) {
               </span>
             </div>
           ))}
+        </div>
+
+        {/* Quem ficou com a porta, por nome. É a única confirmação que o
+            organizador recebe da escala — não há tela de editar evento, e
+            descobrir depois que escalou a pessoa errada não teria conserto. */}
+        <div className={estilos.naPorta}>
+          <div className="kicker">Na porta</div>
+          <p className={estilos.nomesEscalados}>
+            {publicado.portarias.map((conta) => conta.nome).join(" · ")}
+          </p>
         </div>
 
         <Link href="/organizador/publicar" className={estilos.publicarOutro}>
@@ -405,6 +474,86 @@ export default function FormularioPublicacao({ item }: Props) {
             + Adicionar setor
           </button>
         </div>
+      </div>
+
+      {/* Passo 3, dentro do mesmo `<form>`: uma publicação só, um `POST` só, e
+          a escala atômica com o evento. O título mora aqui, e não na
+          `page.tsx`, porque precisa sumir junto com o formulário quando a
+          confirmação toma o lugar dele. */}
+      <div className={estilos.passo3}>
+        <div className={estilos.secTituloPasso3}>
+          <h3>3 · Escale a portaria</h3>
+          <span className="kicker">Obrigatório</span>
+        </div>
+
+        {/* Texto do protótipo, palavra por palavra: é ele que explica o que a
+            escala significa, e é requisito de AC. */}
+        <p className={estilos.explicacaoEscala}>
+          Só quem for escalado aqui poderá validar ingressos deste evento.
+        </p>
+
+        {contas.length === 0 ? (
+          // Estado vazio (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração e
+          // sem botão grande. Vale para os dois casos — não há conta de
+          // portaria nenhuma, ou a lista não pôde ser carregada —, e o
+          // formulário continua de pé nos dois.
+          <p className={estilos.aviso}>
+            {portarias.estado === "indisponivel"
+              ? "Não foi possível carregar as contas de portaria agora. Sem ao menos uma escalada, o evento não pode ser publicado — recarregue a página em instantes."
+              : "Não há nenhuma conta de portaria cadastrada. Sem ao menos uma escalada, o evento não pode ser publicado."}
+          </p>
+        ) : (
+          <>
+            <div className={estilos.filtroPortaria}>
+              <Campo
+                id="filtro-portaria"
+                type="search"
+                rotulo="Consulte pelo nome da conta"
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                // Enter num campo de texto dentro de um `<form>` envia o
+                // formulário. Aqui isso publicaria o evento no meio de uma
+                // busca — o campo filtra a cada tecla, então não há nada para
+                // confirmar com Enter.
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.preventDefault();
+                }}
+              />
+            </div>
+
+            {contasVisiveis.length === 0 ? (
+              <p className={estilos.aviso}>
+                Nenhuma conta de portaria com esse nome.
+              </p>
+            ) : (
+              <div className={estilos.listaPortarias}>
+                {contasVisiveis.map((conta) => (
+                  <div key={conta.id} className={estilos.linhaPortaria}>
+                    <input
+                      type="checkbox"
+                      id={`portaria-${conta.id}`}
+                      className={estilos.marcacao}
+                      checked={escalados.has(conta.id)}
+                      onChange={() => alternarEscalado(conta.id)}
+                    />
+                    {/* O rótulo é a linha inteira: alvo grande, e o nome e o
+                        e-mail lidos junto com a marcação. */}
+                    <label htmlFor={`portaria-${conta.id}`} className={estilos.alvo}>
+                      <span className={estilos.nomeDaConta}>{conta.nome}</span>
+                      <span className={estilos.emailDaConta}>{conta.email}</span>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* A contagem em texto, e não só pelo estado visual das marcações:
+                nenhuma informação só por cor ou só por forma (UX-DR9). */}
+            <div className={estilos.contagemEscalados}>
+              {escalados.size === 1 ? "1 escalado" : `${escalados.size} escalados`}
+            </div>
+          </>
+        )}
       </div>
 
       <AvisoDeErro mensagem={erro} />

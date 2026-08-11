@@ -1,5 +1,12 @@
-"""Semeia as quatro contas de avaliação (NFR2): um organizador, dois clientes
-e uma portaria.
+"""Semeia as cinco contas de avaliação (NFR2): um organizador, dois clientes e
+**duas** portarias.
+
+A segunda portaria entrou na Story 2.5. O NFR2 pede uma, e uma bastaria para
+entrar no sistema — mas com uma só a tela de escalação vira um item único que
+não se pode não marcar, e o cenário que o AD-7 existe para provar (a portaria A
+não valida o evento da portaria B) dependeria de o avaliador criar uma conta na
+mão. Conta de portaria **não se cria pela interface**, de propósito: sem a
+segunda semeada, o cenário simplesmente não é demonstrável.
 
 ```bash
 cd backend
@@ -44,7 +51,7 @@ class ContaSemeada:
     papel: PapelUsuario
 
 
-# Uma senha só para as quatro. Elas são dado de avaliação publicado no README,
+# Uma senha só para todas. Elas são dado de avaliação publicado no README,
 # não credencial de produção — e o README precisa conseguir listá-las numa
 # tabela que ninguém copia errado.
 SENHA_DE_AVALIACAO = "rockhub123"
@@ -59,6 +66,11 @@ CONTAS: tuple[ContaSemeada, ...] = (
     ContaSemeada("Marina Aoki", "cliente2@rockhub.dev",
                  SENHA_DE_AVALIACAO, PapelUsuario.CLIENTE),
     ContaSemeada("Jonas Ribeiro", "portaria@rockhub.dev",
+                 SENHA_DE_AVALIACAO, PapelUsuario.PORTARIA),
+    # A segunda portaria (Story 2.5): é ela que faz a escalação ser uma escolha
+    # e não um item obrigatório, e é ela que dá o cenário do AD-7 —
+    # escalar só o Jonas e tentar validar com a Ana.
+    ContaSemeada("Ana Sampaio", "portaria2@rockhub.dev",
                  SENHA_DE_AVALIACAO, PapelUsuario.PORTARIA),
 )
 

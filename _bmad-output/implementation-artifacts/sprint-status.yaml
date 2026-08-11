@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-11 (story 2.4 implementada — suíte de 140 para 164, pronta para commit)
+last_updated: 2026-08-11 (story 2.5 implementada — suíte 164 → 187, pronta para commit)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -79,7 +79,12 @@ development_status:
   # publica, e fechá-la agora custaria retrabalho na 2.5. Registrada no AC18 da
   # story e no README da raiz.
   2-4-publicar-um-evento-com-seus-setores: review
-  2-5-escalar-quem-valida-na-porta: backlog
+  # A 2.5 é quem paga a dívida do AD-7 aberta na 2.4: `EVENTO_SEM_PORTARIA` entra
+  # na mesma rota `POST /organizador/eventos`, e a linha da janela em
+  # `README.md#o-que-não-está-pronto` é reescrita (AC20). Decisões do Igor:
+  # lista por rota própria com busca pelo nome, vários escalados por evento, e
+  # uma segunda conta de portaria no seed.
+  2-5-escalar-quem-valida-na-porta: review
   2-6-ver-e-gerenciar-meus-eventos: backlog
   epic-2-retrospective: optional
 

@@ -12,10 +12,24 @@ regra de negócio para um service fazer. Aqui sobra: existem duas invariantes
 que o banco sozinho não sabe recusar de forma legível, e existe uma transação
 que precisa gravar evento e setores juntos ou nada.
 
-**A ordem das duas recusas é a garantia do "nenhum evento órfão".** Elas
-acontecem antes de qualquer `add`: se a lista está vazia ou tem nomes
-repetidos, nada chega a existir no banco — nem o evento, nem o primeiro setor
-antes de o segundo estourar.
+**A ordem das quatro recusas é a garantia do "nenhum evento órfão".** Elas
+acontecem antes de qualquer `add`: se a lista está vazia, tem nomes repetidos,
+não traz portaria nenhuma ou traz um id que não resolve, nada chega a existir
+no banco — nem o evento, nem o primeiro setor antes de o segundo estourar.
+
+```
+1. setores vazio          → EVENTO_SEM_SETOR
+2. nome de setor repetido → SETOR_DUPLICADO
+3. portaria_ids vazio     → EVENTO_SEM_PORTARIA
+4. id que não resolve     → PORTARIA_INVALIDA
+   ── só então: monta o Evento e grava ──
+```
+
+**Setor antes de portaria não é estética.** A Story 2.5 acrescentou as duas
+últimas a uma rota que a 2.4 já tinha entregado, e os testes de recusa daquela
+story mandam corpo sem `portaria_ids` porque o campo ainda não existia.
+Conferir setor primeiro é o que os mantém provando o que se propuseram a
+provar, sem reescrita.
 
 **Não há `try/except IntegrityError` aqui**, ao contrário do `cadastrar()`. Lá
 o `UNIQUE` do e-mail é a regra, e conferir antes seria uma corrida. Aqui as
@@ -28,11 +42,12 @@ concorrendo — dá para conferi-las na memória, com certeza, antes de gravar. 
 
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
-from app.models.usuario import Usuario
+from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.evento import EventoEntrada
 
 
@@ -70,6 +85,45 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
             )
         vistos.add(chave)
 
+    # AD-7: um evento sem ninguém escalado é um evento cujo ingresso ninguém
+    # pode validar na porta. A regra vale para ausência e para lista vazia — o
+    # schema manda as duas para cá justamente por isso.
+    if not dados.portaria_ids:
+        raise ErroDeDominio(
+            "EVENTO_SEM_PORTARIA",
+            "Escale ao menos um usuário de portaria para validar os ingressos "
+            "deste evento.",
+            status_http=422,
+        )
+
+    # Silenciosamente, e ao contrário do `SETOR_DUPLICADO` logo acima. Dois
+    # setores com o mesmo nome são duas intenções em conflito — qual das duas
+    # capacidades vale? A mesma pessoa marcada duas vezes é uma intenção só, e
+    # recusá-la seria pedir que alguém corrigisse um formulário que já dizia o
+    # que queria dizer. `dict.fromkeys` preserva a ordem do corpo; `set`
+    # tornaria a escala não determinística entre execuções.
+    ids_pedidos = list(dict.fromkeys(dados.portaria_ids))
+
+    # Uma consulta só, e um erro só para os dois casos possíveis: o id não
+    # existe, ou existe e não é portaria. Distinguir seria transformar esta
+    # rota num oráculo — "esse UUID já foi conta um dia?" — e é a mesma
+    # disciplina do login da Story 1.4, que não diz se o e-mail existe.
+    escalados = list(
+        sessao.scalars(
+            select(Usuario).where(
+                Usuario.id.in_(ids_pedidos),
+                Usuario.papel == PapelUsuario.PORTARIA.value,
+            )
+        )
+    )
+
+    if len(escalados) != len(ids_pedidos):
+        raise ErroDeDominio(
+            "PORTARIA_INVALIDA",
+            "Alguma das contas escaladas não existe ou não é de portaria.",
+            status_http=422,
+        )
+
     evento = Evento(
         # Da sessão, sempre. É a diferença entre "quem publicou" e "quem o
         # corpo da requisição disse que publicou".
@@ -104,9 +158,38 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
             )
             for setor in dados.setores
         ],
+        # Pelo `relationship`, como os setores — o SQLAlchemy grava as linhas
+        # de `evento_portaria` na mesma transação, depois de conhecer o id do
+        # evento. Nada de `INSERT` manual na tabela de associação: seria um
+        # segundo caminho para o mesmo fato, e o dia em que os dois
+        # divergissem ninguém saberia qual estava certo.
+        portarias=escalados,
     )
 
     sessao.add(evento)
     sessao.commit()
     sessao.refresh(evento)
     return evento
+
+
+def listar_portarias(sessao: Session) -> list[Usuario]:
+    """Todas as contas de papel `PORTARIA`, por nome — quem pode ser escalado.
+
+    **Mora neste service, e não em `services/autenticacao.py`.** Ela consulta
+    `Usuario`, que é o assunto de lá, mas não é uma pergunta sobre
+    autenticação: é "quem eu posso pôr na porta deste evento", e existe para a
+    publicação. Em `autenticacao.py` ela ficaria cercada de login, cadastro e
+    hash de senha, sem nenhuma relação com o motivo de existir — e o próximo
+    leitor procuraria a regra da escala em dois arquivos.
+
+    Sem paginação e sem filtro por termo: o filtro por nome acontece na tela,
+    em memória, porque a lista inteira já viaja e responder a cada tecla sem
+    ida à rede é melhor do que qualquer `?q=` faria com este volume.
+    """
+    return list(
+        sessao.scalars(
+            select(Usuario)
+            .where(Usuario.papel == PapelUsuario.PORTARIA.value)
+            .order_by(Usuario.nome)
+        )
+    )

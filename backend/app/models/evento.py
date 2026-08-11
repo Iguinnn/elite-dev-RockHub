@@ -1,4 +1,5 @@
-"""Modelos `Evento` e `Setor` — o show e as faixas de ingresso que ele vende.
+"""Modelos `Evento` e `Setor` — o show e as faixas de ingresso que ele vende —
+mais a tabela `evento_portaria`, que diz quem pode validar ingresso na porta.
 
 As duas classes moram juntas porque `Setor` não tem vida fora de `Evento`:
 um "Pista" sem show não significa nada. Mesmo precedente do `usuario.py`, que
@@ -18,8 +19,14 @@ qual antes de mexer:
   "sem estoque" afetando zero linhas. A constraint é o que sobra de pé se
   algum caminho da aplicação escapar desse `UPDATE`.
 
-Nada na aplicação lê ou escreve nestas tabelas ainda — publicar evento é a
-Story 2.4.
+A quarta decisão entrou na Story 2.5, e é a `evento_portaria` logo abaixo:
+**quem valida na porta é escala de trabalho por evento, não nível de permissão**
+(AD-7). O papel `PORTARIA` diz o que a pessoa faz; esta tabela diz *onde* — e é
+por isso que ela é vínculo, e não uma coluna em `usuario`.
+
+Quem lê e escreve nestas tabelas é `app/services/evento.py`, desde as Stories
+2.4 (publicação) e 2.5 (escala). Ninguém **consome** a escala ainda: validar
+ingresso é a Epic 5.
 """
 
 import uuid
@@ -28,10 +35,12 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Column,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    Table,
     UniqueConstraint,
     Uuid,
     func,
@@ -40,6 +49,33 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.models.usuario import Usuario
+
+# A escala da portaria: quem pode validar ingresso de qual evento (AD-7).
+#
+# **`Table` do Core, não classe ORM.** Ela não tem uma coluna própria sequer —
+# só as duas chaves estrangeiras que já são a chave primária. Uma classe
+# mapeada aqui prometeria o que não existe ("um dia isto vai ter `criado_em`,
+# `escalado_por`, `turno`"), e alguém acabaria acrescentando. Quando a escala
+# passar a carregar dado próprio, aí sim ela vira classe — e será uma migração
+# explícita, não uma casa vazia que já estava lá.
+#
+# **Os dois `ondelete` são diferentes de propósito**, e é o mesmo raciocínio da
+# Story 2.3: apagar o evento leva a escala junto, porque escala de um show que
+# não existe mais não significa nada (`CASCADE`); apagar uma pessoa que já foi
+# escalada tem que doer, e o Postgres recusa (sem `ondelete`) — o mesmo que
+# `evento.organizador_id` faz com quem publicou.
+evento_portaria = Table(
+    "evento_portaria",
+    Base.metadata,
+    Column(
+        "evento_id",
+        Uuid,
+        ForeignKey("evento.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("usuario_id", Uuid, ForeignKey("usuario.id"), primary_key=True),
+)
 
 
 class Evento(Base):
@@ -83,6 +119,19 @@ class Evento(Base):
         # declarou. As duas metades precisam concordar.
         passive_deletes=True,
     )
+
+    # Sem `passive_deletes` aqui, ao contrário de `setores`, e a diferença é
+    # real: lá o ORM emitiria `UPDATE setor SET evento_id = NULL` antes do
+    # DELETE e estouraria no NOT NULL; numa `secondary` ele emite `DELETE FROM
+    # evento_portaria`, que é exatamente o que o CASCADE faria. Os dois
+    # caminhos concordam.
+    #
+    # ⚠️ **Sem `back_populates`, e nada em `usuario.py`.** "Os eventos em que
+    # fui escalado" é a Story 5.1, e criá-lo agora seria um `relationship` sem
+    # consumidor — com o agravante de que `usuario.py` teria que importar este
+    # módulo, que já importa `usuario.py`: ciclo de import por uma linha que
+    # ninguém usa.
+    portarias: Mapped[list[Usuario]] = relationship(secondary=evento_portaria)
 
 
 class Setor(Base):

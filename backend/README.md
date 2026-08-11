@@ -28,7 +28,7 @@ cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
 uv run alembic upgrade head               # cria o schema (tabela usuario)
-uv run python -m seeds.semear             # as 4 contas de avaliação — rodar de novo é seguro
+uv run python -m seeds.semear             # as 5 contas de avaliação — rodar de novo é seguro
 uv run uvicorn app.main:app --reload      # sobe em http://127.0.0.1:8000
 uv run pytest                             # roda os testes — exige o Compose no ar (ver Testes)
 ```
@@ -146,7 +146,7 @@ repositório). O `--autogenerate` é ponto de partida, não resultado: sempre re
 
 ## Dados semeados
 
-As quatro contas de avaliação vêm de um comando só, rodado com o banco migrado:
+As cinco contas de avaliação vêm de um comando só, rodado com o banco migrado:
 
 ```bash
 cd backend
@@ -159,6 +159,7 @@ uv run python -m seeds.semear
 | `CLIENTE` | Bruno Tavares | `cliente@rockhub.dev` | `rockhub123` |
 | `CLIENTE` | Marina Aoki | `cliente2@rockhub.dev` | `rockhub123` |
 | `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
+| `PORTARIA` | Ana Sampaio | `portaria2@rockhub.dev` | `rockhub123` |
 
 O relatório sai uma linha por conta, e o comando termina em `0`:
 
@@ -167,12 +168,20 @@ ORGANIZADOR  organizador@rockhub.dev   criada
 CLIENTE      cliente@rockhub.dev       criada
 CLIENTE      cliente2@rockhub.dev      criada
 PORTARIA     portaria@rockhub.dev      criada
+PORTARIA     portaria2@rockhub.dev     criada
 As senhas estão no README da raiz, em "Contas semeadas".
 ```
 
-Na segunda execução as quatro dizem `mantida`. Este é **o único caminho do sistema que cria conta com
+Na segunda execução as cinco dizem `mantida`. Este é **o único caminho do sistema que cria conta com
 papel diferente de `CLIENTE`** — `cadastrar()` fixa o papel em literal, e nenhuma rota oferece
 alternativa.
+
+**A segunda portaria entrou na Story 2.5**, e o NFR2 pede uma só. Semeei duas pelo mesmo motivo de
+haver dois clientes: com uma conta só, a tela de escalação vira um item obrigatório que não se pode
+não marcar — e, principalmente, o cenário que o AD-7 existe para provar (a portaria A **não** valida
+o evento da portaria B) dependeria de o avaliador criar uma conta de portaria na mão. Conta de
+portaria não se cria pela interface, de propósito. Sem a segunda semeada, o cenário simplesmente não
+é demonstrável.
 
 ### Rodar de novo é seguro, e é o requisito central
 
@@ -219,18 +228,20 @@ backend/
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
-      organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · POST /organizador/eventos
+      organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · GET /organizador/portarias
+                      # · POST /organizador/eventos
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
-      evento.py       # publicar() — evento e setores na mesma transação (Story 2.4)
+      evento.py       # publicar() — evento, setores e escala na mesma transação (2.4/2.5)
+                      # · listar_portarias() — quem pode ser escalado (2.5)
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
-      evento.py       # Evento + Setor — preço e capacidade pertencem ao setor
+      evento.py       # Evento + Setor + a Table evento_portaria (a escala, Story 2.5)
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
-      evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida
+      evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida, PortariaSaida
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
       ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
@@ -243,12 +254,13 @@ backend/
     env.py
     versions/
   seeds/              # dados exigidos pelo desafio — não sobe com o uvicorn
-    semear.py          # as quatro contas de avaliação; idempotente, nunca apaga nada
+    semear.py          # as cinco contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
     test_evento.py     # invariantes de evento e setor que o banco garante
     test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
+    test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
   alembic.ini
   pyproject.toml
   uv.lock
@@ -728,9 +740,14 @@ curl -i -X POST http://localhost:8000/organizador/eventos \
     "setores": [
       {"nome": "Pista", "capacidade": 800, "preco_centavos": 12000},
       {"nome": "Camarote", "capacidade": 60, "preco_centavos": 42000}
-    ]
+    ],
+    "portaria_ids": ["<id de GET /organizador/portarias>"]
   }'
 ```
+
+⚠️ **`portaria_ids` é obrigatório desde a Story 2.5** (AD-7), e os ids saem de
+[`GET /organizador/portarias`](#get-organizadorportarias). Sem ele, a resposta é `422
+EVENTO_SEM_PORTARIA`.
 
 **Três coisas estão fechadas por construção, não por validação.** É a diferença entre "o service
 confere" e "não existe caminho":
@@ -798,10 +815,126 @@ Publicar é o ato desta rota, não um passo posterior. `NULL` (rascunho) continu
 possível no banco e continua sem tela que o produza — é o que torna verificável o AC da Story 3.1,
 "evento não publicado não aparece na programação".
 
-⚠️ **O AD-7 ainda não vale nesta rota.** A arquitetura diz que publicar exige ao menos um usuário de
-portaria escalado, e a Story 2.5 é quem acrescenta o `EVENTO_SEM_PORTARIA` aqui. Entre a 2.4 e a 2.5
-é possível publicar um evento sem ninguém autorizado a validar ingresso nele. A decisão e o custo
-estão no [README da raiz](../README.md#o-que-não-está-pronto).
+✅ **O AD-7 passou a valer nesta rota na Story 2.5.** Entre a 2.4 e a 2.5 foi possível publicar um
+evento sem ninguém autorizado a validar ingresso nele — janela deliberada, registrada por escrito, e
+fechada por [Escalar a portaria](#escalar-a-portaria), logo abaixo. O corpo passou a exigir
+`portaria_ids`, e o curl acima **não publica mais nada sem ele**.
+
+## Escalar a portaria
+
+Quem valida ingresso na porta de um evento é escolhido pelo organizador no ato de publicar. É o AD-7,
+e desde a Story 2.5 ele é código: uma tabela, uma rota de leitura e duas recusas novas na rota de
+publicação.
+
+### A tabela `evento_portaria`
+
+Criada pela migração `c7cb4a29b7f3`. É a **primeira tabela de associação** do projeto:
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `evento_id` | `uuid`, `NOT NULL` | FK para `evento.id` com `ON DELETE CASCADE` |
+| `usuario_id` | `uuid`, `NOT NULL` | FK para `usuario.id`, **sem `ondelete`** |
+
+**Chave primária composta pelas duas colunas**, e nenhuma coluna própria — nem `id`, nem `criado_em`.
+O par (evento, pessoa) *é* a identidade da linha, e é essa chave que impede a mesma pessoa escalada
+duas vezes no mesmo evento.
+
+**Os dois `ondelete` são diferentes de propósito**, e é o mesmo raciocínio da Story 2.3: apagar o
+evento leva a escala junto, porque escala de um show que não existe mais não significa nada; apagar
+alguém que já trabalhou numa porta tem que doer, e o Postgres recusa.
+
+No ORM ela é uma **`Table` do Core, não uma classe mapeada** (`app/models/evento.py`). Uma classe
+prometeria o que a tabela não tem — "um dia isto vai ter `turno`, `escalado_por`" — e alguém
+acabaria acrescentando. Quando a escala passar a carregar dado próprio, ela vira classe numa
+migração explícita, e não numa casa vazia que já estava lá.
+
+`Evento.portarias` existe; **o lado inverso, em `Usuario`, não.** "Os eventos em que fui escalado" é
+a Story 5.1, e criá-lo agora seria um `relationship` sem consumidor — com o agravante de que
+`usuario.py` passaria a importar `evento.py`, que já importa `usuario.py`.
+
+### `GET /organizador/portarias`
+
+```
+GET /organizador/portarias   → 200, todas as contas de papel PORTARIA, ordenadas por nome
+```
+
+```json
+[
+  { "id": "8c26…", "nome": "Ana Sampaio",   "email": "portaria2@rockhub.dev" },
+  { "id": "fa34…", "nome": "Jonas Ribeiro", "email": "portaria@rockhub.dev" }
+]
+```
+
+Protegida por `Depends(exigir_papel(PapelUsuario.ORGANIZADOR))` — cliente e a **própria portaria**
+recebem `403`; sem cookie é `401`. Estar na lista não dá direito de lê-la: escalar é ato do
+organizador.
+
+`PortariaSaida` é um schema novo, e não o `UsuarioSaida` de `schemas/auth.py`. A forma é quase a
+mesma hoje (falta o `papel`, que aqui seria constante), mas o significado não é: um diz "quem está
+logado", o outro "quem pode ser escalado". Reusar acoplaria o contrato de evento ao de autenticação.
+É também o `response_model` que garante que `senha_hash` não vaze — sem ele declarado, o FastAPI
+serializaria o `Usuario` inteiro, e um teste afirma a ausência da chave por isso.
+
+Sem paginação e sem `?q=`: o filtro por nome acontece na tela, em memória. O porquê está no
+[frontend/README.md](../frontend/README.md).
+
+**Esta rota é o terceiro caso do critério de service**, e ela afina a regra que a 2.4 deixou escrita.
+Ela é leitura, sem transação e sem invariante — e mesmo assim passa por `services/evento.py`, porque
+**toca o banco**, e router que abre uma `Session` é o que o paradigma proíbe sem exceção. A do
+catálogo escapa por não tocar banco nenhum. Os três casos ficam lado a lado no mesmo arquivo:
+leitura sem service (integração externa), leitura com service (banco), escrita com service.
+
+`listar_portarias()` mora em `services/evento.py`, e não em `autenticacao.py`, que já é dono das
+consultas a `Usuario`. Ela consulta usuários, mas não é pergunta sobre autenticação: é "quem eu posso
+pôr na porta deste evento", e existe para a publicação. Em `autenticacao.py` ficaria cercada de login
+e hash de senha, sem relação com o motivo de existir.
+
+### Dois códigos de erro novos, e a ordem das quatro recusas
+
+| Código | Status | Quando |
+|---|---|---|
+| `EVENTO_SEM_PORTARIA` | `422` | `portaria_ids` vazio **ou ausente** — AD-7 |
+| `PORTARIA_INVALIDA` | `422` | Algum id não existe **ou** não tem papel `PORTARIA` |
+
+```
+1. setores vazio          → EVENTO_SEM_SETOR
+2. nome de setor repetido → SETOR_DUPLICADO
+3. portaria_ids vazio     → EVENTO_SEM_PORTARIA
+4. id que não resolve     → PORTARIA_INVALIDA
+   ── só então: monta o Evento e grava ──
+```
+
+As quatro acontecem **antes** de qualquer `add`. É isso, e não uma transação esperta, que garante o
+"nenhum evento órfão" desde a 2.4.
+
+**Setor antes de portaria não é estética.** As duas recusas novas entraram numa rota que a 2.4 já
+tinha entregado, e os dezesseis testes de recusa daquela story mandam corpo sem `portaria_ids`,
+porque o campo não existia. Conferir setor primeiro é o que os mantém provando o que se propuseram a
+provar — inverter a ordem os faria receber `EVENTO_SEM_PORTARIA` e virariam trabalho de reescrita,
+sem nenhum ganho.
+
+`portaria_ids` também **não** tem `min_length=1`, pelo mesmo motivo do `setores`: `min_length`
+responderia `DADOS_INVALIDOS`, e "publicar exige portaria escalada" é o AD-7, uma invariante de
+arquitetura. Invariante não mora num `Field(...)` — mora no service, onde tem nome próprio.
+
+### Por que a lista não distingue "não existe" de "não é portaria"
+
+Uma consulta só (`id.in_(ids)` **e** `papel == PORTARIA`), e uma mensagem só para os dois casos. Se a
+resposta separasse "esse id não existe" de "essa conta não é de portaria", a rota viraria um oráculo
+de existência de conta: quem tivesse uma sessão de organizador poderia varrer UUIDs e descobrir quais
+já foram gente. É a mesma disciplina do login da Story 1.4, que não diz se o e-mail existe — e um
+teste compara os dois corpos de erro para garantir que continuam **idênticos**, não só parecidos.
+
+### Ids repetidos são deduplicados em silêncio
+
+Ao contrário do `SETOR_DUPLICADO`, logo acima. Dois setores com o mesmo nome são duas intenções em
+conflito — qual das duas capacidades vale? A mesma pessoa marcada duas vezes é uma intenção só, e
+recusá-la seria pedir que alguém corrigisse um formulário que já dizia o que queria dizer. A dedução
+é `dict.fromkeys`, que preserva a ordem do corpo; um `set` deixaria a escala não determinística.
+
+A escala é gravada pelo `relationship`, na mesma transação do evento e dos setores — **nunca** um
+`INSERT` manual na tabela de associação, pela mesma razão de `vendidos` não ser passado ao construir
+`Setor`: dois caminhos para o mesmo fato é um a mais do que se quer.
 
 ## Convenções que nascem aqui
 
@@ -873,13 +1006,25 @@ cd backend
 uv run pytest
 ```
 
-São **164 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **187 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
 [Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
-também offline) e a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Story 2.4).
+também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Stories 2.4 e
+2.5) e a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5).
+
+`test_organizador_portarias.py` prova a ordenação por nome com contas de **nomes diferentes**, criadas
+no próprio arquivo: a `fabricar_usuario` do `conftest.py` grava todo mundo como "Alguém" e parametriza
+só o e-mail, e com nomes iguais "ordenado por nome" não decide nada — o teste passaria por acaso.
+Prova também que a lista não traz organizador nem cliente, que o corpo tem exatamente `id`, `nome` e
+`email`, que `senha_hash` não aparece, e que lista vazia é `200` e não `404`.
+
+⚠️ **Nenhuma contagem de `test_seed.py` é literal desde a Story 2.5.** Elas derivam de `CONTAS` —
+`len(CONTAS)`, `Counter` dos papéis declarados. A quinta conta semeada quebrou seis testes que tinham
+`4` escrito na mão, nenhum deles com qualquer relação com quantas contas existem. Acrescentar a sexta
+agora não custa nada.
 
 `test_organizador_eventos.py` (Story 2.4) é o primeiro arquivo que prova **escrita** de domínio, e
 por isso quase todo teste ali lê do **banco** depois da resposta: a resposta prova o schema de
@@ -904,12 +1049,12 @@ para rodar contra o banco de produção, repetidamente, sem ninguém olhando: qu
 duplica nem levanta exceção; que uma conta que já existe com o mesmo e-mail sai com **nome e
 `senha_hash` idênticos** aos de antes; que uma conta criada por `/cadastro` continua lá depois do
 seed; que um e-mail semeado que existe com outro papel devolve `papel-divergente` sem alterar o
-papel; que a senha publicada no README realmente autentica pelas quatro contas (é o que prova que o
-hash é Argon2id de verdade, e não uma string colada); e que todo e-mail de `CONTAS` já sai
+papel; que a senha publicada no README realmente autentica por **todas** as contas (é o que prova que
+o hash é Argon2id de verdade, e não uma string colada); e que todo e-mail de `CONTAS` já sai
 normalizado — comparado contra o que o `EmailNormalizado` do login produziria.
 
 ⚠️ **Nenhum teste chama `main()`.** `main()` abre `SessaoLocal`, que aponta para `DATABASE_URL` — o
-banco de **desenvolvimento**. Um teste que o chamasse gravaria quatro contas fora do banco de teste,
+banco de **desenvolvimento**. Um teste que o chamasse gravaria as contas fora do banco de teste,
 passaria verde, e ninguém descobriria até estranhar contas repetidas em `rockhub`. É por isso que
 `semear()` recebe a `Session` por parâmetro e só o `main()` escolhe o banco: a mesma regra que a
 Story 1.3 aplicou à URL do Alembic na fixture.
@@ -1146,9 +1291,11 @@ imprime a senha** — o que ele escreve vai para o log de deploy da Railway.
 
 ### 4 · Como saber que deu certo
 
-No log do **Pre-deploy**, nesta ordem: as migrações do Alembic, e logo depois quatro linhas do seed.
-Na primeira vez elas dizem `criada`; **em todo redeploy seguinte, `mantida`** — que é a prova, em
-produção, de que o seed não recria nem sobrescreve nada.
+No log do **Pre-deploy**, nesta ordem: as migrações do Alembic, e logo depois uma linha por conta
+semeada. Na primeira vez elas dizem `criada`; **em todo redeploy seguinte, `mantida`** — que é a
+prova, em produção, de que o seed não recria nem sobrescreve nada. No primeiro deploy depois da Story
+2.5, `portaria2@rockhub.dev` sai `criada` e as outras quatro `mantida`: é o comportamento certo, e é
+o que mostra que acrescentar conta não mexe em nada do que já estava lá.
 
 De fora, com `curl`:
 
@@ -1663,4 +1810,37 @@ mesma rota. O motivo da janela e o custo dela estão no [README da
 raiz](../README.md#o-que-não-está-pronto).
 
 Vinte e quatro testes novos em `test_organizador_eventos.py`, a suíte foi de 140 para **164**.
+Nenhuma dependência entrou.
+
+### Story 2.5 — escalar quem valida na porta
+
+A story que paga a dívida da anterior. A migração `c7cb4a29b7f3` cria a `evento_portaria`, o
+`publicar()` ganha as duas recusas que faltavam, e nasce a rota `GET /organizador/portarias`. O
+detalhe de cada peça está em [Escalar a portaria](#escalar-a-portaria); aqui fica o que eu decidi e
+o que descartei.
+
+**A janela do AD-7 fechou onde eu disse que fecharia.** O AC18 da 2.4 mandou registrar a dívida por
+escrito; esta baixou a mesma dívida por escrito. Documentação de dívida que ninguém apaga vira
+documentação errada, e é por isso que a linha correspondente em *O que não está pronto* do README da
+raiz foi **reescrita**, não removida — o que sobrou dela é o resíduo real: evento publicado durante a
+janela fica sem portaria para sempre, porque não há tela de editar evento.
+
+**A escala aceita várias pessoas, e a interface não é a única coisa segurando isso.** A tabela é N:N
+por chave composta, o AD-7 fala em "ao menos um", e uma porta de show real tem mais de um operador. O
+protótipo desenha um `<select>` de escolha única, que daria menos tela e menos teste — descartei
+porque a interface passaria a ser a única coisa impedindo o que o banco permite, e **não há tela de
+editar evento** para corrigir depois. Um evento com uma pessoa só escalada, e ela faltando na noite do
+show, é um evento sem portaria.
+
+**A ordem das quatro recusas foi a decisão mais barata e a de maior retorno da story.** Pôr setor
+antes de portaria manteve intactos dezesseis testes de recusa da 2.4, que mandam corpo sem
+`portaria_ids` porque o campo não existia. Sobraram oito de caminho feliz para ajustar, com uma
+fixture e um parâmetro. A ordem inversa não ganharia nada e custaria a reescrita.
+
+**Derivei as contagens de `test_seed.py` de `CONTAS`.** A quinta conta semeada quebrou seis testes que
+contavam `4` na mão, e nenhum deles tinha relação com quantas contas existem. Não foi faxina
+opcional: era isso ou toda conta nova custar seis correções.
+
+Vinte e três testes novos — oito casos em `test_organizador_eventos.py`, o arquivo
+`test_organizador_portarias.py` inteiro e dois de migração —, e a suíte foi de 164 para **187**.
 Nenhuma dependência entrou.

@@ -17,13 +17,14 @@ camada.
 > sem clonar nada. **O acesso está fechado pelos dois lados:** dá para criar conta em
 > `/cadastro` e entrar em `/login` — senha em Argon2id, sessão em cookie `httpOnly` de 8 horas, e o
 > navegador falando só com o domínio do frontend. Rota protegida já tem guarda por papel, e um
-> comando semeia as quatro contas de avaliação (abaixo, em
-> [Contas semeadas](#contas-semeadas)). O backend sobe com PostgreSQL migrado por Alembic e a tabela
-> `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado
-> vazio. A Epic 2 está em andamento: o organizador já busca a atração no catálogo da Ticketmaster em
-> `/organizador/publicar` (Stories 2.1 e 2.2) — mas ainda não publica nada: a tabela `evento` é da
-> Story 2.3, e selecionar a atração é da 2.4. Ainda não há evento nenhum para descobrir ou comprar. A
-> seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
+> comando semeia as cinco contas de avaliação (abaixo, em
+> [Contas semeadas](#contas-semeadas)). O backend sobe com PostgreSQL migrado por Alembic; o frontend
+> sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. **A Epic 2 já
+> publica de verdade:** em `/organizador/publicar` o organizador busca a atração no catálogo da
+> Ticketmaster (2.1 e 2.2), preenche data, local e setores (2.3 e 2.4) e escala quem vai validar na
+> porta (2.5) — e o evento vai para o banco com setores e escala na mesma transação. O que ainda não
+> existe é o outro lado: descobrir, comprar e validar são as Epics 3 a 5. A seção [O que não está
+> pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## No ar
 
@@ -105,7 +106,7 @@ uv sync                   # cria a .venv/ e instala exatamente o que está no uv
 uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 uv run alembic upgrade head       # cria o schema (tabela usuario)
-uv run python -m seeds.semear     # cria as 4 contas de avaliação (organizador, 2 clientes, portaria)
+uv run python -m seeds.semear     # cria as 5 contas (organizador, 2 clientes, 2 portarias)
 uv run uvicorn app.main:app --reload
 ```
 
@@ -159,7 +160,7 @@ do servidor. Convenções de CSS, tokens da identidade, o proxy e as armadilhas 
 
 ## Contas semeadas
 
-Um comando cria as quatro contas de avaliação, com o Compose no ar e a migração aplicada:
+Um comando cria as cinco contas de avaliação, com o Compose no ar e a migração aplicada:
 
 ```bash
 cd backend
@@ -172,16 +173,22 @@ uv run python -m seeds.semear
 | `CLIENTE` | Bruno Tavares | `cliente@rockhub.dev` | `rockhub123` |
 | `CLIENTE` | Marina Aoki | `cliente2@rockhub.dev` | `rockhub123` |
 | `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
+| `PORTARIA` | Ana Sampaio | `portaria2@rockhub.dev` | `rockhub123` |
 
 **São dois clientes de propósito.** O segundo existe para dar como demonstrar duas garantias que um
 cliente só deixaria no ar: que o ingresso de um não aparece na conta do outro (Epic 4) e que duas
 pessoas disputando o último ingresso de um setor produzem uma venda e uma recusa (Epic 3).
 
-**As mesmas quatro contas existem no banco da Railway**, criadas por este mesmo comando: ele roda a
+**E são duas portarias pelo mesmo motivo**, desde a Story 2.5. O enunciado pede uma; com uma só, a
+tela de escalação vira um item obrigatório que não se pode não marcar, e o cenário que o AD-7 existe
+para provar — a portaria A **não** valida o evento da portaria B — dependeria de você criar uma conta
+de portaria na mão. Conta de portaria não se cria pela interface, de propósito. A segunda conta é o
+que torna esse cenário demonstrável em dois cliques.
+
+**As mesmas cinco contas existem no banco da Railway**, criadas por este mesmo comando: ele roda a
 cada deploy, logo depois das migrações. Então dá para entrar com elas em três lugares, com as mesmas
 senhas: no seu ambiente local, na [aplicação publicada](https://elite-dev-rock-hub.vercel.app) e
-direto no `/docs` da [API](#no-ar). As quatro foram conferidas na URL pública — cada uma responde
-`200` com o papel certo.
+direto no `/docs` da [API](#no-ar).
 
 O comando imprime uma linha por conta — `criada` na primeira execução, `mantida` nas seguintes — e
 **rodar de novo é seguro**: ele não duplica conta, não apaga nem sobrescreve nada. Se você já tinha
@@ -243,7 +250,7 @@ Rodando local pelos passos de [Como executar](#como-executar), e começando pela
    O segundo cliente, `cliente2@rockhub.dev`, ainda não tem o que fazer aqui: ele existe para as
    Epics 3 e 4, onde prova que o ingresso de um não aparece na conta do outro e que dois clientes
    disputando o último lugar de um setor produzem uma venda e uma recusa
-3. Rodar `uv run python -m seeds.semear` **de novo** → as quatro linhas dizem `mantida`, o comando
+3. Rodar `uv run python -m seeds.semear` **de novo** → as cinco linhas dizem `mantida`, o comando
    sai em `0` e nenhuma conta sua desaparece. É a garantia que faz esse mesmo comando poder rodar a
    cada deploy
 4. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
@@ -294,18 +301,31 @@ ponta a ponta, do catálogo externo até uma linha no banco:
 23. **Clicar numa fila** → a URL ganha `?escolhido=…`, a fila fica marcada com o fio âmbar e o passo
     **2 · Data, local e setores** aparece abaixo. Recarregar mantém a escolha; o botão voltar a
     desfaz
-24. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`) → `Publicar evento`
-    devolve a confirmação **na própria tela**, com capacidade e preço exatos
-25. Conferir no banco que a linha existe de verdade:
+24. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`); no passo
+    **3 · Escale a portaria**, marcar **as duas** contas → `Publicar evento` devolve a confirmação
+    **na própria tela**, com capacidade e preço exatos e os dois nomes sob `Na porta`
+25. Conferir no banco que as linhas existem de verdade:
     `docker compose exec db psql -U rockhub -d rockhub -c "select nome, data_hora, local from evento;"`
+    e `... -c "select * from evento_portaria;"` → duas linhas para esse evento
 26. Repetir com **dois setores de mesmo nome** (`Pista` e `pista`) → a tela diz que há setores
     repetidos, e a API responde `422 SETOR_DUPLICADO`. Nunca um `500`, e nada fica gravado
 27. Apagar o único setor não é possível — o `×` só aparece a partir da segunda linha. Pela API,
     `"setores": []` responde `422 EVENTO_SEM_SETOR`
 28. Digitar `abc` no preço → a recusa acontece **sem nenhuma requisição no Network**
 
-⚠️ **Nesta altura o evento publicado ainda não tem portaria escalada** — é a dívida datada da Story
-2.4, registrada em [O que não está pronto](#o-que-não-está-pronto), e a Story 2.5 é quem a fecha.
+E a escala da portaria, que fecha na Story 2.5 e faz o AD-7 valer:
+
+29. **Tentar publicar sem marcar ninguém no passo 3** → a tela recusa **sem nenhuma requisição no
+    Network**. Pela API, o corpo sem `portaria_ids` responde `422 EVENTO_SEM_PORTARIA`
+30. **Digitar `ana` no campo de busca** do passo 3 → só uma linha, e sem chamada nenhuma no Network:
+    o filtro é em memória. Apagar traz as duas de volta
+31. **Marcar Ana, buscar `jonas`, marcar Jonas e limpar o filtro** → as duas continuam marcadas.
+    Filtrar é ver menos, não desmarcar
+32. **Escalar uma conta que não é de portaria**, pela API (`"portaria_ids": ["<id do
+    cliente@rockhub.dev>"]`) → `422 PORTARIA_INVALIDA`. Um UUID que não existe responde **exatamente
+    o mesmo**, com a mesma mensagem: a rota não diz se a conta existe
+33. `curl` em `/organizador/portarias` com o cookie de **cliente** → `403 SEM_PERMISSAO`; sem cookie
+    nenhum → `401 NAO_AUTENTICADO`
 
 ## Stack e estrutura
 
@@ -885,7 +905,7 @@ segundo.
 
 ### As contas de avaliação vêm de um script à parte, não de uma migração
 
-**Decidi** que as quatro contas nascem de `backend/seeds/semear.py`, chamado à mão por
+**Decidi** que as contas de avaliação nascem de `backend/seeds/semear.py`, chamado à mão por
 `uv run python -m seeds.semear`.
 
 **Por quê:** conta de avaliação é *dado*, e migração é *schema*. Um script separado pode rodar de
@@ -919,11 +939,11 @@ igual ao script — parece zelo e, em produção, significa trocar a senha de al
 o e-mail existe com papel diferente do esperado, o script **avisa na saída e continua**, porque
 silêncio ali viraria "o organizador não funciona" sem pista nenhuma.
 
-### As quatro contas têm nome de gente, e uma senha só, publicada aqui
+### As contas semeadas têm nome de gente, e uma senha só, publicada aqui
 
 **Decidi** que as contas semeadas são pessoas — Helena Marques, Bruno Tavares, Marina Aoki, Jonas
-Ribeiro —, com e-mail que diz o papel (`organizador@rockhub.dev`) e **a mesma senha** nas quatro,
-impressa na tabela de [Contas semeadas](#contas-semeadas).
+Ribeiro e, desde a Story 2.5, Ana Sampaio —, com e-mail que diz o papel (`organizador@rockhub.dev`)
+e **a mesma senha** em todas, impressa na tabela de [Contas semeadas](#contas-semeadas).
 
 **Por quê:** o nome dessas contas aparece na tela, e a identidade visual manda nome próprio em
 serifada (é a regra UX-DR2). "Organizador RockHub" em Georgia, no lugar onde deveria estar o nome de
@@ -1696,6 +1716,102 @@ organizador num `500` — `IntegrityError` no `commit` sobe até o handler gené
 no service, antes de qualquer `INSERT`, é o que faz isso virar um `422` legível e não deixa evento
 órfão no banco.
 
+### O organizador escolhe a portaria numa lista, com busca pelo nome — não digitando o e-mail
+
+**Decidi** que quem pode ser escalado vem de uma rota própria, `GET /organizador/portarias`, e que a
+tela mostra essa lista para marcar, com um campo de busca rotulado *"Consulte pelo nome da conta"*.
+
+**Por quê:** é o único desenho em que o organizador não precisa saber nada de cor. Ele reconhece a
+pessoa pelo nome, marca, e pronto. O rótulo diz explicitamente o que se digita ali porque essa é
+justamente a dúvida que sobraria — nome ou e-mail? — e um campo de busca que devolve vazio por causa
+disso parece quebrado.
+
+**O que caiu:** **mandar `portaria_emails: [...]` e deixar o backend resolver** — nenhuma rota nova,
+nenhuma lista exposta, e a tela ficaria com um campo de texto e mais nada. Caiu porque obriga o
+organizador a decorar o e-mail de cada porteiro, e uma letra errada vira `422` sem pista de qual
+conta existe: erro que a pessoa não tem como corrigir sozinha, porque a resposta não pode dizer quais
+e-mails existem sem virar um oráculo de contas.
+
+**O custo que assumi:** qualquer organizador enxerga nome e e-mail de **todas** as contas de portaria
+do sistema. Numa plataforma com vários organizadores isso viraria escopo por organizador — "só quem
+eu convidei" —, que exige convite, que é outra epic. Aqui é custo consciente, e está registrado.
+
+### A escala aceita várias pessoas, e não uma só
+
+**Decidi** que um evento pode ter vários usuários de portaria escalados, numa tabela de associação
+`evento_portaria` com chave primária composta.
+
+**Por quê:** o AD-7 fala em "ao menos um", e uma porta de show real tem mais de um operador. O modelo
+já é N:N; escolher um só seria desenhar a interface contra o próprio banco.
+
+**O que caiu:** **um `<select>` de escolha única**, que é o que o protótipo desenha — menos tela,
+menos estado, menos teste. Caiu porque a interface passaria a ser a única coisa impedindo o que o
+banco permite, e **não há tela de editar evento** para corrigir depois: um evento com uma pessoa só
+escalada, e ela faltando na noite do show, é um evento sem portaria. Quando a única barreira é a
+tela, a barreira dura até alguém chamar a API.
+
+### Escalar quem não é portaria e escalar quem não existe respondem a mesma coisa
+
+**Decidi** um código só, `PORTARIA_INVALIDA`, para os dois casos — e a **mesma mensagem**, não só o
+mesmo código.
+
+**Por quê:** é a mesma disciplina do login, que não diz se o e-mail existe. Se a resposta separasse
+"esse id não existe" de "essa conta não é de portaria", quem tivesse uma sessão de organizador
+poderia varrer UUIDs e descobrir quais já foram gente. Uma consulta só (`id.in_(ids)` **e** `papel ==
+PORTARIA`) resolve as duas perguntas de uma vez, e um teste compara os dois corpos de erro para
+garantir que continuam idênticos.
+
+**O que caiu:** **distinguir os dois**, que ajudaria a depurar e é o que qualquer API interna faria.
+Caiu porque o ganho é meu, no console, e o custo é de quem tem conta no sistema. Também caiu
+**listar quais ids falharam** na mensagem: mesma coisa, com o agravante de entregar a resposta pronta.
+
+### Ids repetidos são deduplicados em silêncio, ao contrário de setor repetido
+
+**Decidi** que mandar a mesma pessoa duas vezes em `portaria_ids` grava uma linha e responde `201`,
+enquanto dois setores de mesmo nome continuam sendo `422 SETOR_DUPLICADO`.
+
+**Por quê:** a diferença é de intenção, não de forma. Dois setores com o mesmo nome são duas
+intenções em conflito — qual das duas capacidades vale, qual dos dois preços? Não há resposta certa,
+e escolher uma seria adivinhar. A mesma pessoa marcada duas vezes é uma intenção só, dita duas vezes:
+ela está escalada. Recusar seria pedir que alguém corrigisse um formulário que já dizia o que queria
+dizer.
+
+**O que caiu:** **`PORTARIA_DUPLICADA`, por simetria com o setor** — teria a vantagem de as duas
+listas se comportarem igual, o que é mais fácil de documentar. Caiu porque simetria de forma não é
+simetria de significado, e a regra que sobraria seria "seja consistente" em vez de "faça sentido". E
+caiu **deixar a chave primária composta responder**: ela impede a linha duplicada, mas com
+`IntegrityError` no `commit`, ou seja, um `500` no lugar de um `201` legítimo.
+
+### O seed ganhou uma segunda conta de portaria, e o enunciado pede uma
+
+**Decidi** semear `Ana Sampaio · portaria2@rockhub.dev`, além do Jonas Ribeiro que já existia desde a
+Story 1.7.
+
+**Por quê:** com uma conta só, a tela de escalação vira um item obrigatório que não se pode não
+marcar — e, principalmente, o cenário que o AD-7 existe para provar (a portaria A não valida o evento
+da portaria B) dependeria de quem avalia criar uma conta de portaria na mão. Conta de portaria **não
+se cria pela interface**, por decisão já registrada. Sem a segunda semeada, esse cenário simplesmente
+não é demonstrável. O NFR2 pede uma; duas continuam atendendo, com um cenário a mais em pé.
+
+**O que caiu:** **deixar só uma**, exatamente o que o enunciado pede — menos alteração no seed, no
+README e nos testes. Caiu porque economizaria cinco linhas e custaria a demonstração da invariante
+mais específica desta plataforma. É o tipo de economia que aparece como falta na hora da avaliação.
+
+### O título do passo 3 mora na ilha de cliente, e os dos passos 1 e 2 na página
+
+**Decidi** que `3 · Escale a portaria` é renderizado dentro do `FormularioPublicacao`, enquanto
+`1 · Escolha no catálogo` e `2 · Data, local e setores` ficam na `page.tsx`.
+
+**Por quê:** o passo 3 precisa desaparecer junto com o formulário quando a confirmação toma o lugar
+dele. Um "3 · Escale a portaria" sobrando acima de um recibo de evento publicado é uma instrução para
+fazer o que já foi feito.
+
+**O que caiu:** **manter os três títulos na página**, que é mais consistente de ler no código e é o
+que eu faria por reflexo. Caiu pelo motivo acima — consistência de arquivo perdendo para consistência
+de tela. E caiu **passar um sinal de "já publicou" da ilha para a página**, que resolveria mantendo
+os títulos juntos: exigiria estado subindo de um Client Component para um Server Component, que é
+exatamente a direção que essa fronteira não tem.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -1705,14 +1821,14 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 |---|---|
 | **Mapa de assentos** | O desafio aceita venda por quantidade em setores. A plataforma é focada em shows — pista, VIP, camarote — onde assento numerado não é o padrão |
 | **Tela de editar evento** | O vínculo com a portaria só é definido na publicação. Num sistema real seria preciso escalar e remover porteiros depois |
-| **Publicar exige portaria escalada (AD-7) — vale só a partir da Story 2.5** | **Dívida datada, assumida de propósito na Story 2.4.** A arquitetura diz que publicar um evento exige ao menos um usuário de portaria escalado, e a rota `POST /organizador/eventos` nasceu na 2.4 **sem** essa exigência: a 2.5 é quem acrescenta o `EVENTO_SEM_PORTARIA` à mesma rota. Entre uma e outra é possível publicar um evento sem ninguém autorizado a validar ingresso nele. Aceitei a janela porque ela dura uma story, dentro de uma branch que só eu publico — o raciocínio inteiro, com a alternativa que caiu, está em [A rota publica de fato](#a-rota-publica-de-fato-mesmo-com-o-ad-7-chegando-só-na-story-seguinte). **A consequência que sobra:** evento publicado nessa janela fica sem portaria **para sempre**, porque não existe tela de editar evento (a linha acima) — se eu publicar eventos de teste agora, eles não são validáveis na Epic 5 |
+| **Evento publicado entre a Story 2.4 e a 2.5 fica sem portaria para sempre** | **A janela fechou; o resíduo é o que sobrou dela.** Publicar exige portaria escalada desde a Story 2.5 — `POST /organizador/eventos` responde `422 EVENTO_SEM_PORTARIA` sem ao menos um escalado, e o AD-7 vale por inteiro. O que **não** volta atrás é o que foi publicado enquanto a exigência não existia: a migração cria a tabela vazia, nada é escalado retroativamente, e não há tela de editar evento (linha acima) por onde consertar. Esses eventos não são validáveis na Epic 5, e o conserto é apagá-los e publicar de novo (`docker compose exec db psql -U rockhub -d rockhub -c "delete from evento;"` no banco local). A janela foi assumida por escrito, e o raciocínio dela continua registrado em [A rota publica de fato](#a-rota-publica-de-fato-mesmo-com-o-ad-7-chegando-só-na-story-seguinte) |
 | **Cancelamento pelo cliente** | O modelo já suporta; faltam endpoint e tela |
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
 | **Limite de tentativas de login** | Não há bloqueio por IP nem por conta depois de N senhas erradas. É a defesa direta contra força bruta, e ficou de fora conscientemente: exige contador com expiração compartilhado entre instâncias, que é infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa (Argon2id) e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
 | **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail — serviço externo, mais uma credencial e mais um fluxo para testar. É por não existir que o cadastro tem campo de confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
 | **Cadastro de organizador pela interface** | **Adiado, não descartado.** Toda conta criada em `/cadastro` nasce `CLIENTE`, e não há seletor de papel — um seletor numa tela pública seria escalada de privilégio com cara de formulário. A rota separada faz sentido, mas sem uma forma de decidir quem merece o papel (aprovação manual, verificação de CNPJ) ela seria o mesmo buraco com outro endereço. Organizador nasce pelo seed de [Contas semeadas](#contas-semeadas), que é como o próprio enunciado o pede. **Portaria fica de fora em qualquer cenário**, e não por prazo: pelo AD-7 ela só valida onde foi escalada por um organizador, então conta de portaria autocriada não estaria ligada a evento nenhum |
-| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só as quatro contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — deixou de ser hipotética na Story 2.4: o fluxo existe e funciona de ponta a ponta. Mesmo assim ela não substitui o seed, porque travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto. E, enquanto a Story 2.5 não chega, todo evento publicado assim nasce sem portaria escalada (linha acima) |
+| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — deixou de ser hipotética na Story 2.4: o fluxo existe e funciona de ponta a ponta, e desde a 2.5 o evento já nasce com portaria escalada, ou seja, validável na Epic 5. Mesmo assim ela não substitui o seed, porque travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
 | **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` já existe para o organizador desde a Story 2.2 — mas `Meus eventos` (Story 2.6) e `Turnos` para a portaria (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |

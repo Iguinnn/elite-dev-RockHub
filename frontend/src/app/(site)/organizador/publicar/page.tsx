@@ -5,15 +5,17 @@ import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
 import FormularioPublicacao from "@/components/FormularioPublicacao";
 import { buscarNoCatalogo } from "@/lib/catalogo";
+import { listarPortarias, type ResultadoDasPortarias } from "@/lib/portarias";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
 
 /**
  * Fluxo de publicação: passo 1, buscar a atração no catálogo da Ticketmaster;
- * passo 2, preencher data, local e setores. Server Component — a busca vive na
- * URL (`?q=`) **e a escolha também** (`?escolhido=`), não em estado de cliente,
- * e por isso a página é recarregável, compartilhável e o botão voltar funciona.
+ * passo 2, preencher data, local e setores; passo 3, escalar a portaria.
+ * Server Component — a busca vive na URL (`?q=`) **e a escolha também**
+ * (`?escolhido=`), não em estado de cliente, e por isso a página é
+ * recarregável, compartilhável e o botão voltar funciona.
  *
  * **Duas guardas, não uma.** Sem sessão, `redirect` para o login com o
  * caminho de volta preservado — o mesmo padrão da `/conta`. Com sessão e
@@ -24,7 +26,14 @@ import estilos from "./page.module.css";
  * **A escolha é navegação, não estado** (Story 2.4). Clicar numa fila é
  * seguir um `<Link>`, e é o que mantém esta página inteira no servidor: a
  * única ilha `"use client"` da tela é o `FormularioPublicacao`, que precisa do
- * navegador para acrescentar e remover linha de setor.
+ * navegador para acrescentar e remover linha de setor — e, desde a Story 2.5,
+ * para filtrar e marcar quem trabalha na porta.
+ *
+ * **Os títulos dos passos 1 e 2 moram aqui; o do passo 3, não.** Os dois
+ * primeiros são da página: continuam de pé o tempo todo. O terceiro pertence
+ * ao formulário, e precisa desaparecer junto com ele quando a confirmação toma
+ * o seu lugar — um "3 · Escale a portaria" sozinho, acima de um recibo de
+ * evento publicado, seria uma instrução para fazer o que já foi feito.
  *
  * **A busca acontece sempre, mesmo sem termo** — revisado depois do corte
  * original da Story 2.2: em vez de um convite "busque pelo nome do show" antes
@@ -69,6 +78,14 @@ export default async function PublicarEvento({
     resultado.estado === "ok"
       ? resultado.itens.find((item) => item.id_externo === idEscolhido)
       : undefined;
+
+  // Só com atração escolhida: sem ela não há passo 3 na tela, e buscar a lista
+  // a cada busca no catálogo seria uma chamada por tecla enter que ninguém vai
+  // ler. `listarPortarias` também nunca levanta — o passo 3 explica a falta em
+  // vez de derrubar a página.
+  const portarias: ResultadoDasPortarias = escolhido
+    ? await listarPortarias()
+    : { estado: "ok", itens: [] };
 
   // `URLSearchParams` e só ele: `q` chega aqui já decodificado pelo Next, e
   // concatenar `encodeURIComponent` à mão em cima disso produz `%2520` e uma
@@ -187,7 +204,7 @@ export default async function PublicarEvento({
           >
             <h2>2 · Data, local e setores</h2>
           </div>
-          <FormularioPublicacao item={escolhido} />
+          <FormularioPublicacao item={escolhido} portarias={portarias} />
         </>
       )}
     </section>

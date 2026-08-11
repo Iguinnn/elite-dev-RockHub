@@ -92,6 +92,47 @@ def test_chave_estrangeira_de_setor_aponta_para_evento_com_cascade(
     assert chave["options"]["ondelete"] == "CASCADE"
 
 
+def test_upgrade_cria_a_tabela_evento_portaria(engine_teste: Engine) -> None:
+    """A escala da portaria (AD-7), com chave primária composta.
+
+    Composta, e não um `id` próprio: o par (evento, pessoa) **é** a identidade
+    da linha, e é a chave que impede a mesma pessoa escalada duas vezes no
+    mesmo evento.
+    """
+    inspetor = inspect(engine_teste)
+
+    assert "evento_portaria" in inspetor.get_table_names()
+
+    chave_primaria = inspetor.get_pk_constraint("evento_portaria")
+    assert set(chave_primaria["constrained_columns"]) == {"evento_id", "usuario_id"}
+
+    colunas = {c["name"]: c for c in inspetor.get_columns("evento_portaria")}
+    # Nenhuma coluna própria: a tabela não tem vida sua, nem `criado_em`.
+    assert set(colunas) == {"evento_id", "usuario_id"}
+
+
+def test_os_dois_ondelete_de_evento_portaria_sao_diferentes(
+    engine_teste: Engine,
+) -> None:
+    """Apagar o evento leva a escala junto; apagar quem foi escalado, não.
+
+    Lido do banco, não do modelo: o `--autogenerate` tem histórico de emitir a
+    chave estrangeira sem o `ondelete`, e são dois diferentes nesta tabela.
+    """
+    inspetor = inspect(engine_teste)
+    chaves = {
+        chave["referred_table"]: chave
+        for chave in inspetor.get_foreign_keys("evento_portaria")
+    }
+
+    assert chaves["evento"]["constrained_columns"] == ["evento_id"]
+    assert chaves["evento"]["options"]["ondelete"] == "CASCADE"
+
+    assert chaves["usuario"]["constrained_columns"] == ["usuario_id"]
+    # Sem `ondelete`: o Postgres recusa apagar quem já trabalhou numa porta.
+    assert "ondelete" not in chaves["usuario"]["options"]
+
+
 def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
     engine_teste: Engine,
 ) -> None:
@@ -101,7 +142,7 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
     `downgrade()` quebrado passaria despercebida aqui.
     """
     cfg = _config_alembic()
-    tabelas_do_projeto = ("usuario", "evento", "setor")
+    tabelas_do_projeto = ("usuario", "evento", "setor", "evento_portaria")
 
     command.downgrade(cfg, "base")
     try:

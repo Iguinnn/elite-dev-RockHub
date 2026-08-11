@@ -391,8 +391,8 @@ frontend/
           page.module.css
         organizador/
           publicar/
-            page.tsx          # Server Component — passo 1 (2.2) + passo 2 (2.4), a escolha vem da URL
-            page.module.css   # inclui as classes do passo 2, da linha de setor e da confirmação
+            page.tsx          # Server Component — passos 1 (2.2), 2 (2.4) e 3 (2.5); a escolha vem da URL
+            page.module.css   # classes dos três passos, da linha de setor e da confirmação
       (entrada)/              # casca sem masthead: só a marca
         layout.tsx
         layout.module.css
@@ -416,13 +416,14 @@ frontend/
       AvisoDeErro.module.css
       FormularioLogin.tsx     # "use client"
       FormularioCadastro.tsx  # "use client"
-      FormularioPublicacao.tsx # "use client" — a primeira ilha fora das telas de acesso (2.4)
+      FormularioPublicacao.tsx # "use client" — a primeira ilha fora das telas de acesso (2.4/2.5)
       BotaoSair.tsx           # "use client" — logout + router.refresh()
     lib/
       api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
-      servidor.ts             # API_URL + cabecalhoDeSessao() — o que sessao.ts e catalogo.ts compartilham
+      servidor.ts             # API_URL + cabecalhoDeSessao() — o que os três módulos de servidor compartilham
       sessao.ts               # obterUsuarioDaSessao() — só servidor
       catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
+      portarias.ts            # listarPortarias() — só servidor (Story 2.5)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
 
@@ -657,9 +658,8 @@ retorno depois do checkout (Epic 3) e para o link compartilhado (Epic 4).
 
 ## A tela do organizador: `/organizador/publicar`
 
-Dois passos, na mesma tela: buscar a atração no catálogo da Ticketmaster (Story 2.2) e preencher
-data, local e setores (Story 2.4). Escalar a portaria é o passo 3, e é a Story 2.5 — ainda não
-existe.
+Três passos, na mesma tela: buscar a atração no catálogo da Ticketmaster (Story 2.2), preencher
+data, local e setores (Story 2.4) e escalar quem valida na porta (Story 2.5).
 
 ### A escolha da atração vive na URL, como a busca
 
@@ -759,8 +759,57 @@ Sem `router.push` e sem `router.refresh`: nada da sessão mudou, e não há para
 cair numa tela que diz "a programação entra no ar quando os primeiros eventos forem publicados"
 pareceria defeito. O caminho de volta é o `Publicar outro →`, que leva à URL limpa.
 
-O erro vem pelo `codigo`, nunca pela `mensagem` do servidor — convenção desde a Story 1.4. Os dois
-códigos novos desta tela são `EVENTO_SEM_SETOR` e `SETOR_DUPLICADO`.
+Desde a Story 2.5 a confirmação também lista, **por nome**, quem ficou com a porta — abaixo do
+inventário de setores, sob o kicker `Na porta`. É a única confirmação da escala que o organizador
+recebe: não há tela de editar evento, e descobrir depois que escalou a pessoa errada não teria
+conserto.
+
+O erro vem pelo `codigo`, nunca pela `mensagem` do servidor — convenção desde a Story 1.4. Os
+códigos desta tela são `EVENTO_SEM_SETOR`, `SETOR_DUPLICADO` (2.4), `EVENTO_SEM_PORTARIA` e
+`PORTARIA_INVALIDA` (2.5). O texto de `PORTARIA_INVALIDA` **não diz qual** conta falhou, porque o
+backend não distingue "não existe" de "não é portaria", de propósito — a tela não inventa uma
+precisão que a resposta não tem, e manda recarregar, que é o conserto real.
+
+### O passo 3: escalar a portaria (Story 2.5)
+
+O bloco fica **dentro do mesmo `<form>` do passo 2**, e isso é a decisão inteira: é uma publicação
+só, um `POST` só, e a escala nasce atômica com o evento. Dois formulários dariam a impressão de duas
+ações independentes, e a primeira poderia terminar sem a segunda — que é exatamente o evento sem
+portaria que o AD-7 existe para impedir.
+
+**O título do passo 3 mora na ilha, não na `page.tsx`.** Os títulos dos passos 1 e 2 são da página, e
+continuam de pé o tempo todo. O do passo 3 pertence ao formulário e precisa **desaparecer junto com
+ele** quando a confirmação toma o lugar: um "3 · Escale a portaria" sozinho, acima de um recibo de
+evento publicado, é uma instrução para fazer o que já foi feito.
+
+**A busca por nome acontece em memória, não como `?q=` na rota.** A lista inteira já viaja para a
+tela (são poucas contas de portaria), e filtrar no cliente responde a cada tecla sem ida à rede. Um
+`q` no endpoint seria a saída se a lista crescesse, e aí o filtro passaria a ser estado de servidor
+dentro de uma ilha que já é cliente. Trocar depois é barato; começar assim é o que custa menos hoje.
+
+⚠️ **Filtrar é ver menos, não desmarcar.** A fonte da verdade é um `Set` de ids; a lista filtrada é só
+a vista. Se a marcação fosse derivada da lista visível — por índice, por exemplo —, digitar no campo
+de busca apagaria a escala. Marcar "Ana", procurar "jonas", marcar "Jonas" e publicar grava **os
+dois**.
+
+⚠️ **Enter no campo de busca não publica o evento.** Um campo de texto dentro de um `<form>` envia o
+formulário quando alguém aperta Enter, e aqui isso publicaria no meio de uma consulta. O campo filtra
+a cada tecla, então não há nada para confirmar — o `onKeyDown` chama `preventDefault` e pronto.
+
+O rótulo é **"Consulte pelo nome da conta"**, visível, e não um `placeholder`: `placeholder` não
+conta como rótulo (UX-DR9), e aqui ele carrega informação que ninguém adivinha — que se digita o
+nome, não o e-mail. A quantidade de escalados aparece em **texto** (`2 escalados`), e não só pelo
+estado visual das marcações, pela mesma regra: nenhuma informação só por cor ou só por forma. Cada
+linha tem `<label htmlFor>` e 44px de alvo.
+
+**Sem nenhuma conta de portaria, ou com a lista indisponível, a tela não quebra.** `listarPortarias`
+nunca levanta (ver abaixo), e o passo 3 vira uma frase explicando que não há quem escalar e que sem
+isso o evento não pode ser publicado — kicker, frase, fim, sem ilustração e sem botão grande
+(UX-DR8). O formulário continua de pé.
+
+E a recusa por não ter escalado ninguém acontece **antes** da ida à rede, com a mesma disciplina de
+validação local do `FormularioCadastro`: o servidor recusaria igual, e evitar a viagem é retorno
+imediato.
 
 ### Rótulo oculto não é rótulo ausente
 
@@ -841,6 +890,15 @@ mais cara da story.
 A segunda: `encodeURIComponent(termo)` ao montar a query. Sem ele, buscar `AC/DC & Guns` monta
 `?q=AC/DC & Guns`, o `&` encerra o parâmetro `q`, e o backend recebe `q=AC/DC ` mais um parâmetro
 `Guns` que ninguém pediu.
+
+`src/lib/portarias.ts` (Story 2.5) nasceu no **molde exato** deste arquivo: resultado discriminado
+(`{ estado: "ok" | "indisponivel" }`), `try/catch` que nunca levanta, `cache: "no-store"` e o
+`cabecalhoDeSessao()` repassado à mão. A disciplina é a mesma e o motivo também: não existe
+`error.tsx` neste projeto, e uma exceção não capturada num Server Component derrubaria a página
+inteira — aqui, o formulário de publicação junto com a lista.
+
+A `page.tsx` só chama `listarPortarias()` **quando há atração escolhida**. Sem ela não existe passo 3
+na tela, e buscar a lista a cada busca no catálogo seria uma chamada por consulta que ninguém lê.
 
 ### A imagem é `<img>`, não `next/image`
 
@@ -1123,6 +1181,24 @@ A lista da Story 2.4, o passo 2 da mesma tela:
 - **Abaixo de 900px** → um campo por linha, os rótulos dos setores ficam **visíveis**, e nada rola na
   horizontal
 
+A lista da Story 2.5, o passo 3:
+
+- **Escolher uma atração** → o passo **3 · Escale a portaria** aparece com as **duas** contas
+  semeadas, `Ana Sampaio` e `Jonas Ribeiro`, e a contagem lendo `0 escalados`
+- **Digitar `ana` na busca** → só uma linha; apagar → as duas voltam. Sem nenhuma chamada no
+  Network: o filtro é em memória
+- **Marcar Ana, filtrar por `jonas`, marcar Jonas, limpar o filtro** → **as duas** continuam
+  marcadas. É a verificação de que filtrar não desmarca ninguém, e é a que mais importa aqui
+- **Apertar Enter no campo de busca** → não acontece nada. Se o evento for publicado, o
+  `preventDefault` sumiu
+- **Publicar sem marcar ninguém** → recusa **sem** ida à rede. Se aparecer chamada no Network, a
+  validação local vazou
+- **Publicar com duas pessoas marcadas** → a confirmação lista os dois nomes sob `Na porta`, e o
+  Postgres tem duas linhas (`select * from evento_portaria;`)
+- **Abaixo de 900px** → busca e lista ocupam a largura inteira, o e-mail desce para baixo do nome, e
+  nada rola na horizontal
+- **`Tab`** → cada marcação recebe foco visível em âmbar, e o rótulo é lido junto
+
 ### E a mesma lista, em produção
 
 Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. Contra
@@ -1140,7 +1216,7 @@ Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. 
 - **A `/conta` sem sessão cai em `/login?voltar=%2Fconta`** e devolve para a `/conta` depois de
   entrar — o mesmo comportamento de `localhost`, agora atravessando dois fornecedores
 
-O que o `curl` cobre — raiz, 404 com a casca, `401` sem cookie, login nas quatro contas e os
+O que o `curl` cobre — raiz, 404 com a casca, `401` sem cookie, login nas contas semeadas e os
 atributos do `Set-Cookie` — está em [Como saber que deu certo](#4--como-saber-que-deu-certo).
 
 ## Histórico desta camada
@@ -1290,3 +1366,40 @@ trocar o termo e o passo 2 sumir sem erro, publicar de verdade e conferir a linh
 `psql`. O backend ganhou vinte e quatro testes para a rota que esta tela consome (a suíte foi de 140
 para 164), documentados no [README do
 backend](../backend/README.md#story-24--publicar-um-evento-com-seus-setores).
+
+### Story 2.5 — escalar quem valida na porta
+
+O passo 3 nasceu, e com ele a primeira vez que dado vindo do servidor entra numa ilha `"use client"`
+para ser **usado**, e não só exibido. A prop `item` da 2.4 era exibição pura; `portarias` é uma lista
+que se filtra, se marca e vira corpo de requisição. A fronteira continua a mesma — o servidor busca,
+o cliente interage —, e é o desenho que as Epics 3 e 5 vão repetir.
+
+**A lista de quem pode ser escalado vem de uma rota própria, com busca pelo nome.** A alternativa era
+digitar o e-mail e deixar o backend resolver: nenhuma rota nova, nenhuma lista exposta. Descartei
+porque obriga o organizador a saber o e-mail de cor, e uma letra errada vira `422` sem pista de qual
+conta existe — o tipo de erro que ninguém consegue corrigir sozinho. O campo diz o que se digita ali,
+com todas as letras: *"Consulte pelo nome da conta"*.
+
+**O título do passo 3 é o único que não mora na `page.tsx`**, e isso não é inconsistência. Os passos
+1 e 2 são da página e ficam de pé o tempo todo; o 3 pertence ao formulário e precisa sumir junto com
+ele na confirmação. Um "3 · Escale a portaria" sobrando acima de um recibo seria uma instrução para
+fazer o que já foi feito.
+
+**A armadilha desta story foi a marcação sobreviver ao filtro.** É o erro que a implementação óbvia
+comete: derivar a marcação da lista visível, por índice. Aí digitar no campo de busca apaga a escala,
+e ninguém percebe até publicar. A fonte da verdade é um `Set` de ids; a lista filtrada é só o que se
+vê.
+
+**Um detalhe que só apareceu escrevendo o markup:** Enter num campo de texto dentro de um `<form>`
+envia o formulário. O campo de busca do passo 3 vive dentro do mesmo `<form>` do passo 2 — de
+propósito, porque é um `POST` só —, então apertar Enter no meio de uma consulta publicaria o evento.
+O campo filtra a cada tecla e não tem nada a confirmar: `preventDefault` no `Enter`, e pronto.
+
+`src/lib/portarias.ts` nasceu no molde exato do `catalogo.ts`, incluindo o "nunca levanta" — e é o
+que sustenta o estado vazio do AC16: sem conta de portaria nenhuma, ou com a lista fora do ar, o
+passo 3 explica a falta e o formulário continua de pé.
+
+Sem teste automatizado aqui, como sempre — a conferência manual virou oito itens em [Sobre não ter
+teste automatizado aqui](#sobre-não-ter-teste-automatizado-aqui). O backend ganhou vinte e três
+testes (a suíte foi de 164 para 187), documentados no [README do
+backend](../backend/README.md#story-25--escalar-quem-valida-na-porta).

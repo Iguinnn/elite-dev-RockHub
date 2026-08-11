@@ -1,4 +1,5 @@
-"""Rotas exclusivas do organizador: buscar no catálogo e publicar o evento.
+"""Rotas do organizador: buscar no catálogo, publicar o evento e listar quem
+pode ser escalado na portaria.
 
 **Por que não há `services/catalogo.py`.** A espinha diz `routers → services →
 models`, e este router chama `app.integrations` direto — pula uma camada.
@@ -15,6 +16,15 @@ transação (evento e setores gravados juntos ou nada) e existem invariantes
 (nenhum setor, setor repetido). O critério que separa os dois casos está
 escrito acima — *existe transação ou invariante?* — e agora dá para ler os dois
 lados dele sem sair deste arquivo.
+
+A Story 2.5 acrescentou o **terceiro** caso, e ele afina o critério:
+`GET /portarias` é leitura, sem transação e sem invariante nenhuma — e mesmo
+assim passa por service. O motivo é outro: ela toca o banco, e router que abre
+uma `Session` para consultar é o que o paradigma proíbe sem exceção. A do
+catálogo escapa porque não toca banco nenhum; toca uma integração que já
+devolve o schema do projeto. Os três casos estão lado a lado neste arquivo:
+leitura sem service (integração externa), leitura com service (banco), escrita
+com service (transação e invariantes).
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -26,7 +36,7 @@ from app.integrations import ticketmaster
 from app.models.evento import Evento
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.catalogo import ItemDoCatalogo
-from app.schemas.evento import EventoEntrada, EventoSaida
+from app.schemas.evento import EventoEntrada, EventoSaida, PortariaSaida
 from app.services import evento as servico_de_evento
 
 router = APIRouter(prefix="/organizador", tags=["organizador"])
@@ -49,6 +59,29 @@ def buscar_no_catalogo(
     o papel — nomeá-lo `usuario` sem usá-lo é ruído que o linter reclama.
     """
     return ticketmaster.buscar_eventos(q)
+
+
+@router.get("/portarias", response_model=list[PortariaSaida])
+def listar_portarias(
+    _: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR)),
+    sessao: Session = Depends(obter_sessao),
+) -> list[Usuario]:
+    """As contas de portaria que o organizador pode escalar num evento.
+
+    **A lista é do organizador porque é ele quem escala** (AD-7): sem ver quem
+    existe, ele teria que saber o e-mail de cada porteiro de cor, e uma letra
+    errada viraria um `422` sem pista de qual conta existe.
+
+    O custo é assumido e está registrado no README da raiz: qualquer
+    organizador enxerga nome e e-mail de **todas** as contas de portaria do
+    sistema. Numa plataforma com vários organizadores isso viraria escopo por
+    organizador — que exige convite, que é outra epic.
+
+    O parâmetro do usuário se chama `_` porque a rota realmente descarta o
+    objeto: aqui só o papel importa. É o oposto do `POST /eventos`, onde ele é
+    o dono do evento.
+    """
+    return servico_de_evento.listar_portarias(sessao)
 
 
 @router.post("/eventos", response_model=EventoSaida, status_code=201)
