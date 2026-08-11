@@ -27,10 +27,34 @@ CODIGO_POR_STATUS: dict[int, str] = {
 
 MENSAGEM_PADRAO = "Não foi possível completar a requisição."
 
+# Texto em português para as falhas que o próprio framework levanta. Sem esta
+# tabela, o Starlette preenche o `detail` com a frase padrão do `HTTPStatus`
+# ("Not Found", "Method Not Allowed") e a API — que é escrita em português de
+# ponta a ponta, inclusive nas rotas — responde em inglês justamente no caminho
+# que alguém encontra primeiro ao explorar o `/docs`.
+#
+# A `mensagem` não é contrato (quem decide o texto de tela é o `codigo`), então
+# traduzir aqui não quebra ninguém.
+MENSAGEM_POR_STATUS: dict[int, str] = {
+    400: "Requisição inválida.",
+    401: "Entre para continuar.",
+    403: "Esta área é de outro papel. Entre com a conta certa.",
+    404: "Esse endereço não existe nesta API.",
+    405: "Este método não é aceito neste endereço.",
+    409: "Essa operação conflita com o estado atual.",
+    422: "Dados inválidos.",
+    429: "Requisições demais. Tente de novo em instantes.",
+}
+
 
 def corpo_de_erro(codigo: str, mensagem: str) -> dict[str, Any]:
     """Monta o corpo de erro. Único lugar que conhece esse formato."""
     return {"erro": {"codigo": codigo, "mensagem": mensagem}}
+
+
+def mensagem_para_status(status_http: int) -> str:
+    """Texto em português correspondente a um status levantado pelo framework."""
+    return MENSAGEM_POR_STATUS.get(status_http, MENSAGEM_PADRAO)
 
 
 def codigo_para_status(status_http: int) -> str:

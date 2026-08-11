@@ -19,6 +19,7 @@ from app.main import (
     tratar_erro_de_dominio,
     tratar_erro_de_validacao,
     tratar_erro_http,
+    tratar_erro_inesperado,
 )
 
 cliente_real = TestClient(app_real)
@@ -78,8 +79,22 @@ def test_rota_inexistente_usa_o_mesmo_formato() -> None:
 
     assert resposta.status_code == 404
     assert resposta.json() == {
-        "erro": {"codigo": "NAO_ENCONTRADO", "mensagem": "Not Found"}
+        "erro": {
+            "codigo": "NAO_ENCONTRADO",
+            "mensagem": "Esse endereço não existe nesta API.",
+        }
     }
+
+
+def test_mensagem_do_framework_vem_em_portugues() -> None:
+    """A API é escrita em português inteira — inclusive quando o Starlette fala.
+
+    Sem a tradução, o `detail` que o Starlette gera sozinho ("Not Found",
+    "Method Not Allowed") seria a única string em inglês do sistema, e ela
+    apareceria justamente no primeiro erro de quem explora o `/docs`.
+    """
+    assert "Not Found" not in cliente_real.get("/nao-existe").text
+    assert "Method Not Allowed" not in cliente_real.post("/saude").text
 
 
 def test_metodo_errado_usa_o_mesmo_formato_e_preserva_o_allow() -> None:
@@ -170,10 +185,47 @@ def test_descricao_de_validacao_junta_varios_campos() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_aplicacao_registra_os_tres_handlers() -> None:
+def test_aplicacao_registra_os_quatro_handlers() -> None:
     """Garante que a padronização vale na app real, não só nas de teste."""
     registrados = app_real.exception_handlers
 
     assert registrados[ErroDeDominio] is tratar_erro_de_dominio
     assert registrados[StarletteHTTPException] is tratar_erro_http
     assert registrados[RequestValidationError] is tratar_erro_de_validacao
+    assert registrados[Exception] is tratar_erro_inesperado
+
+
+# --------------------------------------------------------------------------- #
+# Falha não prevista
+# --------------------------------------------------------------------------- #
+
+
+def test_excecao_inesperada_tambem_usa_o_formato_padrao() -> None:
+    """O 500 era a única resposta da API fora do `{"erro": {...}}`.
+
+    `raise_server_exceptions=False` para o `TestClient` devolver a resposta em
+    vez de relançar a exceção — é o comportamento do servidor de verdade que
+    interessa aqui, não o do cliente de teste.
+    """
+    app = FastAPI()
+    app.add_exception_handler(Exception, tratar_erro_inesperado)
+
+    @app.get("/explode")
+    def explode() -> None:
+        raise RuntimeError("connection to server at 10.0.0.4 failed: senha=hunter2")
+
+    cliente = TestClient(app, raise_server_exceptions=False)
+
+    resposta = cliente.get("/explode")
+
+    assert resposta.status_code == 500
+    assert resposta.json() == {
+        "erro": {
+            "codigo": "ERRO_INTERNO",
+            "mensagem": "Não foi possível completar a requisição.",
+        }
+    }
+    # A causa fica no log, nunca no corpo: mensagem de exceção carrega host,
+    # usuário e credencial com frequência demais para virar resposta HTTP.
+    assert "10.0.0.4" not in resposta.text
+    assert "hunter2" not in resposta.text

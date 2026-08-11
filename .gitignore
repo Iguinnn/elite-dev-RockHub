@@ -7,22 +7,32 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+#
+# ⚠️ TODOS ancorados na raiz, e a barra inicial não é enfeite. Sem ela, o padrão
+# casa em QUALQUER PROFUNDIDADE: foi assim que `lib/` engoliu `frontend/src/lib/`
+# desde a Story 1.2 e quebrou o primeiro build da Vercel na 1.9, com os três
+# arquivos existindo no disco e nunca no repositório.
+#
+# O template do GitHub assume que a raiz do repositório É o projeto Python. Aqui
+# ela não é — o Python mora em `backend/` e o Next em `frontend/` —, então cada
+# um destes nomes é também um nome plausível de pasta de código: `build/`,
+# `dist/`, `cover/` (capas de evento), `var/`, `parts/` (partes/setores). A barra
+# devolve a cada padrão o que o template queria dizer.
+#
+# Regra para as próximas epics: padrão de artefato de build entra ancorado.
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-# Ancorados na raiz de propósito: sem a barra inicial, `lib/` casa em qualquer
-# profundidade e engole `frontend/src/lib/` — foi o que quebrou o primeiro build
-# da Vercel na Story 1.9, com os três arquivos existindo aqui e nunca no repositório.
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
 /lib/
 /lib64/
-parts/
-sdist/
-var/
-wheels/
+/parts/
+/sdist/
+/var/
+/wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -40,7 +50,12 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
-htmlcov/
+# `htmlcov/` e `cover/` ancorados pelo mesmo motivo da seção de empacotamento —
+# `cover/` é o nome mais provável de uma pasta de capas de evento na Epic 2.
+# As pastas de cache (`.pytest_cache/`, `.tox/`) ficam sem âncora de propósito:
+# elas nascem ao lado do código, em `backend/`, e nenhuma delas é nome plausível
+# de pasta de fonte.
+/htmlcov/
 .tox/
 .nox/
 .coverage
@@ -52,7 +67,7 @@ coverage.xml
 *.py.cover
 .hypothesis/
 .pytest_cache/
-cover/
+/cover/
 
 # Translations
 *.mo
@@ -65,7 +80,7 @@ db.sqlite3
 db.sqlite3-journal
 
 # Flask stuff:
-instance/
+/instance/
 .webassets-cache
 
 # Scrapy stuff:
@@ -76,7 +91,7 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -245,9 +260,17 @@ yarn-error.log*
 *.key
 
 # Build front
+# `frontend/out/` e não `out/`: sem o caminho, o padrão casaria em qualquer
+# profundidade e uma pasta `out/` de código sumiria como `frontend/src/lib/`
+# sumiu. `.next/`, `.turbo/` e `.swc/` ficam sem âncora — não são nome plausível
+# de pasta de fonte, e nascem onde o Next roda.
 .next/
 .vercel
-out/
+frontend/out/
+# Gerado pelo `next dev`/`next build` a cada execução, e por isso ignorado —
+# é a convenção do próprio create-next-app. A consequência a conhecer: num
+# clone limpo, `tsc --noEmit` sozinho falha até o primeiro build, porque o
+# `tsconfig.json` lista este arquivo no `include`. Rode `npm run build` antes.
 next-env.d.ts
 .turbo/
 .swc/

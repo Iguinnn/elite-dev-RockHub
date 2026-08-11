@@ -18,6 +18,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import obter_settings
@@ -43,14 +44,46 @@ def _config_alembic() -> Config:
     return cfg
 
 
+def _exigir_banco_de_teste(url: str) -> None:
+    """Recusa migrar qualquer banco que não se chame `rockhub_teste`.
+
+    ⚠️ Esta função roda **antes** do `downgrade base`, e é por isso que ela
+    existe. O `test_banco_de_teste_e_o_rockhub_teste` afirma a mesma regra,
+    mas é um teste: ele roda depois da fixture de sessão, ou seja, depois do
+    `DROP TABLE`. Ele relata o desastre; quem o impede é esta verificação.
+
+    O cenário que ela fecha: alguém exporta `DATABASE_URL_TESTE` apontando
+    para o Postgres da Railway — é a variável mais fácil de errar, porque o
+    `.env.example` documenta o formato dela ao lado do de produção — e roda
+    `uv run pytest`. Sem esta guarda, as tabelas de produção caem primeiro e
+    a suíte avisa depois.
+
+    A conferência é pelo nome do banco, não pelo host: `localhost` não é
+    garantia nenhuma (um túnel de porta aponta para qualquer lugar), e o nome
+    é o que a convenção do projeto fixa desde a Story 1.3.
+    """
+    nome_do_banco = make_url(url).database
+
+    if nome_do_banco != "rockhub_teste":
+        raise RuntimeError(
+            f"A suíte migra e apaga o banco de DATABASE_URL_TESTE, e ela só "
+            f"roda contra um banco chamado 'rockhub_teste'. O valor atual "
+            f"aponta para '{nome_do_banco}'. Nenhuma migração foi executada."
+        )
+
+
 @pytest.fixture(scope="session")
 def engine_teste() -> Generator[Engine, None, None]:
     """Migra `rockhub_teste` do zero (downgrade + upgrade) uma vez por sessão."""
+    url_de_teste = obter_settings().database_url_teste
+    # Antes do `downgrade`, sempre: o que vem a seguir é destrutivo.
+    _exigir_banco_de_teste(url_de_teste)
+
     cfg = _config_alembic()
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
 
-    engine = create_engine(obter_settings().database_url_teste)
+    engine = create_engine(url_de_teste)
     yield engine
     engine.dispose()
 

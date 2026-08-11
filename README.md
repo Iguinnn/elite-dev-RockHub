@@ -99,7 +99,8 @@ cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
 # gere o segredo que assina a sessão e cole no .env, em JWT_SECRET
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+# (opcional em desenvolvimento — o valor de exemplo funciona; veja abaixo)
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 uv run alembic upgrade head       # cria o schema (tabela usuario)
 uv run python -m seeds.semear     # cria as 4 contas de avaliação (organizador, 2 clientes, portaria)
@@ -240,42 +241,43 @@ Rodando local pelos passos de [Como executar](#como-executar), e começando pela
    cada deploy
 4. `http://127.0.0.1:8000/saude` responde `{"status": "ok"}`, e `/docs` lista `/auth/cadastro`,
    `/auth/login`, `/auth/logout` e `/auth/eu`
-
-E, para ver o contrato da API sem passar pela interface:
-
-4b. Abrir <https://elite-dev-rockhub-production.up.railway.app/docs> e entrar pelo `POST /auth/login`
-    com `organizador@rockhub.dev` / `rockhub123` → `200`, com `"papel": "ORGANIZADOR"`. É a mesma
-    aplicação que a interface publicada consome, contra o mesmo PostgreSQL da Railway
-5. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
+5. E, para ver o contrato da API sem passar pela interface: abrir
+   <https://elite-dev-rockhub-production.up.railway.app/docs> e entrar pelo `POST /auth/login`
+   com `organizador@rockhub.dev` / `rockhub123` → `200`, com `"papel": "ORGANIZADOR"`. É a mesma
+   aplicação que a interface publicada consome, contra o mesmo PostgreSQL da Railway
+6. Abrir `http://localhost:3000/cadastro` e criar uma conta com nome, e-mail e senha (mínimo de 6
    caracteres) → **cai na raiz já logado**, sem precisar entrar de novo. Rodar o seed mais uma vez
    depois disso **não mexe nessa conta**: ela continua lá e continua entrando
-6. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
+7. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio `localhost:3000` — o do
    frontend — com `HttpOnly` marcado. E `document.cookie` no console não o mostra
-7. Na aba Network, a chamada foi para `/api/auth/cadastro`, nunca para `localhost:8000`
-8. Tentar cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) mostra
+8. Na aba Network, a chamada foi para `/api/auth/cadastro`, nunca para `localhost:8000`
+9. Tentar cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) mostra
    "Esse e-mail já tem conta. Entre com ele ou use outro." e responde `409` — nunca um `500`
-9. No cadastro, digitar senha e confirmação diferentes mostra "As senhas não conferem." **sem
-   nenhuma requisição no Network** — a confirmação nunca sai do navegador
-10. Apagar o cookie e entrar em `/login` com a conta que você acabou de criar → cai na raiz. É a
+10. No cadastro, digitar senha e confirmação diferentes mostra "As senhas não conferem." **sem
+    nenhuma requisição no Network** — a confirmação nunca sai do navegador
+11. Apagar o cookie e entrar em `/login` com a conta que você acabou de criar → cai na raiz. É a
     prova de que hash e normalização de e-mail batem entre as duas rotas
-11. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
+12. Errar a senha mostra "E-mail ou senha incorretos." numa região anunciada por leitor de tela; a
     resposta é `401` com `CREDENCIAIS_INVALIDAS`. Um e-mail que não existe devolve **exatamente** a
     mesma coisa
-12. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL
-13. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
+13. Ir e voltar entre `/login` e `/cadastro` pelos links no pé de cada tela, sem digitar URL. E o
+    logotipo, no alto das duas, leva de volta para a raiz
+14. `Tab` percorre os campos → botão → link, com o contorno âmbar visível em todos
 
 E o ciclo da sessão, que fecha na Story 1.6:
 
-14. **Sem sessão**, a raiz `http://localhost:3000/` abre normalmente e o masthead mostra
+15. **Sem sessão**, a raiz `http://localhost:3000/` abre normalmente e o masthead mostra
     `Início` · `Entrar` — a raiz é pública
-15. Ainda sem sessão, abrir `http://localhost:3000/conta` → você é levado para
+16. Ainda sem sessão, abrir `http://localhost:3000/conta` → você é levado para
     `/login?voltar=%2Fconta`. Entrar ali **devolve você a `/conta`**, não à raiz
-16. Com sessão, o masthead vira `Início` · `Minha conta`, e a `/conta` mostra nome, e-mail e papel
-17. Clicar em `Sair` leva de volta para `/` **e o masthead vira `Entrar` na hora**, sem recarregar
-18. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie responde
+17. Com sessão, o masthead vira `Início` · `Minha conta`, e a `/conta` mostra nome, e-mail e papel
+18. Clicar em `Sair` leva de volta para `/` **e o masthead vira `Entrar` na hora**, sem recarregar
+19. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie responde
     `401 {"erro":{"codigo":"NAO_AUTENTICADO", ...}}`
-19. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=https://exemplo.com`, ou
+20. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=https://exemplo.com`, ou
     `?voltar=javascript:alert(1)`) e entrar → você cai em `/`. **Nunca fora do site**
+21. `curl -i http://127.0.0.1:8000/rota-que-nao-existe` responde `404` no mesmo formato
+    `{"erro": {...}}` das rotas de verdade, e com a mensagem em português
 
 ## Stack e estrutura
 
@@ -1053,6 +1055,26 @@ sem tocar no template. Perdeu porque deixa a armadilha armada: o padrão continu
 pasta `lib/` aninhada — em qualquer camada, em qualquer epic — some do mesmo jeito e sem aviso. Uma
 exceção conserta um sintoma; a âncora conserta a causa.
 
+**E o code review da epic cobrou esse argumento.** Eu tinha ancorado dois padrões — `lib/` e
+`lib64/` — e declarado a causa consertada. Só que os vizinhos deles no mesmo template continuavam
+soltos: `build/`, `dist/`, `parts/`, `sdist/`, `var/`, `wheels/`, `htmlcov/`, `cover/`, `instance/`,
+`target/` e `out/`. Nenhum estava engolindo nada naquele momento, e foi exatamente por isso que
+passaram: eu conferi o sintoma, que tinha sumido, em vez da causa, que continuava lá em dez outros
+lugares. Um `frontend/public/cover/` para capas de evento na Epic 2 teria reproduzido o mesmo
+desastre, com o mesmo diagnóstico de duas horas. Ancorei todos, e a regra virou linha no
+`CLAUDE.md`: **padrão de artefato de build entra com `/`.**
+
+**O que eu não ancorei, de propósito:** os padrões de cache e de virtualenv — `__pycache__/`,
+`.venv`, `node_modules/`, `env/`, `venv/`, `.pytest_cache/`. Esses **precisam** casar em qualquer
+profundidade, porque é justamente em profundidade que eles nascem: `backend/.venv` e
+`frontend/node_modules` só ficam de fora do repositório enquanto o padrão for solto. Ancorá-los por
+simetria seria trocar um erro por outro maior — commitar uma virtualenv inteira. A distinção que
+ficou: **artefato de build se ancora; cache que nasce ao lado do código, não.**
+
+**A verificação que eu passei a ter:** cruzar todos os padrões do `.gitignore` contra a árvore real
+de diretórios, em vez de conferir caso a caso. É o que transforma "não vejo problema" em "não existe
+colisão", e leva segundos.
+
 **Como isso apareceu, e é a parte que interessa:** o build da Vercel falhou com `Module not found`
 em sete arquivos, e o denominador comum era exato — os sete importam de `@/lib`, e nenhum import de
 `@/components` aparecia no rastro. **Nada na minha máquina podia ter pego isso.** `npm run build`,
@@ -1060,6 +1082,85 @@ em sete arquivos, e o denominador comum era exato — os sete importam de `@/lib
 um clone limpo revela, e o primeiro clone limpo deste projeto foi o da Vercel. É o argumento mais
 concreto que eu tenho a favor de publicar cedo: o deploy fez, na Story 1.9, um trabalho de teste que
 nenhuma suíte deste projeto faria.
+
+### O pool confere se a conexão está viva antes de entregá-la
+
+**Decidi** criar a engine com `pool_pre_ping=True` e `pool_recycle=1800`, em vez dos padrões do
+SQLAlchemy.
+
+**Por quê:** os padrões são `pool_pre_ping=False` e `pool_recycle=-1` — ou seja, o pool guarda a
+conexão para sempre e nunca confere se ela ainda existe. O Postgres da Railway reinicia por
+manutenção, e a rede interna derruba conexão ociosa. O resultado é o pior cenário possível para
+este projeto: **a primeira requisição depois de um período parado responde `500`**, e a segunda
+funciona. Quem avalia abre o link dias depois do meu último deploy, tenta entrar, leva um erro, e a
+retentativa que consertaria já não acontece — a impressão foi dada. O `pre_ping` custa um `SELECT 1`
+por checkout, e é o preço mais barato desta lista inteira.
+
+**O que caiu:** **deixar nos padrões e confiar na retentativa**, que é o que o SQLAlchemy assume — ele
+invalida o pool ao detectar o desconecte, então o problema "se resolve sozinho" na segunda tentativa.
+Perdeu porque a segunda tentativa é minha suposição, não comportamento de quem está avaliando. Caiu
+também **`pool_recycle` sozinho, sem o `pre_ping`**: recycle cobre a conexão que vai morrer de velha,
+e não a que já morreu porque o servidor do outro lado reiniciou. São dois problemas, e o segundo é o
+que acontece na Railway.
+
+**Como isso apareceu:** não foi teste nem uso — foi o code review da Epic 1, e as duas camadas de
+revisão chegaram nele por caminhos diferentes. É um defeito que nenhuma suíte deste projeto pegaria,
+porque ele exige tempo passando entre duas requisições.
+
+### O `500` também tem o formato de erro da API, e o framework fala português
+
+**Decidi** registrar um quarto handler, para `Exception`, e traduzir a mensagem que o Starlette gera
+sozinho para `404` e `405`.
+
+**Por quê:** o README afirma, na decisão sobre o formato de erro, que **toda** resposta de erro sai
+como `{"erro": {...}}`. Não era verdade. Os três handlers cobriam domínio, `HTTPException` e
+validação; qualquer outra falha subia até o `ServerErrorMiddleware` do Starlette e voltava como
+`Internal Server Error` em **texto puro** — a única resposta da API fora do próprio contrato, e
+justamente a que aparece quando o banco cai. Pelo mesmo motivo, `404` e `405` respondiam `"Not
+Found"` e `"Method Not Allowed"`: as únicas strings em inglês de um sistema em que até a rota de
+saúde é `/saude`, e as primeiras que alguém encontra explorando o `/docs`.
+
+O corpo do `500` **não** carrega a causa. Mensagem de exceção traz host, usuário e nome de tabela com
+frequência demais para virar resposta HTTP; o rastro inteiro vai para o log, e um teste garante que
+nem o IP nem a senha do texto de exemplo aparecem no corpo.
+
+**O que caiu:** **deixar o `500` como estava e corrigir o README**, que é a alternativa honesta e
+custava uma frase. Perdeu porque a promessa era a decisão certa — o frontend tem um caminho só para
+tratar erro justamente por causa dela —, e era a implementação que estava incompleta. Caiu também
+**devolver a mensagem da exceção no corpo** para facilitar o diagnóstico: ajuda quem depura e entrega
+o interior do sistema para qualquer um que provoque uma falha.
+
+### A trava do banco de teste roda antes do `DROP`, não depois
+
+**Decidi** verificar o nome do banco dentro da fixture de sessão, antes do `alembic downgrade base`.
+
+**Por quê:** eu já tinha um teste chamado `test_banco_de_teste_e_o_rockhub_teste`, e ele me dava uma
+sensação de segurança que não existia — **teste roda depois da fixture**, e a fixture começa
+apagando as tabelas. Ele relatava o desastre em vez de impedi-lo. O cenário concreto: `DATABASE_URL_TESTE`
+exportada apontando para a Railway (é a variável mais fácil de errar, porque o `.env.example`
+documenta o formato dela ao lado do de produção), um `uv run pytest` distraído, e o banco de produção
+migrado do zero. A verificação é pelo **nome** do banco e não pelo host, porque `localhost` não
+garante nada — um túnel de porta aponta para qualquer lugar.
+
+**O que caiu:** **confiar no teste que já existia**, que é o que eu estava fazendo. E **conferir o
+host em vez do nome**, que parece mais rigoroso e é mais fácil de furar.
+
+### O favicon é a identidade reduzida a uma letra
+
+**Decidi** trocar o `favicon.ico` do `create-next-app` por um `icon.svg` próprio: "R" em âmbar
+(`--ambar`) sobre o breu (`--breu`), na serifada do sistema.
+
+**Por quê:** o arquivo do scaffold era o triângulo da Vercel, e ele sobreviveu até a Story 1.9 — a
+marca de outro produto na aba do navegador do projeto que está sendo avaliado, presente em qualquer
+screenshot. A redução carrega os dois marcadores da identidade e nada mais: o preto quente e o âmbar,
+na voz serifada. Uma letra só, porque 16px não comporta o fio duplo do masthead nem a palavra inteira
+— a essa altura qualquer estrutura vira borrão. É SVG e não `.ico` porque o formato aceita as fontes
+de sistema, e nenhuma fonte é baixada aqui também (UX-DR2).
+
+**O que caiu:** **apagar o arquivo e não pôr nada**, que já seria melhor que exibir a marca errada e
+custava zero. Perdeu por meio grau de acabamento numa peça que aparece em toda captura de tela. Caiu
+também **um símbolo desenhado** em vez da letra: qualquer forma que eu inventasse seria vocabulário
+novo, e a identidade deste projeto é tipográfica de ponta a ponta.
 
 ## O que não está pronto
 

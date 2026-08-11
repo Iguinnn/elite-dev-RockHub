@@ -122,13 +122,29 @@ Sequência (comprimida por causa do prazo — PRD foi cortado de propósito):
    do que o Igor vai ajustar livremente durante a codificação
 4. ~~`bmad-create-epics-and-stories`~~ ✅ **concluído** — `_bmad-output/planning-artifacts/epics.md`
    com 6 epics e 38 stories, uma por commit. Cobertura validada: 16/16 FRs e 11/11 UX-DRs
-5. `bmad-sprint-planning` — tracking ← **próximo passo**
-6. `bmad-dev-story` — implementar story a story
+5. ~~`bmad-sprint-planning`~~ ✅ **concluído** — `_bmad-output/implementation-artifacts/sprint-status.yaml`
+6. `bmad-dev-story` — implementar story a story ← **em andamento**
 
 ## Estado atual
 
-**Planejamento concluído. Nenhuma linha de código escrita ainda.**
-A primeira story a implementar é a **1.1** (esqueleto do backend FastAPI com health check).
+**Epic 1 concluída e revisada.** As nove stories (1.1 a 1.9) estão implementadas, e o
+`bmad-code-review` da epic inteira rodou em 2026-08-11 — sem nenhum achado bloqueante.
+As correções do review já estão aplicadas; a mais relevante está registrada como decisão
+no README da raiz.
+
+**As duas metades estão no ar:** frontend em <https://elite-dev-rock-hub.vercel.app> (Vercel)
+e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), ambos
+publicando a branch da epic — não a `main`, porque o merge vem depois do review.
+
+O que existe hoje: backend FastAPI com migração Alembic e a tabela `usuario`; cadastro, login,
+logout e `/auth/eu` com senha em Argon2id e sessão em cookie `httpOnly` de 8h; autorização por
+papel como dependência de rota; seed das quatro contas de avaliação; frontend Next.js com a
+identidade "jornal noturno" aplicada, telas de acesso, `/conta` protegida e masthead que reage
+à sessão.
+
+**Próximo passo: Epic 2** — publicação de eventos pelo organizador, começando pela Story 2.1
+(cliente da Ticketmaster com a chave protegida). O `sprint-status.yaml` é a fonte da verdade
+sobre o andamento — consulte-o antes de assumir o que está pronto.
 
 ## Decisões já travadas
 
@@ -146,14 +162,13 @@ FastAPI + PostgreSQL · Next.js · Vercel (front) + Railway (back e banco).
 
 ## Decisões em aberto
 
-Ainda não definidos (assunto do brainstorm):
+Nenhuma das grandes. Stack, banco, modelo de venda, API externa e identidade visual foram
+todas decididas no brainstorm e na arquitetura, e estão implementadas — o histórico de cada
+uma, **com a alternativa descartada**, está em `README.md#decisões-por-que-isso-e-não-aquilo`.
 
-- **Stack** — Next.js full-stack ou React (Vite) + API separada (NestJS/Express/FastAPI)?
-- **Banco** — qualquer distribuição; README precisa explicar setup
-- **Mapa de assentos, pista por quantidade, ou os dois?** O desafio aceita um só
-- **API externa** — Ticketmaster Discovery, TMDb, ou ambas
-- **Identidade visual** — critério de maior peso: o desafio penaliza explicitamente
-  "AI slop", a interface genérica que toda ferramenta gera igual
+O que continua em aberto são escolhas das epics que ainda não começaram, e elas se decidem
+quando a story chegar. O que **não** está pronto e é corte consciente está na tabela
+`README.md#o-que-não-está-pronto`, com o motivo de cada um.
 
 ## Estrutura
 
@@ -168,6 +183,17 @@ _bmad-output/
 
 ## Pendências técnicas
 
-- `.gitignore` é o template Python do GitHub — **falta `node_modules/`**. O Igor vai adicionar
-  quando começar a instalar dependências. Se for rodar `npm install`, lembre-o antes.
+- **`.gitignore`: padrão de artefato de build entra ancorado com `/`.** O arquivo nasceu do
+  template Python do GitHub, que assume que a raiz do repositório é o projeto Python. Aqui ela
+  não é, e padrão sem barra inicial casa em qualquer profundidade — foi assim que `lib/` engoliu
+  `frontend/src/lib/` desde a Story 1.2 e derrubou o primeiro build da Vercel na 1.9. Todos os
+  padrões de empacotamento e build já foram ancorados no code review da Epic 1; **mantenha a
+  regra** ao acrescentar qualquer um novo. Ficaram sem âncora de propósito os de cache e
+  virtualenv (`__pycache__/`, `.venv`, `node_modules/`, `env/`, `venv/`): eles nascem em
+  profundidade e nenhum é nome plausível de pasta de código.
+- **Nenhuma verificação local pega arquivo que nunca entrou no repositório.** `npm run build`,
+  `tsc --noEmit` e a suíte do backend leem o disco, não o índice do git. Só um clone limpo
+  revela — e o primeiro clone limpo deste projeto foi o da Vercel.
 - `uv` instalado em `C:\Users\Asus\.local\bin` (necessário para os scripts Python do BMAD)
+- **Docker Desktop precisa estar no ar** para `uv run pytest`: a suíte roda contra o Postgres
+  real desde a Story 1.3. Sem ele, só os testes de `/saude`, erros, config e segurança passam.

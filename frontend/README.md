@@ -329,11 +329,28 @@ Cinco decisões dentro de quinze linhas:
   renderização, e o backend é consultado uma vez
 - **Sem cookie, sem ida à rede.** A raiz é pública e visitante é o caso comum
 - **`try/catch` em volta do `fetch`, e `!resposta.ok` também devolve `null`.** Backend fora do ar
-  ou cookie vencido renderizam a página como visitante, em vez de derrubá-la
+  ou cookie vencido renderizam a página como visitante, em vez de derrubá-la — **mas o `catch`
+  agora registra a falha antes de devolver `null`.** Era um `catch` mudo, e o code review da Epic 1
+  mostrou o custo: ele achatava três coisas diferentes — "sem sessão", "sessão inválida" e "API
+  inalcançável" — num resultado só. Quem tem cookie válido e pega uma instabilidade da Railway vê o
+  masthead voltar para `Entrar`, a `/conta` rebater para o login, conclui que a sessão caiu, e não
+  há pista nenhuma: nem na tela, nem no console, nem no Network. O comportamento continua idêntico;
+  o que mudou é que agora sobra rastro no log do servidor
 
 O nome do cookie, `rockhub_sessao`, está escrito nos dois lados: aqui e como padrão de
 `cookie_sessao_nome` no `backend/app/core/config.py`. É acoplamento assumido — trocar lá exige
-trocar aqui.
+trocar aqui. ⚠️ E `COOKIE_SESSAO_NOME` **é variável de ambiente real do backend**: defini-la no
+painel da Railway faz o backend gravar um cookie e este arquivo procurar outro, com o sintoma sendo
+"todo mundo aparece deslogado" e nenhum erro em lugar nenhum. Está documentada no
+[README do backend](../backend/README.md#configuração) exatamente para ninguém mexer nela sozinha.
+
+**`API_URL` ausente também deixou de ser silenciosa.** O padrão `http://localhost:8000` é o valor
+certo em desenvolvimento e um bug mudo em produção — o servidor da Vercel tentaria falar consigo
+mesmo. Agora tanto o `next.config.ts` (no build) quanto o `sessao.ts` (na primeira renderização)
+avisam quando `NODE_ENV === "production"` e a variável não existe. **Avisam, não derrubam:** o
+simétrico do backend seria falhar, como a `Settings` faz com o `JWT_SECRET` de exemplo, mas lá a
+consequência de subir é uma sessão forjável e aqui é um Preview quebrado — e Preview que não sobe é
+pior que Preview quebrado, pelo mesmo argumento da Story 1.9.
 
 **Estado de sessão é lido no servidor, nunca guardado no cliente.** Não há contexto React de
 usuário, não há `localStorage`, não há estado global. A página pergunta ao servidor, e o servidor
@@ -372,7 +389,7 @@ frontend/
           page.tsx            # Server Component async: o mesmo ?voltar=
           page.module.css
     components/
-      Logotipo.tsx            # a marca, num lugar só
+      Logotipo.tsx            # a marca, num lugar só — e Link para a raiz
       Logotipo.module.css
       Masthead.tsx            # cabeçalho de jornal — async, lê a sessão
       Masthead.module.css
@@ -403,6 +420,14 @@ O layout raiz é só `<html><body>`. A casca visível vem de dois grupos de rota
 
 **Quem está tentando entrar não pode ver "Minha conta".** É um link que ele não consegue abrir. A
 tela de acesso mostra a marca e o formulário, nada mais.
+
+**O efeito colateral que o code review da Epic 1 achou:** sem masthead, quem digitava `/login` na
+barra de endereço ficava sem nenhum caminho de volta para `/` — os únicos links da tela eram o par
+`/login` ↔ `/cadastro`, e a decisão de tirar a navegação tinha criado um beco. A correção foi
+transformar o `Logotipo` de `<span>` em `<Link href="/">`, o que resolve nas duas cascas de uma vez
+e **não reintroduz navegação nenhuma**: é a mesma marca que já estava lá, agora clicável, seguindo a
+convenção que todo site cumpre. O `className` fica no `<a>` porque o `globals.css` já zera cor e
+sublinhado de link, e o `:focus-visible` âmbar (UX-DR9) precisa contornar a palavra inteira.
 
 Usei grupo de rotas em vez de **dois layouts raiz** (que também separaria as cascas) porque a
 documentação do Next avisa que navegar entre layouts raiz diferentes força **recarga completa da
@@ -718,6 +743,16 @@ horizontal em formulário, e ela está desarmada na origem.
   exibindo o estado antigo, porque é Server Component servido do cache do roteador. São três
   lugares: `FormularioLogin`, `FormularioCadastro` e `BotaoSair`. **Convenção do projeto:** entrou,
   cadastrou ou saiu, chama `refresh()`
+- **⚠️ Mas a ORDEM do `refresh()` depende de a página atual sobreviver à mudança.** Descoberto no
+  code review da Epic 1. Ao **entrar**, a página onde se está (`/login`) continua acessível depois
+  do cookie chegar, então `refresh()` antes do `push` é seguro. Ao **sair**, não: o `BotaoSair` só
+  existe na `/conta`, e a `/conta` redireciona para `/login?voltar=%2Fconta` quando não há sessão.
+  Chamar `refresh()` primeiro refaz o RSC de uma página que agora responde com esse redirecionamento
+  — e ele corre contra a navegação para `/`. Quem vence depende da latência: em `localhost` a ordem
+  errada passa despercebida, e na Vercel o `Sair` pode largar a pessoa na tela de login. **Regra:
+  saia da rota primeiro, atualize depois** (`router.replace("/")` e então `router.refresh()`). O
+  `replace` e não `push` é para a `/conta` não ficar no histórico, senão o botão "voltar" cai numa
+  página protegida que rebate para o login
 - **`params`, `searchParams` e `cookies()` são `Promise`.** O acesso síncrono foi removido de vez
   (era só depreciado no 15). Sem o `await`, `cookies().get` não existe e `searchParams.voltar` é
   `undefined` — que cai calado no padrão e parece "o voltar não funciona"
@@ -731,7 +766,11 @@ horizontal em formulário, e ela está desarmada na origem.
 - **O `create-next-app` gera coisa que viola o projeto.** Ele importa a fonte `Geist` de
   `next/font/google` e escreve um `globals.css` com variáveis próprias e bloco de
   `prefers-color-scheme`. Tudo isso foi arrancado — se você regerar o template algum dia, arranque
-  de novo
+  de novo. **O que sobreviveu escondido até o code review da Epic 1 foi o `favicon.ico`**: o
+  triângulo da Vercel, 25.931 bytes, na aba do navegador de um projeto que está sendo avaliado.
+  Trocado por `src/app/icon.svg`, próprio. Convenção do App Router: `icon.svg` em `app/` vira o
+  ícone da aba sozinho, e o `favicon.ico` **tem precedência sobre ele** — por isso o arquivo antigo
+  precisou ser apagado, não só acompanhado
 - **`.gitignore` só existe na raiz.** O que o `create-next-app` cria aqui é redundante; a única
   regra que ele tinha a mais (`next-env.d.ts`) eu movi para o arquivo da raiz
 

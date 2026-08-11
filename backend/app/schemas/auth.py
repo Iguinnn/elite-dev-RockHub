@@ -42,8 +42,18 @@ NomeLimpo = Annotated[str, BeforeValidator(_limpar_texto)]
 
 
 class LoginEntrada(BaseModel):
-    email: EmailNormalizado
-    senha: str
+    # Os mesmos tetos de `CadastroEntrada`, pelo motivo escrito lá — e aqui ele pesa
+    # mais: `/auth/login` é a rota anônima que roda Argon2id em **toda**
+    # tentativa, inclusive contra o `HASH_FANTASMA` quando o e-mail não
+    # existe. Sem teto, um corpo de 10 MB vira 10 MB hasheados com 64 MB de
+    # memória, sem nenhuma credencial válida do outro lado.
+    #
+    # O limite é de tamanho, não de formato: conferir o formato do e-mail aqui
+    # recriaria a distinção entre "e-mail não existe" e "senha errada" que a
+    # Story 1.4 existe para eliminar. Comprimento demais é a única coisa que
+    # este schema recusa, e ela não diz nada sobre a conta existir.
+    email: EmailNormalizado = Field(max_length=255)
+    senha: str = Field(max_length=128)
 
 
 class CadastroEntrada(BaseModel):

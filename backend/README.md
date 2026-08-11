@@ -65,10 +65,23 @@ Ticketmaster mais adiante.
 | `DATABASE_URL` | `postgresql+psycopg://rockhub:rockhub@localhost:5432/rockhub` | Conexão com o Postgres do `docker-compose.yml` da raiz |
 | `DATABASE_URL_TESTE` | `.../rockhub_teste` | Banco usado por `uv run pytest`. Criado pelo script de `docker/initdb/` na primeira subida do Compose |
 | `JWT_SECRET` | `troque-este-valor-em-producao` | Segredo que assina o cookie de sessão. **Gere o seu antes de subir em produção** (comando abaixo) |
+| `COOKIE_SESSAO_NOME` | `rockhub_sessao` | Nome do cookie de sessão. ⚠️ **Não mexa nele** — leia o aviso abaixo |
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
+
+O `uv run` na frente não é enfeite: os pré-requisitos deste projeto são `uv`, Docker e Node, e é o
+próprio `uv` que baixa o Python 3.12. Numa máquina limpa — no Windows em especial, onde `python`
+abre o stub da Microsoft Store — o comando sem ele falha.
+
+⚠️ **`COOKIE_SESSAO_NOME` está documentada para você saber que ela existe e não tocá-la.** O
+`frontend/src/lib/sessao.ts` procura o cookie por um literal, `"rockhub_sessao"`, porque o frontend
+não tem como perguntar ao backend qual nome ele usou. Defini-la no painel da Railway faz o backend
+gravar um cookie e o frontend procurar outro: o login responde `200`, o cookie chega no navegador, e
+mesmo assim **todo mundo aparece deslogado** — masthead em `Entrar`, `/conta` rebatendo para o
+login, sem um erro sequer na tela ou no log. Se um dia precisar mesmo trocar, troque nos dois lugares
+no mesmo commit.
 
 Em produção, duas variáveis a mais existem no ambiente da Railway e **não são campos da `Settings`**:
 
@@ -212,7 +225,7 @@ backend/
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
     core/
       config.py      # Settings
-      db.py           # engine, SessaoLocal, a dependência obter_sessao()
+      db.py           # engine (com pool_pre_ping), SessaoLocal, obter_sessao()
       dependencias.py # usuario_atual() e exigir_papel() — a autorização do AD-9
       erros.py        # erro de domínio + formato único de resposta
       seguranca.py    # hash Argon2id e token de sessão (JWT)
@@ -328,6 +341,26 @@ isto vira `erro.orig.diag.constraint_name`.
 a convenção de transação: *service que lê não faz nada; service que escreve abre e fecha a
 transação.* `obter_sessao()` entrega a `Session` sem transação aberta, e o router nunca chama
 `commit`.
+
+### A engine confere a conexão antes de entregá-la
+
+`create_engine` é chamado com `pool_pre_ping=True` e `pool_recycle=1800`, e não com os padrões —
+que são `False` e `-1`, ou seja: o pool guarda a conexão para sempre e nunca confere se ela ainda
+existe. Isso saiu do code review da Epic 1, e é o achado de maior retorno dele.
+
+O Postgres da Railway reinicia por manutenção, e a rede interna derruba conexão ociosa. Sem o
+`pre_ping`, a primeira requisição depois de um período parado pega uma conexão morta do pool e
+responde `500` — `psycopg.OperationalError: server closed the connection unexpectedly`. O SQLAlchemy
+invalida o pool ao detectar o desconecte, então a **segunda** tentativa funciona. É exatamente o
+pior desenho possível para este projeto: quem avalia abre o link dias depois do último deploy, leva
+um erro no primeiro login, e a retentativa que consertaria não é comportamento de quem está
+avaliando — é suposição minha.
+
+Os dois parâmetros resolvem problemas diferentes e por isso estão os dois: o `pre_ping` cobre a
+conexão que **já** morreu (custa um `SELECT 1` por checkout), e o `recycle` cobre a que **vai**
+morrer num timeout de proxy no meio de uma requisição. É o defeito mais barato de corrigir e o mais
+difícil de encontrar: nenhuma suíte deste projeto o pegaria, porque ele exige tempo passando entre
+duas requisições.
 
 Uma consequência disso aparece nos testes e vale o aviso: depois de um `409`, o `rollback()` do
 service desfaz a transação **até o savepoint** da fixture, e leva junto o usuário que ela inseriu por
@@ -471,7 +504,7 @@ Sempre estas duas chaves, nunca mais, nunca menos. O `codigo` é a parte estáve
 ele que o frontend decide o que mostrar. A `mensagem` é texto para humano e pode ser reescrita a
 qualquer momento sem quebrar nada.
 
-Isso vale para as três origens de erro, cobertas por três handlers em
+Isso vale para as **quatro** origens de erro, cobertas por quatro handlers em
 [`app/main.py`](app/main.py):
 
 | Origem | Como chega | Código |
@@ -479,6 +512,7 @@ Isso vale para as três origens de erro, cobertas por três handlers em
 | Regra de negócio | `raise ErroDeDominio(codigo=..., mensagem=..., status_http=...)` | o que o `raise` disser |
 | Framework | rota inexistente, método errado, `raise HTTPException(...)` | pela tabela `CODIGO_POR_STATUS` — `404` vira `NAO_ENCONTRADO`, `403` vira `SEM_PERMISSAO` |
 | Validação do Pydantic | corpo, query ou path reprovados | `DADOS_INVALIDOS` |
+| Falha não prevista | qualquer exceção que ninguém tratou — banco fora do ar, bug meu | `ERRO_INTERNO`, com `500` |
 
 O erro de validação merece uma nota. O Pydantic devolve uma lista de objetos aninhados, ótima para
 depurar e péssima como contrato — obrigaria o corpo de erro a ter uma forma diferente só neste
@@ -488,9 +522,25 @@ mantém uma forma só na API sem perder qual campo reprovou.
 Deixei isso pronto já na primeira story, antes de existir qualquer regra de negócio, porque
 padronizar erro depois significa voltar em todo endpoint já escrito.
 
-**O que ainda não passa por aqui:** exceção não tratada, que vira `500` com o texto padrão do
-Starlette. Tratá-la exigiria decidir o que registrar em log, e observabilidade ficou fora do
-escopo deste projeto.
+**O quarto handler entrou no code review da Epic 1, e ele fecha a promessa.** Até ali eu tinha três,
+e escrevia que "toda" resposta de erro tem esta forma — não tinha. Exceção não tratada subia até o
+`ServerErrorMiddleware` do Starlette e voltava como `Internal Server Error` em **texto puro**: a
+única resposta da API fora do próprio contrato, e justo a que aparece quando o banco cai. Eu tinha
+registrado a ausência aqui como corte de escopo ("tratá-la exigiria decidir o que registrar em
+log"), e a revisão mostrou que a decisão de log cabia em uma linha — enquanto o contrato quebrado
+custava a promessa inteira.
+
+O corpo do `500` **não** carrega a causa: mensagem de exceção traz host, usuário e nome de tabela
+com frequência demais para virar resposta HTTP. O rastro completo vai para o log via
+`logger.error(..., exc_info=erro)`, e um teste garante que nem o IP nem a senha do texto de exemplo
+aparecem no corpo da resposta.
+
+**A mensagem do framework também virou português.** O Starlette preenche o `detail` sozinho quando
+ninguém passa um — `"Not Found"`, `"Method Not Allowed"` —, e essas eram as únicas strings em inglês
+de um sistema em que até a rota de saúde é `/saude`. O `tratar_erro_http` compara o `detail` com a
+frase padrão do `HTTPStatus`: se for igual, o framework não disse nada e a mensagem vem da tabela
+`MENSAGEM_POR_STATUS`; se for diferente, alguém a escreveu de propósito e ela é preservada. Isso não
+mexe no contrato, porque quem decide o texto de tela é o `codigo`.
 
 ## Testes
 
@@ -500,9 +550,10 @@ cd backend
 uv run pytest
 ```
 
-São **85 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as três origens
-de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o hash e o
-token de sessão, as quatro rotas de autenticação, a dependência de papel e o seed de avaliação.
+São **87 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+origens de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o
+hash e o token de sessão, as quatro rotas de autenticação, a dependência de papel e o seed de
+avaliação.
 
 ### O que `test_seed.py` prova
 
@@ -552,7 +603,7 @@ compartilhado existe para impedir.
 Para testar os erros eu montei apps mínimas com os handlers reais e rotas que só existem para
 falhar. Assim o contrato fica verificado desde já, sem precisar esperar o primeiro endpoint de
 negócio aparecer para descobrir que ele estava errado. O `404` e o `405` são testados direto na
-aplicação de verdade, e um teste confere que os três handlers estão de fato registrados nela — de
+aplicação de verdade, e um teste confere que os quatro handlers estão de fato registrados nela — de
 nada adianta o handler certo se ninguém o pendurou na app.
 
 **Os testes de banco rodam contra Postgres real, migrado pelo próprio Alembic** — não `create_all`,
@@ -579,10 +630,20 @@ fecharia a sessão da fixture ao fim da requisição e o teste seguinte receberi
 A fixture tem uma trava específica: ela nunca aponta para o banco de desenvolvimento, mesmo que o
 `.env` esteja carregado. A URL do Alembic é definida em código
 (`cfg.set_main_option("sqlalchemy.url", ...)`) a partir de `DATABASE_URL_TESTE`, nunca por
-variável de ambiente — e um teste (`test_banco_de_teste_e_o_rockhub_teste`) confere via
-`SELECT current_database()` que a trava está de fato ativa. Um `alembic downgrade base` acidental
-contra o banco de desenvolvimento apaga dados; essa é a garantia de que isso não acontece pela
-suíte de testes.
+variável de ambiente.
+
+⚠️ **E a trava roda antes do `DROP`, não depois — isso mudou no code review da Epic 1.** Eu tinha só
+o `test_banco_de_teste_e_o_rockhub_teste`, que confere `SELECT current_database()`, e ele me dava
+uma sensação de segurança que não existia: **teste roda depois da fixture de sessão**, e a fixture
+começa com `alembic downgrade base`. Ele relatava o desastre em vez de impedi-lo. Agora
+`_exigir_banco_de_teste()` roda dentro da fixture, antes da primeira chamada destrutiva, e levanta
+`RuntimeError` sem executar migração nenhuma se o banco não se chamar `rockhub_teste`.
+
+O cenário que isso fecha: `DATABASE_URL_TESTE` exportada apontando para a Railway — é a variável mais
+fácil de errar, porque o `.env.example` documenta o formato dela ao lado do de produção — e um
+`uv run pytest` distraído migrando o banco de produção do zero. A conferência é pelo **nome** do
+banco e não pelo host: `localhost` não garante nada, porque um túnel de porta aponta para qualquer
+lugar.
 
 ## Deploy na Railway
 
@@ -625,7 +686,7 @@ o código.
 | `CORS_ORIGENS` | `http://localhost:3000,https://elite-dev-rock-hub.vercel.app` | As origens autorizadas a chamar a API direto. **Não é o que faz o login funcionar** — ver abaixo |
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
 Rode duas vezes: os dois segredos precisam ser **diferentes**, senão trocar um obriga a trocar o

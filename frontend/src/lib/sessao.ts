@@ -20,6 +20,21 @@ import { cache } from "react";
 // é do navegador: um `fetch("/api/…")` daqui não tem origem para resolver.
 const API = process.env.API_URL ?? "http://localhost:8000";
 
+// O padrão `localhost` é o valor certo em desenvolvimento e um bug silencioso
+// em produção: o servidor da Vercel tentaria falar consigo mesmo, o `catch`
+// abaixo devolveria `null`, e o sintoma seria "todo mundo aparece deslogado"
+// sem uma única linha de erro em lugar nenhum. O aviso é impresso uma vez, na
+// primeira renderização do servidor, e não derruba o build de propósito —
+// derrubar deixaria todo deploy de Preview sem subir.
+if (process.env.NODE_ENV === "production" && !process.env.API_URL) {
+  console.error(
+    "[RockHub] API_URL não está definida. A leitura de sessão vai tentar " +
+      "http://localhost:8000 e falhar, e a aplicação inteira vai renderizar " +
+      "como visitante. Defina API_URL no painel da Vercel, para Production E " +
+      "Preview, e refaça o deploy.",
+  );
+}
+
 // Acoplamento assumido: o mesmo nome está em `cookie_sessao_nome`, no
 // `backend/app/core/config.py`. Trocar lá exige trocar aqui.
 const NOME_DO_COOKIE = "rockhub_sessao";
@@ -57,9 +72,18 @@ export const obterUsuarioDaSessao = cache(
       // 401 aqui é resposta esperada, não falha: cookie velho ou adulterado.
       if (!resposta.ok) return null;
       return (await resposta.json()) as UsuarioDaSessao;
-    } catch {
+    } catch (erro) {
       // Backend fora do ar não derruba a página: a tela renderiza como
       // visitante. É o comportamento certo para a raiz, que é pública.
+      //
+      // Mas o `catch` mudo era o problema: ele achatava "sem sessão", "sessão
+      // inválida" e "API inalcançável" numa coisa só. Quem tem cookie válido e
+      // pega uma instabilidade da Railway vê o masthead voltar para `Entrar` e
+      // a `/conta` rebater para o login, conclui que a sessão caiu, e não há
+      // pista nenhuma — nem na tela, nem no console, nem no Network. O
+      // comportamento continua o mesmo; o que muda é que agora ele deixa
+      // rastro no log do servidor.
+      console.error(`[RockHub] Não foi possível ler a sessão em ${API}:`, erro);
       return null;
     }
   },
