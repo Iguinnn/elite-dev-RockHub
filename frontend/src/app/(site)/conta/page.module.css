@@ -1,0 +1,68 @@
+/* Dados da conta: kicker, nome em serifada, fio, pares rótulo/valor em mono,
+   fio, botão. Raio zero, sombra zero, nenhum card, nenhum avatar — círculo com
+   inicial dentro é justamente o vocabulário que este projeto não tem.
+   [Fonte: DESIGN.md#Typography, #Spacing & Grid, UX-DR1, UX-DR2] */
+
+.pagina {
+  padding: 40px 0 96px;
+}
+
+.nome {
+  margin-top: 12px;
+  font: 400 34px/1.2 var(--serif);
+  /* `word-break` não: nome próprio não se parte no meio. Em 375px um nome
+     comprido quebra entre palavras e, no pior caso, encolhe — nunca transborda. */
+  overflow-wrap: break-word;
+}
+
+/* Fio simples separando o nome dos dados de máquina, e outro fechando o bloco
+   antes da ação: o mesmo papel estrutural que os fios têm no masthead. */
+.dados {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px 20px;
+  margin-top: 22px;
+  padding: 20px 0;
+  border-top: 1px solid var(--fio);
+  border-bottom: 1px solid var(--fio);
+}
+
+.dados dt {
+  font: 600 10px/1.6 var(--mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.dados dd {
+  font: 12px/1.6 var(--mono);
+  color: var(--cal);
+  /* E-mail longo quebra dentro da própria coluna em vez de empurrar a página:
+     é o que segura a ausência de rolagem horizontal em 375px. */
+  overflow-wrap: anywhere;
+}
+
+/* O botão não vira a largura da coluna de 1180px. A restrição é aqui, no CSS
+   da página, e não numa prop nova do `Botao`: largura é decisão do contexto,
+   não do componente. */
+.saida {
+  max-width: 220px;
+  margin-top: 28px;
+}
+
+/* Abaixo do corte de 900px do epics.md a coluna de rótulos fixa aperta demais
+   o valor. Os pares passam a empilhar. */
+@media (max-width: 560px) {
+  .dados {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .dados dd:not(:last-of-type) {
+    margin-bottom: 12px;
+  }
+
+  .saida {
+    max-width: none;
+  }
+}

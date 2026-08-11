@@ -1,0 +1,26 @@
+/* Coluna centrada, largura única de formulário — DESIGN.md#Components (botao). */
+
+/* O espaço acima vem da marca, na casca do grupo `(entrada)`. */
+.coluna {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 0 0 96px;
+}
+
+.coluna > :global(.kicker) {
+  display: block;
+  margin-bottom: 22px;
+}
+
+/* Âmbar só na palavra que é ação — o acento único do UX-DR1. Sem sublinhado:
+   o contorno de foco é o `:focus-visible` global. */
+.rodape {
+  margin-top: 24px;
+  text-align: center;
+  font: 11px/1.6 var(--mono);
+  color: var(--fumaca);
+}
+
+.rodape a {
+  color: var(--ambar);
+}

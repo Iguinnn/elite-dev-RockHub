@@ -1,0 +1,54 @@
+/* Anatomia do masthead — DESIGN.md#Components/masthead.
+
+   RockHub                      ← serifada 44px, "Hub" itálico âmbar
+   ────────────────────────────  ← fio simples
+   INÍCIO  MEUS INGRESSOS  ...   ← mono versalete, ativo com fio âmbar embaixo
+   ════════════════════════════  ← fio duplo, fecha o bloco                  */
+
+.masthead {
+  padding-top: 26px;
+  border-bottom: 3px double var(--fio);
+}
+
+.topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* O logotipo mora em `Logotipo.module.css` — ele é compartilhado com a casca
+   das telas de acesso, que não tem masthead. */
+
+/* Em tela estreita os três itens não cabem lado a lado. Quebram linha em vez de
+   transbordar — a entreletra larga do versalete é parte da identidade e não vai
+   diminuir para caber. */
+.navbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  padding: 9px 0;
+}
+
+/* A borda transparente já ocupa o espaço do fio âmbar do item ativo: a linha
+   não muda de altura quando a navegação troca de página. */
+.navLink {
+  padding-bottom: 3px;
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+  border-bottom: 2px solid transparent;
+  transition: color 120ms linear;
+}
+
+.navLink:hover {
+  color: var(--cal);
+}
+
+.ativo {
+  color: var(--cal);
+  border-bottom-color: var(--ambar);
+}

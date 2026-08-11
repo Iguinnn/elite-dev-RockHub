@@ -1,0 +1,14 @@
+/* Mesmo padrão de estado vazio da raiz. Repetido em vez de abstraído: são
+   sete linhas, e componente sem consumidor firme é componente que a próxima
+   story reescreve. Quando surgir o terceiro estado vazio (Story 4.1), aí sim
+   vira componente. */
+
+.vazio {
+  padding: 40px 0 96px;
+}
+
+.frase {
+  max-width: 46ch;
+  margin-top: 12px;
+  font: 19px/1.5 var(--serif);
+}

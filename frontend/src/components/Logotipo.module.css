@@ -1,0 +1,11 @@
+/* DESIGN.md#Components/masthead — serifada 44px, "Hub" em itálico âmbar. */
+
+.logo {
+  font: 400 44px/0.86 var(--serif);
+  letter-spacing: -0.035em;
+}
+
+.logo em {
+  font-style: italic;
+  color: var(--ambar);
+}

@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: rockhub
+      POSTGRES_PASSWORD: rockhub
+      POSTGRES_DB: rockhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - rockhub-pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rockhub -d rockhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  rockhub-pgdata:

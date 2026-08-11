@@ -1,0 +1,16 @@
+/* Vindo do FormularioLogin.module.css da Story 1.4, sem mudança de valor.
+   [Fonte: DESIGN.md#Components (botao)] */
+
+.botao {
+  width: 100%;
+  background: var(--ambar);
+  color: var(--breu);
+  padding: 18px;
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.botao:disabled {
+  opacity: 0.35;
+}

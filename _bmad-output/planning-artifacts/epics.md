@@ -127,6 +127,12 @@ Do par `DESIGN.md` + `EXPERIENCE.md` (direção **"jornal noturno"**), com prot�
 - **UX-DR11:** QR sempre renderizado sobre fundo claro (`cal`), nunca sobre o breu — legibilidade
   de leitor óptico
 
+**Responsividade — onde ela mora.** O corte é **900px** (`EXPERIENCE.md#Responsive & Platform`).
+Cliente e organizador são desktop-first e **colapsam** abaixo disso; a portaria é mobile-first e é
+coluna única sempre. Cada story que cria tela carrega o seu próprio critério de aceite para isso —
+**não existe uma story de "deixar responsivo" no fim**, porque o breakpoint só faz sentido escrito
+junto da grade que ele colapsa, e trabalho de layout adiado para o último dia é onde o prazo morre.
+
 ### FR Coverage Map
 
 | FR | Epic | Onde é entregue |
@@ -323,6 +329,26 @@ para poder comprar ingressos.
 **When** eu o navego por teclado
 **Then** todo campo tem `<label>` associado e o foco é visível em âmbar — UX-DR9
 
+**Given** o cadastro
+**When** eu procuro como escolher o papel da conta
+**Then** não existe seletor — todo cadastro nasce `CLIENTE`, e não há caminho na interface para
+criar conta de `ORGANIZADOR` ou de `PORTARIA`
+
+> **Só cliente se cadastra, e isso é decisão.** O enunciado pede "autenticação com três papéis
+> distintos" e pede o organizador entre os **dados semeados** — ou seja, ele próprio responde como
+> um organizador passa a existir. Portaria então é caso fechado: conta de portaria autocriada
+> validaria ingresso de evento alheio, que é justamente o furo que o AD-7 fecha.
+>
+> **Cadastro de organizador está adiado, não descartado.** O Igor pretende acrescentá-lo **depois**
+> que todo o fluxo obrigatório estiver de pé — é a ordem que o próprio enunciado recomenda ("faça o
+> básico rodar de ponta a ponta e só depois agregue valor") e que o NFR6 registra. Enquanto isso, as
+> credenciais semeadas cobrem o caminho do organizador pelo README.
+>
+> **Consequência para o README da raiz:** isso entra em *O que não está pronto*, como corte
+> consciente com data de volta — **não** na seção de decisões como alternativa descartada. Se ele
+> for implementado antes da entrega, vira uma tela nova e uma AC extra aqui: seletor entre `CLIENTE`
+> e `ORGANIZADOR`, `PORTARIA` nunca. A assimetria precisa de uma frase em tela explicando por quê.
+
 ### Story 1.6: Cada papel só acessa o que lhe cabe
 
 Como o sistema,
@@ -361,6 +387,12 @@ para percorrer o fluxo sem cadastrar nada.
 **When** eu rodo de novo
 **Then** ele não duplica contas nem falha
 
+**Given** o banco de produção, com contas que avaliadores criaram pelo cadastro
+**When** o seed roda de novo depois de um redeploy
+**Then** nenhum dado existente é apagado nem sobrescrito
+**And** a idempotência vem de "já existe? então não insere" — **nunca** de limpar a tabela antes de
+inserir, que funcionaria hoje e destruiria o trabalho de quem estiver avaliando no primeiro redeploy
+
 ### Story 1.8: Backend e banco no ar na Railway
 
 Como avaliador,
@@ -377,6 +409,22 @@ para ver o projeto funcionando sem instalar nada.
 **Given** as variáveis de ambiente em produção
 **When** eu as inspeciono
 **Then** `DATABASE_URL`, `JWT_SECRET`, `TICKET_SIGNING_SECRET` e `TICKETMASTER_API_KEY` existem só lá
+
+**Given** os serviços do projeto na Railway
+**When** eu os inspeciono
+**Then** existe um PostgreSQL provisionado lá, e o `DATABASE_URL` do backend aponta para ele
+**And** o `docker-compose.yml` da raiz **não** é usado em produção — ele existe só para o
+desenvolvimento local
+
+**Given** um deploy novo
+**When** ele executa
+**Then** `alembic upgrade head` roda **antes** de a aplicação começar a atender requisição
+**And** migração que falha impede o deploy de entrar no ar, em vez de subir com o schema errado
+
+**Given** o seed em produção
+**When** ele roda
+**Then** as quatro contas do NFR2 existem no banco da Railway, com as credenciais do README
+**And** um redeploy posterior não apaga as contas criadas por quem estiver avaliando — Story 1.7
 
 ### Story 1.9: Frontend no ar na Vercel
 
@@ -494,6 +542,11 @@ para colocá-lo à venda.
 **When** eu a uso
 **Then** vejo os passos numerados e os números exatos de capacidade — UX-DR7
 
+**Given** uma tela abaixo de 900px
+**When** eu preencho o formulário
+**Then** os campos ocupam a largura inteira, um por linha
+**And** nada transborda na horizontal
+
 ### Story 2.5: Escalar quem valida na porta
 
 Como organizador,
@@ -571,6 +624,12 @@ para descobrir o que está em cartaz.
 **When** eu procuro contagem de ingressos
 **Then** nenhum número absoluto de estoque aparece — UX-DR7
 
+**Given** uma tela abaixo de 900px
+**When** abro a programação
+**Then** a fila colapsa de quatro para duas colunas — data à esquerda, o resto num bloco
+**And** nada transborda na horizontal
+**And** os fios continuam alinhados de ponta a ponta
+
 ### Story 3.2: Buscar e filtrar a programação
 
 Como visitante,
@@ -613,6 +672,11 @@ standfirst em itálico e ficha de três dados — UX-DR4
 **When** abro a programação
 **Then** a chamada não é renderizada e vejo o estado vazio
 
+**Given** uma tela abaixo de 900px
+**When** eu vejo a chamada principal
+**Then** arte e texto empilham numa coluna só, a arte acima — UX-DR6
+**And** a ficha de três dados quebra em linha sem cortar nenhum valor
+
 ### Story 3.4: Ver o evento e seus setores
 
 Como cliente,
@@ -637,6 +701,11 @@ de proporção — nunca número absoluto (UX-DR7, AD-13)
 **Given** o stepper
 **When** eu ajusto a quantidade
 **Then** o total recalcula no rodapé fixo, sem confirmação
+
+**Given** uma tela abaixo de 900px
+**When** abro a página do evento
+**Then** a ficha do evento e a lista de setores empilham
+**And** o rodapé de compra continua fixo na base e legível
 
 ### Story 3.5: Modelo de reserva
 
@@ -810,6 +879,11 @@ para apresentar na entrada.
 **Given** o conteúdo do QR
 **When** eu o decodifico
 **Then** é exatamente o código assinado do ingresso
+
+**Given** uma tela abaixo de 900px
+**When** abro o canhoto
+**Then** corpo e talão empilham, e o picote tracejado vira linha horizontal
+**And** o QR continua sobre fundo `cal`, do tamanho que dá para escanear — UX-DR11
 
 ### Story 4.3: Compartilhar o ingresso por link
 

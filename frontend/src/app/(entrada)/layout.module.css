@@ -1,0 +1,7 @@
+/* A marca sozinha, centrada sobre a coluna do formulário. Sem fio embaixo: o
+   fio duplo é o que fecha o masthead do site, e aqui não há masthead. */
+
+.marca {
+  padding: 64px 0 40px;
+  text-align: center;
+}
