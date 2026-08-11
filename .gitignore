@@ -14,8 +14,11 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Ancorados na raiz de propósito: sem a barra inicial, `lib/` casa em qualquer
+# profundidade e engole `frontend/src/lib/` — foi o que quebrou o primeiro build
+# da Vercel na Story 1.9, com os três arquivos existindo aqui e nunca no repositório.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
