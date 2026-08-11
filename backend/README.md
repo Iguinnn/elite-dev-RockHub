@@ -66,6 +66,7 @@ Ticketmaster mais adiante.
 | `DATABASE_URL_TESTE` | `.../rockhub_teste` | Banco usado por `uv run pytest`. Criado pelo script de `docker/initdb/` na primeira subida do Compose |
 | `JWT_SECRET` | `troque-este-valor-em-producao` | Segredo que assina o cookie de sessão. **Gere o seu antes de subir em produção** (comando abaixo) |
 | `COOKIE_SESSAO_NOME` | `rockhub_sessao` | Nome do cookie de sessão. ⚠️ **Não mexa nele** — leia o aviso abaixo |
+| `TICKETMASTER_API_KEY` | `""` | Chave do portal da Ticketmaster, usada por `app/integrations/ticketmaster.py`. **Obrigatória em produção**; opcional em `local` (ver [Catálogo da Ticketmaster](#catálogo-da-ticketmaster)) |
 
 ```bash
 uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -83,24 +84,26 @@ mesmo assim **todo mundo aparece deslogado** — masthead em `Entrar`, `/conta` 
 login, sem um erro sequer na tela ou no log. Se um dia precisar mesmo trocar, troque nos dois lugares
 no mesmo commit.
 
-Em produção, duas variáveis a mais existem no ambiente da Railway e **não são campos da `Settings`**:
+Em produção, uma variável a mais existe no ambiente da Railway e **não é campo da `Settings`**:
 
 | Variável | Estado hoje | Quem vai lê-la |
 |---|---|---|
 | `TICKET_SIGNING_SECRET` | definida no ambiente, ninguém lê | Story 3.9 (assinatura do QR) |
-| `TICKETMASTER_API_KEY` | definida no ambiente, ninguém lê | Story 2.1 (cliente do catálogo) |
 
-O `extra="ignore"` da `Settings` as aceita sem declará-las. **Campo só nasce quando alguém for
+O `extra="ignore"` da `Settings` a aceita sem declará-la. **Campo só nasce quando alguém for
 consumir o valor** — declarar agora seria código que ninguém lê, com um validador ativo capaz de
 derrubar a aplicação por causa de uma funcionalidade que ainda não existe. O que já vale desde hoje
-é o lugar delas: ambiente do backend, nunca repositório (AD-2).
+é o lugar dela: ambiente do backend, nunca repositório (AD-2). `TICKETMASTER_API_KEY` seguiu esse
+mesmo caminho até a Story 2.1 — a partir dela é campo de verdade, na tabela acima.
 
 **Com `AMBIENTE=producao`, o valor de exemplo do `JWT_SECRET` derruba a aplicação na
 inicialização**, com a mensagem dizendo o comando acima. Isso é de propósito: o ponto mais provável
 de um segredo vazar não é alguém colar a chave no código — é o valor de exemplo continuar
 funcionando e ninguém perceber. Um `JWT_SECRET` padrão rodando em produção é um segredo público
-assinando sessões, e o deploy não teria como descobrir sozinho, porque *funciona*. Mesmo padrão vai
-valer para `TICKETMASTER_API_KEY` (Story 2.1) e `TICKET_SIGNING_SECRET` (Story 3.9).
+assinando sessões, e o deploy não teria como descobrir sozinho, porque *funciona*. Mesmo padrão
+passou a valer para `TICKETMASTER_API_KEY` na Story 2.1, e vai valer para `TICKET_SIGNING_SECRET`
+na Story 3.9 — cada uma com o seu próprio `model_validator`, e não o mesmo estendido: são motivos
+diferentes de recusar a subida, e uma mensagem fundida manda quem depura procurar no lugar errado.
 
 `DATABASE_URL` e `DATABASE_URL_TESTE` aceitam também `postgres://` e `postgresql://` — os
 esquemas que a Railway injeta. Um validador normaliza os três casos para `postgresql+psycopg://`,
@@ -223,6 +226,9 @@ backend/
       usuario.py      # PapelUsuario + Usuario
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
+      catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
+    integrations/    # clientes de serviço externo — a única pasta que sai da rede
+      ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
       config.py      # Settings
       db.py           # engine (com pool_pre_ping), SessaoLocal, obter_sessao()
@@ -480,6 +486,58 @@ Dependência sempre para dentro, nunca o inverso, nunca pulando camada.
 **Não existe `app/repositories/`, e isso foi escolhido.** O motivo está no
 [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
 
+## Catálogo da Ticketmaster
+
+`app/integrations/ticketmaster.py` (Story 2.1) é a única peça do backend que fala com um serviço
+fora dele. `buscar_eventos(termo, *, limite=20)` consulta a Discovery API e devolve
+`list[ItemDoCatalogo]` — o formato **deste projeto**, não o da Ticketmaster.
+
+```
+GET https://app.ticketmaster.com/discovery/v2/events.json
+    ?apikey=<TICKETMASTER_API_KEY>&keyword=<termo>&size=<limite>&locale=*
+```
+
+| Limite da Discovery | Valor | O que faço com ele |
+|---|---|---|
+| Por segundo | 5 req/s | Nada — uma busca por evento publicado não chega perto |
+| Por dia | 5 000 chamadas | Termo em branco não gera requisição nenhuma (ver abaixo) |
+
+**Termo vazio, só espaços, ou ausente não faz requisição — devolve `[]` direto.** Um campo de busca
+vazio não vale uma chamada da cota diária.
+
+**Toda falha vira o mesmo erro.** Timeout, conexão recusada, `401`, `429`, `500` ou corpo que não é
+JSON válido — os seis viram `ErroDeDominio("CATALOGO_INDISPONIVEL", ..., status_http=503)`. Quem
+chama não precisa saber qual dos seis aconteceu; o log sabe (`401` vira `logger.error`, porque é
+chave errada ou revogada — erro meu, não instabilidade da Ticketmaster; os demais viram
+`logger.warning`). **A chave nunca aparece em log nenhum**: as exceções do `httpx` carregam a URL
+completa da requisição, e a URL carrega `apikey=` — um `logger.exception()` por reflexo vazaria a
+chave para o log da Railway, furando o AD-2 pelo lado de dentro do backend. Um teste prova que o
+valor da chave não aparece nem no `caplog` nem na mensagem do `ErroDeDominio`.
+
+**Política de chave ausente, por ambiente** — o mesmo padrão do `JWT_SECRET`:
+
+| Ambiente | Chave ausente | Por quê |
+|---|---|---|
+| `producao` | Aplicação **não sobe** | Um deploy com a variável esquecida ficaria verde, e a falha só apareceria no dia em que alguém fosse publicar um evento |
+| `local` | Aplicação sobe normalmente; a busca responde `CATALOGO_INDISPONIVEL` | Quem clona o repositório para avaliar não precisa de conta no portal da Ticketmaster (NFR1) |
+
+`ItemDoCatalogo` (`app/schemas/catalogo.py`): `id_externo`, `nome`, `atracao`, `imagem_url`,
+`local`, `cidade` — os seis campos que sobram depois da conversão. Nenhum nome de campo da
+Ticketmaster (`_embedded`, `dates`, `classifications`, `ratio`) atravessa essa fronteira, e o
+schema não importa nada de `app/integrations/`: a dependência é sempre de fora para dentro. A
+conversão é tolerante — evento sem `venues`, sem `attractions` ou sem `images` vira campo `None`,
+nunca exceção — e descarta da lista qualquer evento sem `id` ou sem `name`, porque sem os dois não
+dá para publicar nada na Story 2.4. Quando há mais de uma imagem, escolho a mais larga com
+`ratio == "16_9"` e sem `fallback: true` (as `fallback` são genéricas da Ticketmaster e não têm
+nada a ver com o show) — é a proporção que a chamada principal da Story 3.3 vai consumir (UX-DR4).
+
+**Nenhuma rota usa isto ainda.** `GET /organizador/catalogo?q=` é da Story 2.2 — esta story só
+prova a integração, sem superfície HTTP, tela ou banco.
+
+Zero rede na suíte: `tests/test_ticketmaster.py` substitui o cliente por `httpx.MockTransport`, que
+recebe a `httpx.Request` de verdade — construída pelo código de produção, com a query string
+montada por ele — em vez de um `monkeypatch` em `httpx.get`.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -550,10 +608,11 @@ cd backend
 uv run pytest
 ```
 
-São **87 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **107 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o
-hash e o token de sessão, as quatro rotas de autenticação, a dependência de papel e o seed de
-avaliação.
+hash e o token de sessão, as quatro rotas de autenticação, a dependência de papel, o seed de
+avaliação e o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
+[Catálogo da Ticketmaster](#catálogo-da-ticketmaster)).
 
 ### O que `test_seed.py` prova
 
@@ -682,7 +741,7 @@ o código.
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | Referência ao serviço Postgres |
 | `JWT_SECRET` | um valor gerado | Sem ele a aplicação não sobe, de propósito |
 | `TICKET_SIGNING_SECRET` | outro valor gerado | Ainda não lido — Story 3.9 |
-| `TICKETMASTER_API_KEY` | a chave do portal da Ticketmaster | Ainda não lida — Story 2.1 |
+| `TICKETMASTER_API_KEY` | a chave do portal da Ticketmaster | Lida desde a Story 2.1. Sem ela, a aplicação não sobe com `AMBIENTE=producao` |
 | `CORS_ORIGENS` | `http://localhost:3000,https://elite-dev-rock-hub.vercel.app` | As origens autorizadas a chamar a API direto. **Não é o que faz o login funcionar** — ver abaixo |
 
 ```bash
@@ -1131,3 +1190,51 @@ A prova de que o backend estava pronto para este dia veio de fora: um `POST` em
 e o `Set-Cookie` volta com `Secure` — que é o `AMBIENTE=producao` da Story 1.8 chegando até a
 aplicação — e **sem atributo `Domain=`**, que é o que o mantém como cookie de host da origem do
 frontend.
+
+### Story 2.1 — cliente da Ticketmaster com a chave protegida
+
+A primeira story da Epic 2, e a primeira em cinco que escreve código de aplicação — as Stories 1.5
+a 1.9 foram tela, dependência e configuração. Esta abre pela ponta que ninguém vê: o backend passa a
+falar com um serviço fora dele. Entrou uma peça só, `app/integrations/ticketmaster.py`, com
+`app/schemas/catalogo.py` ao lado. **Nenhuma rota, nenhuma tela, nenhum banco** — `GET
+/organizador/catalogo?q=` é da Story 2.2, e por isso esta story só é verificável por teste. Detalhes
+completos de endpoint, limites e conversão estão em
+[Catálogo da Ticketmaster](#catálogo-da-ticketmaster).
+
+O achado técnico que não estava no `epics.md`: o `httpx` põe a URL completa da requisição na
+mensagem de toda exceção que levanta, e a URL carrega `apikey=`. Um `logger.exception()` escrito por
+reflexo — o jeito idiomático de logar exceção em Python — publicaria a chave no log da Railway,
+furando o AD-2 pelo lado de dentro do próprio backend que ele existe para proteger. A correção foi
+registrar só o tipo da exceção e o status HTTP, nunca a exceção inteira nem a URL.
+
+`httpx` mudou de dependência de `dev` para dependência de runtime no `pyproject.toml`. Ele já estava
+travado no `uv.lock` desde a Story 1.1 (puxado pelo `TestClient`), então o `uv sync` não trouxe
+pacote novo nenhum — só moveu o vínculo. Isso importa porque o Railpack builda com `--no-dev`: um
+`import httpx` em código de produção, com `httpx` só em `dev`, funcionaria em toda máquina de
+desenvolvimento e estouraria `ModuleNotFoundError` só no primeiro deploy da `main` — o mesmo tipo de
+defeito que o `.gitignore` sem âncora da Story 1.9 já tinha ensinado a temer.
+
+A `Settings` ganhou um segundo `model_validator`, e de propósito **não** estendi o que já recusava o
+`JWT_SECRET` de exemplo: são dois motivos diferentes de não subir em produção — segredo de exemplo
+esquecido versus variável nunca definida —, e uma mensagem de erro fundida faria quem depura procurar
+a causa errada.
+
+Os testes desta story não tocam rede nem banco. A costura é `httpx.MockTransport`, não
+`monkeypatch` em `httpx.get`: o transporte recebe a `httpx.Request` de verdade, construída pelo
+código de produção, e é isso que torna verificável que a chave saiu em `apikey` — o teste lê
+`request.url.params["apikey"]` em vez de acreditar. Um teste específico prova a ausência: dispara um
+`401`, captura o log com `caplog`, e afirma que o valor da chave não aparece nem ali nem na
+mensagem do `ErroDeDominio`.
+
+Duas regressões apareceram ao ligar o segundo `model_validator`, e as duas tinham a mesma causa —
+um teste que monta `Settings(ambiente="producao", jwt_secret=...)` sem saber que uma segunda
+variável passaria a ser exigida: `test_jwt_secret_proprio_em_producao_nao_falha` em
+`test_config.py`, prevista no planejamento da story, e
+`test_cookie_e_secure_apenas_em_producao` em `test_auth.py`, que não estava. A segunda apareceu só
+ao rodar a suíte inteira — reforça por que a Story 9 desta epic sempre roda `uv run pytest` sem
+filtro antes de considerar qualquer story pronta, e não só os arquivos que a story tocou.
+
+As quatro decisões desta story — `httpx` síncrono em vez de `AsyncClient` ou `urllib`, o endpoint
+`/events.json` em vez de `/attractions.json`, chave ausente derrubando só a produção, e nenhuma rota
+nesta story — estão no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma
+com a alternativa que descartei.

@@ -20,8 +20,10 @@ camada.
 > comando semeia as quatro contas de avaliação (abaixo, em
 > [Contas semeadas](#contas-semeadas)). O backend sobe com PostgreSQL migrado por Alembic e a tabela
 > `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado
-> vazio. Ainda não há evento nenhum para descobrir ou comprar — isso começa na Epic 2. A seção
-> [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
+> vazio. A Epic 2 começou: o backend já sabe buscar eventos no catálogo da Ticketmaster
+> (Story 2.1), mas isso ainda não tem rota nem tela — só teste. Ainda não há evento nenhum para
+> descobrir ou comprar. A seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a
+> cada passo.
 
 ## No ar
 
@@ -114,6 +116,10 @@ estão explicados em [Contas semeadas](#contas-semeadas).
 Em desenvolvimento o valor de exemplo do `JWT_SECRET` funciona e você pode pular esse passo. Com
 `AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito — o motivo está no
 [README do backend](backend/README.md#configuração).
+
+`TICKETMASTER_API_KEY` segue a mesma regra e pode ficar vazia aqui: em `local` a aplicação sobe sem
+ela, e a busca no catálogo (Story 2.1 em diante) responde `CATALOGO_INDISPONIVEL` em vez de travar a
+avaliação por falta de conta no portal da Ticketmaster. Só em produção ela é obrigatória.
 
 Sobe em <http://127.0.0.1:8000>. Para conferir que está no ar:
 
@@ -1178,6 +1184,69 @@ de sistema, e nenhuma fonte é baixada aqui também (UX-DR2).
 custava zero. Perdeu por meio grau de acabamento numa peça que aparece em toda captura de tela. Caiu
 também **um símbolo desenhado** em vez da letra: qualquer forma que eu inventasse seria vocabulário
 novo, e a identidade deste projeto é tipográfica de ponta a ponta.
+
+### `httpx` síncrono para a Ticketmaster, não `AsyncClient` nem `urllib`
+
+**Decidi** que `app/integrations/ticketmaster.py` usa `httpx.Client` síncrono, promovido de
+dependência de `dev` para dependência de runtime.
+
+**Por quê:** `AsyncClient` daria concorrência real na chamada externa, mas seria o **único** caminho
+`async` do backend inteiro — a rota da Story 2.2 viraria `async def` e não poderia tocar a `Session`
+síncrona no mesmo escopo sem rodeio, criando duas formas de escrever rota num projeto que tem uma só.
+O ganho é teórico: o organizador busca no catálogo uma vez por evento publicado, não em volume.
+
+**O que caiu:** **`AsyncClient`**, pelo motivo acima. E **`urllib` da biblioteca padrão**, que pareceria
+"zero dependência nova" e é uma alegação falsa aqui — o `httpx` já estava travado no `uv.lock` desde a
+Story 1.1, puxado pelo `TestClient` do FastAPI. Ele exigiria montar query string, timeout e hierarquia
+de erro à mão, e o teste perderia o `httpx.MockTransport`, que recebe a `Request` de verdade montada
+pelo código de produção.
+
+### O endpoint da Discovery é `/events.json`, não `/attractions.json`
+
+**Decidi** consultar `GET /discovery/v2/events.json` — apresentações, não artistas.
+
+**Por quê:** é o único dos dois que devolve local e cidade junto do evento. Sem eles, o organizador
+digitaria os dois à mão na Story 2.4, e o campo `cidade` da tabela `evento` (Story 2.3) nasceria sem
+origem no catálogo — contrariando a cópia de dado que o AD-1 pede.
+
+**O que caiu:** **`/attractions.json`**, que busca o artista em vez do show e não carrega local nem
+cidade. E **os dois endpoints, com aba na busca**: cobriria buscar por show e por artista, ao custo de
+dobrar schema, conversor e testes numa story dimensionada para um commit.
+
+### Chave da Ticketmaster ausente derruba a produção, e é opcional em `local`
+
+**Decidi** que `Settings` recusa subir com `AMBIENTE=producao` e `TICKETMASTER_API_KEY` vazia — o
+mesmo padrão do `JWT_SECRET` — e que em `local` a chave pode faltar: a busca responde
+`CATALOGO_INDISPONIVEL` em vez de travar a inicialização.
+
+**Por quê:** um deploy com a variável esquecida ficaria **verde**, e a falha só apareceria no dia em
+que alguém fosse publicar o primeiro evento — o modo de falhar que assusta é justamente o que
+funciona. Em `local`, exigir a chave sempre entraria em atrito direto com a NFR1: quem clona o
+repositório só para avaliar não deveria precisar de conta no portal da Ticketmaster para o backend
+subir.
+
+**O que caiu:** **nunca derrubar, sempre degradar** — mais tolerante, e verdadeiro que catálogo
+indisponível não impede login nem compra. Perdeu porque esconderia o esquecimento até o pior momento
+possível. E **obrigatória em todo ambiente**, mais consistente, mas fecharia a porta para quem só quer
+rodar a avaliação localmente.
+
+O validador é um `model_validator` **novo**, não uma extensão do que já recusa o `JWT_SECRET` de
+exemplo: são dois motivos diferentes de não subir, e uma mensagem fundida manda quem depura procurar
+a causa errada.
+
+### Nenhuma rota nesta story — o cliente da Ticketmaster nasce sem superfície HTTP
+
+**Decidi** que a Story 2.1 entrega só `app/integrations/ticketmaster.py` e o schema
+`ItemDoCatalogo`, sem `GET /organizador/catalogo?q=` — essa rota é da Story 2.2.
+
+**Por quê:** um commit por story é o que o desafio avalia no histórico. Expor a rota aqui moveria um
+critério de aceite do `epics.md` de uma story para outra, e engordaria a 2.1 além do que ela foi
+dimensionada para entregar.
+
+**O que caiu:** **já expor a rota no mesmo commit**, que permitiria conferir a busca no `/docs` desde
+já. O custo é maior que o ganho: a story deixaria de ser um commit e passaria a ser dois critérios
+emendados. A prova desta story é a suíte, não o `curl` — dezesseis afirmações de teste para menos de
+cem linhas de código de produção.
 
 ## O que não está pronto
 

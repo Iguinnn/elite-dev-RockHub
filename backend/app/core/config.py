@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     jwt_secret: str = _JWT_SECRET_EXEMPLO
     cookie_sessao_nome: str = "rockhub_sessao"
 
+    # Padrão `""`, não um valor de exemplo como o `JWT_SECRET`: não existe chave
+    # de exemplo que a Ticketmaster aceite, então "ausente" e "de exemplo" são a
+    # mesma situação aqui — o validador abaixo trata só a ausência.
+    ticketmaster_api_key: str = ""
+
     @property
     def cookie_secure(self) -> bool:
         """`Secure` só em produção — `localhost` roda em HTTP (ver Dev Notes da Story 1.4).
@@ -55,6 +60,23 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JWT_SECRET ainda é o valor de exemplo em produção. Gere um novo com: "
                 "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _recusar_chave_da_ticketmaster_ausente_em_producao(self) -> Self:
+        """Motivo separado do validador do `JWT_SECRET` de propósito.
+
+        São duas causas diferentes de "não sobe em produção" — segredo de
+        exemplo esquecido versus variável nunca definida — e uma mensagem só
+        faria quem depura procurar a causa errada. Em `local` a chave pode
+        faltar: quem clona o repositório para avaliar não precisa de conta no
+        portal da Ticketmaster (NFR1); a busca responde `CATALOGO_INDISPONIVEL`.
+        """
+        if self.ambiente == "producao" and not self.ticketmaster_api_key.strip():
+            raise ValueError(
+                "TICKETMASTER_API_KEY ausente em produção. Defina a variável no "
+                "painel da Railway com a chave do portal da Ticketmaster."
             )
         return self
 

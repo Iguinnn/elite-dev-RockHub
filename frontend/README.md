@@ -899,3 +899,13 @@ Os dois campos do painel que eu já sabia que iam morder morderam, os dois — `
 e Production Branch em `main` —, e os dois estavam previstos porque a Story 1.8 já tinha cometido os
 mesmos dois erros no painel da Railway. Estão documentados em [Deploy na Vercel](#deploy-na-vercel)
 com o sintoma de cada um. Dois fornecedores diferentes, as mesmas duas armadilhas.
+
+### Story 2.1 — cliente da Ticketmaster com a chave protegida
+
+**Nenhum arquivo desta pasta mudou nesta story**, e isso não é esquecimento — é o AD-2 funcionando.
+A Story 2.1 deu ao backend um cliente da Ticketmaster Discovery (`app/integrations/ticketmaster.py`),
+e a chave (`TICKETMASTER_API_KEY`) viaja só pelo processo do backend: nenhuma variável
+`NEXT_PUBLIC_` de credencial existe aqui, nem vai existir. Se um dia o frontend precisar chamar o
+catálogo, é o backend quem consulta a Ticketmaster e devolve o formato próprio do projeto — o
+navegador nunca vê `apikey=` na URL. Confirmado por busca: `ticketmaster` e `NEXT_PUBLIC` não
+aparecem em `frontend/` nenhuma vez.
