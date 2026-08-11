@@ -302,6 +302,29 @@ desenhava): caiu porque a interface passaria a ser a única coisa impedindo o qu
 não há tela de editar evento para corrigir depois — um evento com uma pessoa só escalada, e ela
 faltando na noite do show, é um evento sem portaria.
 
+### A programação pública só mostra o que ainda vai acontecer
+
+**Decidi** que `GET /eventos` devolve apenas eventos com `data_hora >= agora`, e que esse corte é
+feito **no backend**, no `where` da consulta. Show que já aconteceu simplesmente não existe para
+quem chega na raiz do site.
+
+**Por quê:** a programação pública é o que está por vir. Quem abre a página inicial quer saber o que
+dá para comprar, e um show que já passou não é nenhuma das duas coisas — não é programação e não é
+compra. O histórico não se perde: ele continua inteiro em `/organizador/eventos`, que é a tela de
+quem publicou, e é lá que ele significa alguma coisa. Foi a primeira vez neste projeto que uma
+decisão de produto minha virou uma condição de `where` em vez de um filtro de tela, e isso é
+proposital: "a programação é o que ainda vai acontecer" não é preferência de layout, é a definição
+do que essa rota devolve.
+
+**O que caiu:** **duas seções na tela, `Em cartaz` e `Já aconteceram`**, que é exatamente o que eu
+fiz em "Meus eventos" duas stories antes. Caiu porque lá o dono da informação é o organizador e o
+histórico é o inventário dele; aqui o visitante veria metade da página inicial ocupada por shows que
+não pode comprar. E caiu também **uma lista só, em ordem crescente, sem filtro nenhum** — menos
+código, menos decisão —, porque ela põe um show de 2001 no topo da primeira tela do produto. A
+consequência que aceito é que um evento que começa daqui a cinco minutos continua na programação e
+continua vendendo: parar de vender X horas antes é regra de produto que ainda não decidi, e ela vale
+mais perto da story da reserva.
+
 ### O catálogo externo é copiado na publicação, não consultado ao vivo
 
 **Decidi** que a Ticketmaster é chamada **apenas** quando o organizador busca uma atração para

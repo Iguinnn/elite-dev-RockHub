@@ -230,11 +230,13 @@ backend/
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
       organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · GET /organizador/portarias
                       # · POST /organizador/eventos · GET /organizador/eventos e /eventos/{id} (2.6)
+      publico.py      # GET /eventos — a programação, sem exigir conta (Story 3.1)
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
       evento.py       # publicar() — evento, setores e escala na mesma transação (2.4/2.5)
                       # · listar_portarias() — quem pode ser escalado (2.5)
                       # · listar_do_organizador() e obter_do_organizador() — as leituras da 2.6
+                      # · listar_programacao() — a leitura pública da 3.1
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
@@ -244,6 +246,7 @@ backend/
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
       evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida, PortariaSaida
                       # · EventoResumo — a vista de lista, com os dois totais somados (2.6)
+                      # · EventoNaProgramacao — a vista pública, sem estoque nenhum (3.1)
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
       ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
@@ -264,6 +267,7 @@ backend/
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
     test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
     test_organizador_meus_eventos.py # GET /organizador/eventos e /eventos/{id} (Story 2.6)
+    test_programacao.py # GET /eventos — a rota pública (Story 3.1)
   alembic.ini
   pyproject.toml
   uv.lock
@@ -1146,6 +1150,48 @@ dois exemplos de cada lado — duas leituras com service (`/portarias` e as duas
 sem service (`/catalogo`, que fala com integração e não com banco), uma escrita com service
 (`POST /eventos`). Se o arquivo crescer na Epic 3, parti-lo por assunto passa a valer a discussão.
 
+## Programação pública
+
+`GET /eventos` é a primeira rota deste projeto que responde **sem conta**, e por isso ela nasceu num
+router próprio, `app/api/publico.py`. O critério de entrada ali é literalmente "não exige conta" — o
+que é diferente do critério do `organizador.py`, que é por papel. Fiz questão de escrever isso no
+docstring do módulo porque a Story 3.4 vai pendurar `/eventos/{id}` no mesmo arquivo e as seguintes
+vão criar um `cliente.py`, que é o oposto: exige conta, e é onde a reserva mora. "Público" e
+"cliente" não são a mesma coisa, e misturá-los faria a próxima pessoa procurar a guarda de sessão em
+dois lugares. A rota é pública **por assinatura**: não há `Depends(exigir_papel(...))` nem nenhuma
+outra dependência de sessão na lista de parâmetros, e um dos testes lê o OpenAPI justamente para
+falhar no dia em que alguém acrescentar uma.
+
+**O `EventoNaProgramacao` recusa o estoque, e é esse o ponto da story inteira.** Ele devolve sete
+campos — `id`, `nome`, `data_hora`, `local`, `cidade`, `preco_minimo_centavos` e `esgotado` — e
+nenhum deles é `capacidade`, `vendidos` ou `setores`. O UX-DR7 proíbe contagem exata de ingresso em
+tela de cliente, e eu não quis que essa garantia dependesse da tela: o que a API devolve, o devtools
+mostra. Quem garante é o `response_model` declarado na rota — sem ele o FastAPI serializaria o que o
+service devolvesse. O teste correspondente procura as palavras `capacidade` e `vendidos` no **texto
+inteiro** da resposta, e não nas chaves de topo, porque um `setores` aninhado escaparia de uma
+conferência de chaves. `imagem_url` também ficou de fora, por outro motivo: a fila de quatro colunas
+não tem imagem, e o campo entra na 3.3, junto com a tela que o consome.
+
+Os dois campos derivados existem para dizer o que interessa **sem** revelar número nenhum.
+`esgotado` é "nenhum setor com `vendidos < capacidade`", e `preco_minimo_centavos` é o menor preço
+**entre os setores que ainda têm ingresso** — não entre todos. Se a Pista, que costuma ser a mais
+barata, esgotou, a fila passa a anunciar o preço do camarote, porque anunciar um preço que ninguém
+mais consegue pagar é a única forma de a listagem mentir com número. Os dois saem de `setor.vendidos`
+e `setor.capacidade` (AD-13); derivar disponibilidade com `COUNT` sobre reserva ou ingresso continua
+proibido em qualquer camada, e é agora que o hábito se forma — as duas tabelas só nascem nas Stories
+3.5 e 3.9. Evento com **todos** os setores esgotados, e evento sem setor nenhum, caem os dois em
+`esgotado: true` com preço `null`: `min()` sobre lista vazia levantaria `ValueError`, e um `if` antes
+resolve sem esconder a regra dentro de um `try`.
+
+O filtro é `publicado_em IS NOT NULL` **e** `data_hora >= agora`, os dois no `where`. O primeiro é o
+rascunho, cujo teste o code review da Epic 2 tinha adiado esperando esta epic — ele cobre a rota
+pública, e a `listar_do_organizador` continua sem o filtro de propósito, porque o rascunho de alguém
+é dele. O segundo é decisão de produto minha, e o motivo está no README da raiz. `agora` é lido uma
+vez, antes da consulta: duas leituras do relógio na mesma requisição podem discordar sobre o evento
+que começa neste instante. A ordem é `data_hora` com `Evento.id` de desempate, pelo mesmo motivo da
+lista do organizador, e os setores vêm por `selectinload` — esta é a raiz do produto, a tela mais
+visitada que existe aqui, e uma consulta por evento seria o custo crescendo junto com o catálogo.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -1216,7 +1262,7 @@ cd backend
 uv run pytest
 ```
 
-São **203 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **231 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
@@ -1224,7 +1270,15 @@ papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`,
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
 também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Stories 2.4 e
 2.5), a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5) e as duas
-rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6).
+rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e a rota pública
+`GET /eventos` (`test_programacao.py`, Story 3.1).
+
+`test_programacao.py` é o único arquivo cujos testes começam por `cliente.cookies.clear()` em vez de
+um login: o `TestClient` guarda cookie entre chamadas, e um teste que "prova" acesso anônimo depois
+de outro ter feito login não prova nada. As datas ali são relativas (`datetime.now() + timedelta`),
+e não constantes como `2026-08-15` — o corte da rota é `data_hora >= agora`, então uma data fixa no
+futuro vira passado assim que o calendário a alcança, e o teste passaria a falhar sozinho meses
+depois sem ninguém ter mexido em nada.
 
 `test_organizador_portarias.py` prova a ordenação por nome com contas de **nomes diferentes**, criadas
 no próprio arquivo: a `fabricar_usuario` do `conftest.py` grava todo mundo como "Alguém" e parametriza

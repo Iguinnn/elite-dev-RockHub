@@ -99,6 +99,43 @@ export function partesDaData(iso: string): { dia: string; mes: string; ano: stri
   };
 }
 
+/**
+ * ISO-8601 → as três partes da data como a **fila da programação pública** as
+ * mostra: `{ diaDaSemana: "sex", dia: "15", hora: "22h30" }`.
+ *
+ * **Não é a `partesDaData` com outro nome.** As duas filas deste produto são
+ * primas, não gêmeas: a do organizador é um inventário e mostra `15 ago 2026`
+ * inteiro em mono, porque ele precisa saber o ano de um show de 2001; a
+ * pública mostra só o que ainda vai acontecer, então o ano é sempre o mesmo
+ * ou o próximo, e o que interessa é o dia da semana e a hora — é sexta que
+ * decide se dá para ir. A tipografia segue essa divisão
+ * (`DESIGN.md#Typography`): dia da semana e hora em mono versalete, o dia em
+ * serifada grande.
+ *
+ * **Mora aqui, e não na tela, para o `FUSO` continuar existindo num lugar só.**
+ * As três formatações inline da fila de "Meus eventos" foram exatamente as que
+ * passaram despercebidas quando o `timeZone` entrou no resto do módulo, e a
+ * mesma publicação apareceu com duas datas diferentes. Uma cópia da regra é uma
+ * chance de a próxima tela repetir o erro.
+ */
+export function partesDaFilaPublica(iso: string): {
+  diaDaSemana: string;
+  dia: string;
+  hora: string;
+} {
+  const instante = new Date(iso);
+  const parte = (opcoes: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("pt-BR", { ...opcoes, timeZone: FUSO }).format(instante);
+
+  return {
+    // O `Intl` do pt-BR devolve "sex." com ponto, como já devolvia "ago." em
+    // `partesDaData`. Em versalete o ponto vira sujeira.
+    diaDaSemana: parte({ weekday: "short" }).replace(".", ""),
+    dia: parte({ day: "2-digit" }),
+    hora: parte({ hour: "2-digit", minute: "2-digit" }).replace(":", "h"),
+  };
+}
+
 /** ISO-8601 → `"Publicado em 11 de agosto, 17h22"`. Sem o ano: é recente. */
 export function momentoDaPublicacao(iso: string): string {
   const instante = new Date(iso);

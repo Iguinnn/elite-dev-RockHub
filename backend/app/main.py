@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import auth, organizador, saude
+from app.api import auth, organizador, publico, saude
 from app.core.config import obter_settings
 from app.core.erros import (
     MENSAGEM_PADRAO,
@@ -144,4 +144,5 @@ async def tratar_erro_inesperado(_: Request, erro: Exception) -> JSONResponse:
 
 app.include_router(auth.router)
 app.include_router(organizador.router)
+app.include_router(publico.router)
 app.include_router(saude.router)

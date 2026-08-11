@@ -235,6 +235,50 @@ class EventoResumo(BaseModel):
     vendidos_total: int
 
 
+class EventoNaProgramacao(BaseModel):
+    """Um evento como o **visitante** o vê na programação pública (Story 3.1).
+
+    **O que ele recusa a devolver, e por quê.** `capacidade`, `vendidos`,
+    `setores` e `imagem_url` não estão aqui, e a ausência dos três primeiros é
+    a materialização do **UX-DR7** no contrato — não uma escolha de payload
+    enxuto. `DESIGN.md#Do's and Don'ts` proíbe contagem exata de ingresso em
+    tela de cliente, e "a tela não mostra" nunca foi garantia: o que a API
+    devolve, o devtools mostra. A garantia é este `response_model`, declarado
+    na rota — sem ele o FastAPI serializaria o que o service devolvesse.
+
+    `imagem_url` fica de fora por outro motivo (decisão do Igor): a fila de
+    quatro colunas não tem imagem, e quem precisa da arte é a chamada principal
+    da Story 3.3. Campo que nenhuma tela lê é campo que ninguém sabe se está
+    certo — a mesma disciplina que recusou o `relationship` sem consumidor na
+    2.3. `publicado_em`, `origem_externa_id` e `organizador_id` também não
+    entram: não são assunto de quem está escolhendo um show.
+
+    **Os dois campos derivados existem para não revelar o estoque.**
+    `preco_minimo_centavos` e `esgotado` nascem de `setor.vendidos` e
+    `setor.capacidade` (AD-13) e não deixam nenhum dos dois atravessar: é a
+    diferença entre dizer "restam 3" e dizer "últimos ingressos".
+
+    **Sem `from_attributes`**, como o `EventoResumo` e pelo mesmo motivo: os
+    dois últimos campos não são atributos do `Evento`, e declarar a conversão
+    prometeria uma leitura que não acontece. Quem os calcula é o service.
+    """
+
+    id: UUID
+    nome: str
+    data_hora: datetime
+    local: str
+    cidade: str | None
+    # `None` quando não há nenhum setor com ingresso — evento esgotado ou
+    # evento sem setor nenhum. Ver `services/evento.py::listar_programacao`.
+    preco_minimo_centavos: int | None
+    # Campo próprio, e não algo que a tela deriva de `preco_minimo_centavos ==
+    # null`: as duas versões dizem a mesma coisa hoje, e a segunda faria a tela
+    # reconstruir uma regra de domínio a partir da ausência de um valor. O dia
+    # em que um evento tiver ingresso a preço zero, alguém descobriria isso
+    # pela tela errada.
+    esgotado: bool
+
+
 class EventoSaida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

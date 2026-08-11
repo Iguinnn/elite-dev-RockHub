@@ -384,8 +384,8 @@ frontend/
       not-found.module.css
       (site)/                 # casca com masthead: tudo que é navegável
         layout.tsx
-        page.tsx              # raiz
-        page.module.css
+        page.tsx              # raiz — a programação pública (Story 3.1)
+        page.module.css       # a fila de jornal em quatro colunas, e o colapso em duas
         conta/
           page.tsx            # Server Component com a guarda de sessão
           page.module.css
@@ -430,6 +430,7 @@ frontend/
       catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
       portarias.ts            # listarPortarias() — só servidor (Story 2.5)
       eventos.ts              # listarMeusEventos() e obterMeuEvento() — só servidor (Story 2.6)
+      programacao.ts          # listarProgramacao() — só servidor, e o único sem cookie (Story 3.1)
       formato.ts              # data, hora e dinheiro em pt-BR — módulo puro, os dois lados o usam (2.6)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
@@ -1288,6 +1289,53 @@ telas de acesso ficaram dinâmicas por lerem `searchParams`.
 **É o comportamento correto**, não uma regressão: uma página cujo cabeçalho depende de quem pediu não
 pode ser pré-renderizada — a versão em cache mostraria `Entrar` para quem está logado. Não tente
 consertar com `export const dynamic` nem tirando o masthead do layout.
+
+## A raiz: a programação
+
+A raiz deixou de ser o estado vazio provisório da Story 1.2 e passou a ser a programação — e é a
+primeira tela deste projeto que **não tem dono**. Todas as outras ou são de quem entra (login,
+cadastro) ou de quem publica (`/organizador/*`), e todas começam por `obterUsuarioDaSessao()`. Esta
+não tem guarda, não tem `redirect` e não lê sessão nenhuma: qualquer um dos três aqui seria uma
+exigência que o backend não faz. Continua Server Component, sem uma linha de `"use client"`, porque
+não há interação — só leitura e navegação. O corte de "só o que ainda vai acontecer" vem pronto da
+API, ao contrário de "Meus eventos", onde ele mora na tela; o motivo dessa inversão está no README da
+raiz.
+
+**`src/lib/programacao.ts` é o primeiro módulo daqui que fala com a API sem repassar cookie**, e a
+ausência do `cabecalhoDeSessao()` está comentada no código de propósito. Ele está a um import de
+distância e não faria mal nenhum — é exatamente por isso que entraria sem ninguém notar, e o próximo
+leitor tomaria a sessão por exigência da rota. São dois estados, e não três como no `eventos.ts`:
+não há `404` nem `401` possíveis numa rota que responde `200 []` para banco vazio e não conhece
+sessão. Como todos os outros, ele **nunca levanta** — só que aqui a página é a raiz do produto, e o
+custo de esquecer isso seria a aplicação inteira caindo porque o backend piscou.
+
+⚠️ **E é justamente por não ler cookie que ele precisou de `unstable_rethrow`.** O `cache: "no-store"`
+é uma das APIs que o Next interrompe *lançando* um erro interno (`DYNAMIC_SERVER_USAGE`) para tirar a
+rota da renderização estática, e o meu `try/catch` engolia esse sinal: o build registrava
+"Programação indisponível" mesmo com a API no ar, e a raiz corria o risco de nascer estática com a
+frase de erro impressa dentro. Os outros três módulos de `lib/` nunca tiveram esse problema porque
+chamam `cookies()` **fora** do `try`, e já saem do modo estático antes de chegar ao `fetch`. Aqui não
+há cookie, e o `fetch` é o único sinal que resta — daí a chamada ser a primeira linha do `catch`.
+
+`partesDaFilaPublica` entrou no `formato.ts` em vez de nascer dentro do `page.tsx`, e não é a
+`partesDaData` com outro nome. As duas filas do produto são primas, não gêmeas: a do organizador
+mostra `15 ago 2026` inteiro em mono, porque ele precisa saber o ano de um show de 2001; a pública só
+lista o que ainda vai acontecer, então o que decide é o dia da semana e a hora. A tipografia segue
+essa divisão — dia da semana e hora em mono versalete, o dia em serifada de 30px, que é a assinatura
+visual da listagem e a primeira coisa desta story a sair do protótipo. O `FUSO` continua num lugar
+só: foram as três formatações inline da fila de "Meus eventos" que ficaram sem `timeZone` e fizeram a
+mesma publicação aparecer com duas datas.
+
+**A fila esgotada é um `<div>`, e a com ingresso é um `<Link>`** — a troca é do elemento, não do CSS.
+Um `<Link>` com `pointer-events: none` continua no Tab e continua sendo anunciado como link por
+leitor de tela, e o padrão pede que a fila esgotada **não** seja clicável: a ausência de resposta ao
+hover é a informação. A palavra "Esgotado" está escrita no selo, então a informação não depende de
+enxergar o vermelho da brasa. ⚠️ O `href` aponta para `/eventos/{id}`, **que só nasce na Story 3.4** —
+até lá o clique cai na 404 do projeto. É janela consciente, do mesmo tipo da que o AD-7 teve entre a
+2.4 e a 2.5: ela vive dentro da branch da epic, que só eu publico, e a 3.4 é quem a fecha. Ela
+contraria o precedente escrito no `Masthead.tsx` ("link que cai no 404 não fica no repositório"), e a
+diferença que aceitei é de alcance — lá é navegação permanente, visível em toda tela; aqui é um
+`href` que fecha na mesma epic.
 
 ## Sobre não ter teste automatizado aqui
 

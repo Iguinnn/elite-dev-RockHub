@@ -1,11 +1,212 @@
-/* Estado vazio (EXPERIENCE.md#State Patterns/Vazio): kicker, frase, fim. */
+/* A programação pública: a raiz do produto (Story 3.1).
 
-.vazio {
+   Este arquivo **substitui** o estado vazio provisório da Story 1.2 — as duas
+   classes daquele (`.vazio` e `.frase`) continuam aqui, servindo ao mesmo
+   estado, agora ao lado da listagem.
+
+   A fila de quatro colunas é a **assinatura visual da listagem**
+   (DESIGN.md#Components/fila-listagem), e esta é a primeira vez que ela sai do
+   protótipo. A anatomia do `.secTitulo` e do `.aviso` é copiada de
+   `organizador/eventos/page.module.css`, não importada: CSS Module não
+   compartilha classe entre arquivos, e promover as duas ao `globals.css` seria
+   transformar em utilitário global algo que vive em duas telas.
+
+   Grade e espaçamento são provisórios (DESIGN.md#Como usar este documento); a
+   ausência de card, sombra e raio é duradoura — UX-DR3. Nenhum hex aqui: só
+   `var(--token)`. */
+
+.pagina {
   padding: 40px 0 96px;
+}
+
+/* Mesma anatomia do título de seção de "Meus eventos": fio embaixo, serifada
+   grande. Sem kicker de contexto ao lado — o protótipo escreve "Agosto de
+   2026", que passa a mentir assim que a lista atravessa dois meses.
+
+   ⚠️ O recuo lateral de 12px é o **mesmo** de `.fila`, `.aviso` e `.vazio`, e
+   os quatro precisam andar juntos: o texto se alinha entre si, e o fio continua
+   na largura cheia da coluna. Fio na largura cheia não é detalhe — o masthead
+   compartilha a mesma medida, e é isso que faz os filetes correrem de ponta a
+   ponta da página. Recuar com margem negativa daria o mesmo respiro no realce e
+   estouraria os fios para fora dessa medida. */
+.secTitulo {
+  padding: 0 12px 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTitulo h1 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+/* A frase de indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding: 0 12px;
+  font: 19px/1.5 var(--serif);
+}
+
+/* Estado vazio: kicker, frase, fim. Sem ilustração e sem botão grande. */
+.vazio {
+  padding: 28px 12px 0;
 }
 
 .frase {
   max-width: 46ch;
   margin-top: 12px;
   font: 19px/1.5 var(--serif);
+}
+
+/* ---- a fila de quatro colunas ------------------------------------------- */
+
+.lista {
+  margin-top: 2px;
+}
+
+/* A grade do DESIGN.md#Layout & Spacing. `align-items: baseline` alinha o dia
+   da semana, o nome e o preço pela linha de base — é o que faz as quatro
+   colunas lerem como uma linha de jornal, e não como quatro blocos empilhados
+   lado a lado.
+
+   A fila **inteira** é o link (padrão `fila-listagem`), daí o `color: inherit`
+   e o `display: grid` num `<a>`: o elemento é um link, a aparência é de linha
+   de jornal. */
+/* O `padding` é o que dá corpo ao realce do hover: ele pinta a caixa inteira,
+   então a folga em volta do texto é a diferença entre a fila parecer uma linha
+   de jornal e parecer um item de menu apertado. Vertical mais generoso que o
+   protótipo (20px), e 12px de cada lado para o realce não encostar na primeira
+   e na última letra da fila. */
+.fila {
+  display: grid;
+  grid-template-columns: 96px 1fr 210px 150px;
+  gap: 26px;
+  align-items: baseline;
+  padding: 26px 12px;
+  border-bottom: 1px solid var(--fio);
+  color: inherit;
+  text-decoration: none;
+}
+
+.fila:hover {
+  background: var(--breu2);
+}
+
+/* A coluna da data: dia da semana e hora em mono versalete, o dia em serifada
+   grande no meio. É a assinatura que separa esta fila da do organizador. */
+.data {
+  display: flex;
+  flex-direction: column;
+}
+
+.diaDaSemana,
+.hora {
+  font: 11px/1.5 var(--mono);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.dia {
+  margin: 2px 0 3px;
+  font: 400 30px/0.95 var(--serif);
+  letter-spacing: -0.03em;
+  color: var(--cal);
+}
+
+.nome {
+  font: 400 27px/1.14 var(--serif);
+  letter-spacing: -0.022em;
+}
+
+.local {
+  font: 11px/1.75 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.preco {
+  text-align: right;
+}
+
+.preco b {
+  font: 400 21px/1 var(--serif);
+}
+
+/* O rótulo **acima** do valor: "a partir de R$ 120,00" se lê como uma frase.
+   O protótipo o punha embaixo, onde ele virava legenda de um número que já
+   tinha sido apresentado como se fosse o preço. */
+.preco span {
+  display: block;
+  margin-bottom: 6px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* ---- a fila esgotada ---------------------------------------------------- */
+
+/* Ela **não é um link** (o TSX troca o elemento), então não há hover para
+   desligar aqui: a ausência de resposta é a informação
+   (EXPERIENCE.md#fila-listagem), e ela vem de graça por o elemento ser um
+   `<div>`.
+
+   ⚠️ O esmaecido usa `var(--fumaca)`. O protótipo escreve `#5F5A52`, e nenhum
+   hex novo entra em `*.module.css` — só `var(--token)`. */
+.esgotada .nome,
+.esgotada .dia {
+  color: var(--fumaca);
+}
+
+/* Selo vazado, raio zero. Mono 700 versalete, como todo estado do sistema. */
+.selo {
+  display: inline-block;
+  padding: 5px 10px;
+  border: 1px solid var(--brasa);
+  color: var(--brasa);
+  font: 700 10px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ---- abaixo de 900px: quatro colunas viram duas ------------------------- */
+
+/* A data continua sendo uma coluna à esquerda — é ela que dá a âncora de
+   leitura da lista —, e nome, local e preço descem para um bloco só na
+   segunda. Os fios continuam de ponta a ponta, e nada rola na horizontal. */
+@media (max-width: 900px) {
+  .fila {
+    grid-template-columns: 68px 1fr;
+    gap: 4px 18px;
+    padding: 22px 12px;
+  }
+
+  .data {
+    grid-row: 1 / span 3;
+  }
+
+  .dia {
+    font-size: 26px;
+  }
+
+  .nome {
+    font-size: 22px;
+  }
+
+  .local {
+    line-height: 1.5;
+  }
+
+  /* À esquerda junto com o resto do bloco: alinhado à direita, o preço ficaria
+     sozinho na outra ponta de uma coluna que agora carrega três informações. */
+  .preco {
+    margin-top: 6px;
+    text-align: left;
+  }
+
+  .preco span {
+    margin-bottom: 4px;
+  }
 }

@@ -59,7 +59,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
-from app.schemas.evento import EventoEntrada, EventoResumo
+from app.schemas.evento import EventoEntrada, EventoNaProgramacao, EventoResumo
 
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
@@ -280,6 +280,94 @@ def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoR
         )
         for evento in eventos
     ]
+
+
+def listar_programacao(sessao: Session) -> list[EventoNaProgramacao]:
+    """A programação pública: o que está publicado e ainda vai acontecer.
+
+    **Três decisões moram nesta função.**
+
+    *Por que só publicado.* `publicado_em IS NULL` é rascunho (Story 2.3), e o
+    comentário do modelo diz, com todas as letras, que esse estado existe para
+    tornar verificável o AC desta story. Não há tela que produza um rascunho
+    hoje; a condição está no `where` — e não num filtro em Python — porque o
+    dia em que houver, ela já vale, e vale para qualquer volume.
+    ⚠️ `listar_do_organizador` **continua sem esse filtro**, de propósito: o
+    rascunho de alguém é dele, e a entrada do `deferred-work.md` sobre a rota do
+    organizador permanece aberta.
+
+    *Por que só futuro, e por que no backend* (decisão do Igor). A programação
+    pública é o que está por vir: quem chega na raiz quer saber o que dá para
+    comprar, e show que já aconteceu não é nenhuma das duas coisas. O histórico
+    não se perde — ele continua inteiro em `/organizador/eventos`, que é de
+    quem publicou. O corte ficou aqui, e não na tela como em "Meus eventos",
+    porque lá o dono da informação é o organizador e o histórico é o inventário
+    dele; aqui o visitante veria metade da página inicial ocupada por shows que
+    não pode comprar.
+
+    *Por que o estoque não atravessa o contrato.* `EventoNaProgramacao` não tem
+    `capacidade`, `vendidos` nem `setores` — UX-DR7 se garante no
+    `response_model`, não na tela. Os dois campos derivados daqui existem
+    justamente para dizer o que interessa sem revelar número nenhum.
+    """
+    # Lido **uma vez**, antes da consulta. Duas leituras do relógio na mesma
+    # requisição podem discordar sobre o evento que começa agora — é a mesma
+    # disciplina que o `cache()` da tela de "Meus eventos" impôs no frontend.
+    # Um `datetime` com fuso, nunca texto: comparar strings ISO funciona por
+    # acidente enquanto todo offset for `Z`.
+    agora = datetime.now(timezone.utc)
+
+    eventos = sessao.scalars(
+        select(Evento)
+        .where(Evento.publicado_em.is_not(None), Evento.data_hora >= agora)
+        # `Evento.id` como desempate, pelo mesmo motivo escrito na
+        # `listar_do_organizador`: sem critério total, dois shows no mesmo
+        # horário trocam de lugar entre requisições.
+        .order_by(Evento.data_hora, Evento.id)
+        # Sem ele, ler `evento.setores` no laço abaixo emite uma consulta por
+        # evento. É a raiz do produto: a tela mais visitada que existe aqui.
+        .options(selectinload(Evento.setores))
+    )
+
+    programacao: list[EventoNaProgramacao] = []
+    for evento in eventos:
+        # ⚠️ **AD-13**: disponível é `setor.vendidos < setor.capacidade`, lido
+        # do próprio setor. É **proibido** derivar disponibilidade com `COUNT`
+        # sobre reserva ou ingresso, em qualquer camada — as duas tabelas
+        # nascem nas Stories 3.5 e 3.9, e é agora que o hábito se forma.
+        precos = [
+            setor.preco_centavos
+            for setor in evento.setores
+            if setor.vendidos < setor.capacidade
+        ]
+
+        # ⚠️ `min()` sobre sequência vazia levanta `ValueError`, e dois casos
+        # caem aqui: o evento com todos os setores esgotados e o evento sem
+        # setor nenhum (impossível pela rota de publicação, possível por
+        # `psql` — e existe no banco de desenvolvimento). O `if` trata os dois
+        # antes; um `try/except ValueError` esconderia a regra dentro de um
+        # tratamento de exceção.
+        #
+        # O evento esgotado **continua na lista**: ele é informação (o show
+        # existe e acabou), não ruído.
+        programacao.append(
+            EventoNaProgramacao(
+                id=evento.id,
+                nome=evento.nome,
+                data_hora=evento.data_hora,
+                local=evento.local,
+                cidade=evento.cidade,
+                # O menor preço **entre os setores que ainda têm ingresso**
+                # (decisão do Igor). Se a Pista, que é a mais barata, esgotou,
+                # a fila passa a anunciar o preço do que dá para comprar:
+                # anunciar um preço que não existe mais é a única forma de a
+                # listagem mentir com número.
+                preco_minimo_centavos=min(precos) if precos else None,
+                esgotado=not precos,
+            )
+        )
+
+    return programacao
 
 
 def obter_do_organizador(
