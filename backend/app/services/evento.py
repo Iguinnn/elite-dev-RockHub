@@ -41,14 +41,15 @@ concorrendo — dá para conferi-las na memória, com certeza, antes de gravar. 
 """
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
-from app.schemas.evento import EventoEntrada
+from app.schemas.evento import EventoEntrada, EventoResumo
 
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
@@ -193,3 +194,91 @@ def listar_portarias(sessao: Session) -> list[Usuario]:
             .order_by(Usuario.nome)
         )
     )
+
+
+def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoResumo]:
+    """Os eventos publicados por quem está na sessão, com os totais somados.
+
+    **Mora neste service pelo mesmo motivo do `listar_portarias`**: é leitura
+    sem transação e sem invariante, mas toca o banco — e router que abre uma
+    `Session` para consultar é o que o paradigma da espinha proíbe sem exceção.
+    O critério inteiro está no docstring de `app/api/organizador.py`.
+
+    **O parâmetro é o `Usuario` da sessão, nunca um `organizador_id` solto.**
+    É a mesma assinatura do `publicar()`: ver os eventos de outra pessoa não é
+    uma chamada que este service recusa, é uma chamada que não existe. Sem
+    parâmetro de query, de caminho ou de corpo por onde outro id pudesse entrar,
+    o escopo deixa de depender da disciplina de quem chama.
+
+    **Devolve `EventoResumo`, e não `Evento` do ORM.** Os dois totais não são
+    atributos da entidade — são uma vista de leitura, e é aqui que eles nascem.
+    A alternativa (`@computed_field` no schema, ou `@property` no modelo)
+    esconderia a soma do AD-13 na camada de serialização, um passo mais longe
+    do teste que a prova. Precedente: `ticketmaster.buscar_eventos` também
+    devolve schema, não ORM.
+    """
+    eventos = sessao.scalars(
+        select(Evento)
+        .where(Evento.organizador_id == organizador.id)
+        .order_by(Evento.data_hora)
+        # ⚠️ Não é otimização prematura: sem ele, ler `evento.setores` no laço
+        # abaixo emite **uma consulta por evento**, e o custo cresce com o
+        # sucesso do organizador. O sintoma só aparece com volume, ou seja,
+        # nunca, na avaliação — e é exatamente por isso que a linha entra agora.
+        .options(selectinload(Evento.setores))
+    )
+
+    # A soma acontece aqui, num lugar só, onde um teste consegue lê-la.
+    #
+    # ⚠️ **AD-13**: `setor.capacidade` e `setor.vendidos` são a única fonte da
+    # disponibilidade. É proibido derivar qualquer um dos dois com `COUNT`
+    # sobre reserva ou ingresso — nem hoje, que as duas tabelas não existem,
+    # nem depois da Epic 3, que é quem vai escrever em `vendidos` pelo `UPDATE`
+    # condicional. Evento sem setor nenhum (impossível pela rota, possível por
+    # `psql`) soma zero e não quebra a listagem.
+    return [
+        EventoResumo(
+            id=evento.id,
+            nome=evento.nome,
+            data_hora=evento.data_hora,
+            local=evento.local,
+            cidade=evento.cidade,
+            publicado_em=evento.publicado_em,
+            capacidade_total=sum(setor.capacidade for setor in evento.setores),
+            vendidos_total=sum(setor.vendidos for setor in evento.setores),
+        )
+        for evento in eventos
+    ]
+
+
+def obter_do_organizador(
+    sessao: Session, organizador: Usuario, evento_id: UUID
+) -> Evento:
+    """Um evento do organizador da sessão, com setores e escala.
+
+    **Uma consulta com as duas condições, e não `sessao.get()` seguido de um
+    `if` conferindo o dono.** As duas versões funcionam; a segunda cria dois
+    caminhos para a mesma decisão, e o segundo é o que alguém esquece na
+    próxima rota. Com `id` e `organizador_id` no mesmo `where`, "só vejo o que é
+    meu" é verdade por construção — não por disciplina de quem escreveu.
+
+    **Uma mensagem só para "não existe" e para "não é seu".** Distinguir os
+    dois transformaria esta rota num oráculo — "esse UUID é um evento de
+    alguém?" —, e é a mesma disciplina do `PORTARIA_INVALIDA` da Story 2.5 e do
+    login da 1.4, que não diz se o e-mail existe. Quem chama não perde nada:
+    para o organizador, os dois casos significam a mesma coisa.
+    """
+    evento = sessao.scalars(
+        select(Evento)
+        .where(Evento.id == evento_id, Evento.organizador_id == organizador.id)
+        .options(selectinload(Evento.setores), selectinload(Evento.portarias))
+    ).first()
+
+    if evento is None:
+        raise ErroDeDominio(
+            "EVENTO_NAO_ENCONTRADO",
+            "Esse evento não existe ou não é seu.",
+            status_http=404,
+        )
+
+    return evento

@@ -393,6 +393,11 @@ frontend/
           publicar/
             page.tsx          # Server Component — passos 1 (2.2), 2 (2.4) e 3 (2.5); a escolha vem da URL
             page.module.css   # classes dos três passos, da linha de setor e da confirmação
+          eventos/            # "Meus eventos" (Story 2.6) — só leitura, sem uma linha de "use client"
+            page.tsx          # a lista, partida em "Em cartaz" e "Já aconteceram"
+            page.module.css   # compartilhado com o detalhe: mesmo vocabulário de fila e inventário
+            [id]/
+              page.tsx        # o detalhe: inventário setor a setor e quem está na porta
       (entrada)/              # casca sem masthead: só a marca
         layout.tsx
         layout.module.css
@@ -424,6 +429,8 @@ frontend/
       sessao.ts               # obterUsuarioDaSessao() — só servidor
       catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
       portarias.ts            # listarPortarias() — só servidor (Story 2.5)
+      eventos.ts              # listarMeusEventos() e obterMeuEvento() — só servidor (Story 2.6)
+      formato.ts              # data, hora e dinheiro em pt-BR — módulo puro, os dois lados o usam (2.6)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
 
@@ -754,10 +761,15 @@ Deu certo, a confirmação toma o lugar do formulário na mesma tela: nome, data
 cidade e a lista de setores com **capacidade e preço exatos**. Números exatos e nenhum medidor —
 proporção é para quem compra; organizador vê inventário (UX-DR7).
 
-Sem `router.push` e sem `router.refresh`: nada da sessão mudou, e não há para onde mandar alguém.
-"Meus eventos" é a Story 2.6, e a raiz é o estado vazio da programação até a 3.1 — publicar para
-cair numa tela que diz "a programação entra no ar quando os primeiros eventos forem publicados"
-pareceria defeito. O caminho de volta é o `Publicar outro →`, que leva à URL limpa.
+Sem `router.push` e sem `router.refresh` — e desde a Story 2.6 **por outro motivo**. Na 2.4 era "não
+há para onde mandar alguém": `Meus eventos` não existia, e a raiz era o estado vazio da programação.
+Agora existe para onde ir, e eu decidi continuar sem redirecionar: esta confirmação é o recibo da
+publicação, e é a **única** vez que o organizador vê o inventário e quem ficou com a porta. Não há
+tela de editar evento onde conferir depois. Saltar para a lista assim que o `POST` responde apagaria
+justamente isso — a lista mostra os totais, não a escala.
+
+Os caminhos de saída são dois, e nenhum é obrigatório: `Publicar outro →`, que leva à URL limpa, e
+`Ver meus eventos →`, que entrou na 2.6 junto com a tela para onde aponta.
 
 Desde a Story 2.5 a confirmação também lista, **por nome**, quem ficou com a porta — abaixo do
 inventário de setores, sob o kicker `Na porta`. É a única confirmação da escala que o organizador
@@ -939,6 +951,115 @@ segunda linha: **papel errado vai para a raiz, não para um 404.** Um cliente qu
 alguém **logado** para um 404 parece defeito de navegação, e a rota não é segredo nenhum: a API
 responde `403`, que é público por natureza. Fica registrado como suposição minha, não decisão de
 produto — é uma linha para trocar se eu discordar depois de ver a tela no ar.
+
+## Meus eventos: `/organizador/eventos` e `/organizador/eventos/[id]`
+
+As duas telas da Story 2.6, e as **primeiras telas de leitura de domínio** do projeto — todas as
+anteriores ou eram formulário (login, cadastro, publicar) ou eram vista de um dado externo (o
+catálogo). Nenhuma das duas tem uma linha de `"use client"`: não há interação nenhuma aqui, só
+leitura e navegação.
+
+As guardas são as mesmas duas de `/organizador/publicar`, com o `?voltar=` trocado. O papel errado
+continua indo para a raiz, e não para `notFound()`, pelo motivo já registrado acima.
+
+### `src/lib/formato.ts`, e por que ele precisou existir
+
+Esta é a terceira vez que uma função sai de onde nasceu para virar módulo compartilhado, e a primeira
+em que o motivo é **físico**, não estético.
+
+`dataPorExtenso`, `momentoDaPublicacao` e `centavosParaReais` moravam dentro do
+`FormularioPublicacao.tsx`, que é uma ilha `"use client"`. Quando as telas novas precisaram das
+mesmas formatações, importá-las de lá não era uma opção ruim — era **impossível**: o Next transforma
+cada export de um módulo `"use client"` numa *client reference*, e chamá-la de um Server Component
+estoura em tempo de execução, não em build. (Elas nem eram exportadas, para começo de conversa.)
+
+As duas saídas erradas eram copiar as três funções para as telas novas — segunda fonte para o mesmo
+formato de data, e no dia em que uma mudasse ninguém saberia qual está certa — e marcar as telas
+novas como `"use client"`, que é jogar fora o Server Component por causa de um `Intl.DateTimeFormat`.
+
+O `formato.ts` é um **módulo puro**: nenhum `"use client"`, nenhum import de `next/headers`. É isso
+que o deixa rodar dos dois lados da fronteira — ele não depende de nenhum dos dois. É o oposto exato
+do `servidor.ts`, cujo import de `next/headers` é justamente o que o prende ao servidor.
+
+`reaisParaCentavos` **ficou onde estava**: ela converte o que uma pessoa digitou, é do formulário e
+não tem consumidor de servidor. Mover tudo "já que estou aqui" é escopo que ninguém pediu.
+
+### O corte "Em cartaz / Já aconteceram" mora na tela, não na API
+
+A API responde uma pergunta só — "quais são os meus eventos" —, em ordem crescente de data. Quem
+decide o que é passado e o que é futuro é o relógio de **quem está lendo**, e por isso o corte
+acontece aqui, com uma comparação de `Date` contra `Date`:
+
+```ts
+const agora = instanteDaRequisicao();
+const emCartaz = itens.filter((e) => new Date(e.data_hora).getTime() >= agora);
+const jaAconteceram = itens.filter((e) => new Date(e.data_hora).getTime() < agora).reverse();
+```
+
+⚠️ **`Date` contra `Date`, nunca texto contra texto.** Comparar as strings ISO funciona por acidente
+enquanto todos os offsets forem `Z`, e para de funcionar no primeiro `-03:00`.
+
+⚠️ **E o relógio vem de um `cache()` do React, não de um `Date.now()` solto no corpo do componente.**
+Ler o relógio no meio da renderização é uma chamada impura — o lint do React reprova, e com razão:
+duas leituras podem devolver valores diferentes, e um evento que começa exatamente agora cairia numa
+seção no primeiro filtro e na outra no segundo. Com `cache()` o valor nasce uma vez por requisição e
+vale para a página inteira. É a mesma mecânica que o `obterUsuarioDaSessao` usa para consultar a
+sessão uma vez só.
+
+Seção sem nenhum evento **não é renderizada**: bloco vazio com título é pior que ausência.
+
+### `src/lib/eventos.ts` tem três estados, e não dois
+
+`listarMeusEventos()` segue o molde exato do `catalogo.ts` e do `portarias.ts` — só servidor,
+`cache: "no-store"`, cookie repassado à mão, `try/catch` que **nunca levanta** — e devolve `ok` ou
+`indisponivel`.
+
+`obterMeuEvento(id)` devolve **três**: `ok`, `nao-encontrado` e `indisponivel`. O terceiro estado
+existe porque a tela precisa distinguir "esse evento não é seu" de "a API não respondeu": o primeiro
+é `notFound()`, o segundo é uma frase. Só o `404` separa os dois, e achatá-los faria a tela mentir —
+um evento alheio apareceria como instabilidade do servidor.
+
+```ts
+if (resposta.status === 404 || resposta.status === 422) return { estado: "nao-encontrado" };
+if (!resposta.ok) return { estado: "indisponivel" };
+```
+
+⚠️ A ordem importa: o `404` é conferido **antes** do `!resposta.ok` genérico.
+
+⚠️ **`notFound()` levanta, como o `redirect()`.** Ele não pode ficar dentro de um `try/catch` — e não
+fica: o `try` mora dentro do `lib/eventos.ts`, e o que sobra na página é um `if`.
+
+### A fila, o inventário e o que não tem
+
+A lista é uma **fila de jornal**: data à esquerda (dia e mês em mono versalete), nome em serifada,
+`local · cidade` abaixo, e `vendidos/capacidade` à direita. A fila **inteira** é o `<Link>`, não só o
+nome — padrão `fila-listagem`, o mesmo do catálogo do passo 1.
+
+**Números exatos, sem medidor e sem proporção.** É o inventário de quem é dono da informação
+(UX-DR7); medidor é da tela de quem compra, na Epic 3. E o par de números não fica sem nome: o rótulo
+`vendidos` é visível ao lado, porque `12/860` sozinho é ambíguo para quem chega de leitor de tela.
+
+O detalhe abre os setores um a um, com `vendidos/capacidade` e preço, e traz o bloco `Na porta` com
+nome e e-mail de quem foi escalado. **Evento sem ninguém escalado mostra uma frase e não quebra** —
+existem eventos assim no banco, publicados na janela em que a 2.4 já publicava e a 2.5 ainda não
+exigia a escala.
+
+**Não há botão de editar, cancelar ou trocar a escala**, e é decisão, não esquecimento: "gerenciar"
+aqui é acompanhar. Botão que não faz nada é pior que botão ausente. O porquê completo, com as
+alternativas descartadas, está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+**Um `page.module.css` para as duas telas**, em `eventos/`, importado pelo detalhe como
+`../page.module.css`. Elas compartilham o vocabulário de fila e de inventário, e dois arquivos quase
+iguais divergiriam na primeira mudança. Precedente: o `FormularioPublicacao` já importa o módulo da
+página que o hospeda.
+
+### O masthead ganhou `Meus eventos`
+
+A navegação do organizador passou a ser `Início · Meus eventos · Publicar evento · Minha conta`.
+`Meus eventos` vem **antes** de `Publicar evento` porque acompanhar o que está no ar é o que se faz
+todo dia; publicar é eventual. Ele só aparece para `ORGANIZADOR` — cliente, portaria e visitante não
+o veem —, e só entrou agora porque link que cai em 404 não fica no repositório (precedente da Story
+1.4). Sobrou `Meus ingressos`, que espera a Story 4.1.
 
 ## O sistema visual
 
@@ -1199,6 +1320,25 @@ A lista da Story 2.5, o passo 3:
   nada rola na horizontal
 - **`Tab`** → cada marcação recebe foco visível em âmbar, e o rótulo é lido junto
 
+A lista da Story 2.6, `/organizador/eventos`:
+
+- **`organizador@rockhub.dev`** → o masthead mostra `Início · Meus eventos · Publicar evento ·
+  Minha conta`, nessa ordem
+- **Abrir a lista** → os eventos publicados nas 2.4/2.5 aparecem com `vendidos/capacidade` à direita,
+  e um evento com data passada cai em **Já aconteceram**, separado dos que estão **Em cartaz**
+- **Clicar numa fila em qualquer ponto dela**, não só no nome → o detalhe abre. Se só o nome
+  responder, a fila deixou de ser o `<Link>`
+- **Detalhe de um evento publicado antes da 2.5** → `Na porta` mostra a frase de "ninguém escalado" e
+  a tela **não** quebra
+- **Publicar um evento novo** → a confirmação mostra `Ver meus eventos →` ao lado de `Publicar
+  outro →`, **sem redirect**, e o evento aparece na lista
+- **`cliente@rockhub.dev`** → `Meus eventos` não aparece no masthead, e digitar `/organizador/eventos`
+  na barra manda para a raiz
+- **`/organizador/eventos/<uuid-que-não-existe>`** → a 404 do projeto, com a casca. O mesmo vale para
+  o id de um evento de outro organizador: a resposta é idêntica, de propósito
+- **Abaixo de 900px** → um bloco por linha, a data da fila vira uma linha só acima do nome, e nada
+  rola na horizontal
+
 ### E a mesma lista, em produção
 
 Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. Contra
@@ -1403,3 +1543,47 @@ Sem teste automatizado aqui, como sempre — a conferência manual virou oito it
 teste automatizado aqui](#sobre-não-ter-teste-automatizado-aqui). O backend ganhou vinte e três
 testes (a suíte foi de 164 para 187), documentados no [README do
 backend](../backend/README.md#story-25--escalar-quem-valida-na-porta).
+
+### Story 2.6 — ver e gerenciar meus eventos
+
+Duas telas novas, `/organizador/eventos` e `/organizador/eventos/[id]`, as **primeiras de leitura de
+domínio** do projeto: nenhuma linha de `"use client"` em nenhuma das duas.
+
+**A decisão técnica desta story foi o `src/lib/formato.ts`, e ela não foi minha — foi do React.** As
+três funções de formatação (`dataPorExtenso`, `momentoDaPublicacao`, `centavosParaReais`) moravam
+dentro do `FormularioPublicacao.tsx`, que é `"use client"`. Server Component não consegue chamar
+export de módulo `"use client"`: o Next transforma cada um numa *client reference*, e a chamada
+estoura em tempo de execução, não em build. As duas saídas erradas eram copiar as funções — segunda
+fonte para o mesmo formato de data — e marcar as telas novas como `"use client"`, que é jogar fora o
+Server Component por causa de um `Intl.DateTimeFormat`. É a terceira extração para módulo
+compartilhado deste frontend, depois de `Campo` e `Botao`, e a primeira em que o motivo é **físico** e
+não estético: a fronteira servidor/cliente não é convenção, é limite de execução.
+
+**Parti a lista em "Em cartaz" e "Já aconteceram", e o corte mora na tela.** A alternativa era a API
+devolver só os futuros: tela mais limpa, e o organizador perderia o histórico dele — um evento
+sumindo da conta sem explicação. Além de pôr no backend uma regra de "o que interessa agora" que a
+Epic 5 vai querer diferente. A API responde "quais são os meus eventos"; o relógio que decide o resto
+é o de quem lê.
+
+**O `lib/eventos.ts` foi o primeiro módulo de servidor com três estados.** `nao-encontrado` e
+`indisponivel` são coisas diferentes: o primeiro é `notFound()`, o segundo é uma frase. Se eu
+tratasse todo `!resposta.ok` igual, o evento de outro organizador viraria "a API não respondeu" e a
+tela mentiria.
+
+**O lint me pegou num `Date.now()` no corpo do componente**, e estava certo: ler o relógio na
+renderização é impuro, e um evento que começa exatamente agora poderia cair numa seção no primeiro
+filtro e na outra no segundo. Envolvi num `cache()` do React — o valor nasce uma vez por requisição —,
+que é a mesma mecânica que o `obterUsuarioDaSessao` já usava. Foi correção de regra, não supressão de
+aviso.
+
+**`Meus eventos` entrou no masthead, antes de `Publicar evento`**, e a confirmação de publicação
+ganhou `Ver meus eventos →` — mas **continua sem `redirect`**, agora por um motivo diferente do da
+2.4. O porquê, com a alternativa descartada, está no [README da
+raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+**Aumentei o `← Meus eventos` do detalhe depois de ver a tela.** Ele nasceu com os 10px dos kickers e
+ficou pequeno demais para o que é: navegação, não etiqueta. É o segundo ajuste desta epic que só
+apareceu no navegador — o primeiro foi a âncora `#passo-2` da 2.4.
+
+Sem teste automatizado aqui, como sempre. O backend ganhou dezesseis (a suíte foi de 187 para 203),
+documentados no [README do backend](../backend/README.md#story-26--ver-e-gerenciar-meus-eventos).

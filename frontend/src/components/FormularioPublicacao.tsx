@@ -9,6 +9,17 @@ import Campo from "@/components/Campo";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { ItemDoCatalogo } from "@/lib/catalogo";
+// O que o `POST /organizador/eventos` devolve é o mesmo `EventoSaida` que o
+// detalhe de "Meus eventos" lê, então o tipo é um só e mora em `lib/eventos.ts`
+// (Story 2.6). `import type` é apagado pelo compilador — nada daquele módulo,
+// que fala com `next/headers`, atravessa para o bundle do navegador.
+import type { MeuEventoDetalhe } from "@/lib/eventos";
+// As três saíram daqui na Story 2.6, e não por faxina: as telas de "Meus
+// eventos" são Server Components, e Server Component **não consegue chamar**
+// função exportada de um módulo `"use client"` — o motivo inteiro está no
+// docstring de `lib/formato.ts`. `reaisParaCentavos` ficou, logo abaixo: ela é
+// do formulário e não tem consumidor de servidor.
+import { centavosParaReais, dataPorExtenso, momentoDaPublicacao } from "@/lib/formato";
 import type { ResultadoDasPortarias } from "@/lib/portarias";
 
 /**
@@ -37,32 +48,6 @@ import type { ResultadoDasPortarias } from "@/lib/portarias";
  * cliente interage.
  */
 type Props = { item: ItemDoCatalogo; portarias: ResultadoDasPortarias };
-
-/** Espelha `SetorSaida` do backend (`app/schemas/evento.py`). */
-type SetorPublicado = {
-  id: string;
-  nome: string;
-  capacidade: number;
-  vendidos: number;
-  preco_centavos: number;
-};
-
-/** Espelha `PortariaSaida` do backend (`app/schemas/evento.py`). */
-type PortariaPublicada = { id: string; nome: string; email: string };
-
-/** Espelha `EventoSaida` do backend (`app/schemas/evento.py`). */
-type EventoPublicado = {
-  id: string;
-  nome: string;
-  data_hora: string;
-  local: string;
-  cidade: string | null;
-  imagem_url: string | null;
-  origem_externa_id: string | null;
-  publicado_em: string | null;
-  setores: SetorPublicado[];
-  portarias: PortariaPublicada[];
-};
 
 /** Uma linha do formulário: tudo texto, porque tudo veio de um `<input>`. */
 type LinhaDeSetor = { chave: number; nome: string; capacidade: string; preco: string };
@@ -112,44 +97,6 @@ function reaisParaCentavos(valor: string): number | null {
   return Math.round(Number(normalizado) * 100);
 }
 
-function centavosParaReais(centavos: number): string {
-  return (centavos / 100).toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-function dataPorExtenso(iso: string): string {
-  const instante = new Date(iso);
-  const dia = new Intl.DateTimeFormat("pt-BR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(instante);
-  const hora = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-    .format(instante)
-    .replace(":", "h");
-  return `${dia}, ${hora}`;
-}
-
-function momentoDaPublicacao(iso: string): string {
-  const instante = new Date(iso);
-  const dia = new Intl.DateTimeFormat("pt-BR", {
-    day: "numeric",
-    month: "long",
-  }).format(instante);
-  const hora = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-    .format(instante)
-    .replace(":", "h");
-  return `Publicado em ${dia}, ${hora}`;
-}
-
 export default function FormularioPublicacao({ item, portarias }: Props) {
   // Uma linha, não três. O protótipo mostra três porque desenha o resultado
   // final; uma linha vazia mais o `+ Adicionar setor` já comunica como
@@ -160,7 +107,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
   ]);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [publicado, setPublicado] = useState<EventoPublicado | null>(null);
+  const [publicado, setPublicado] = useState<MeuEventoDetalhe | null>(null);
 
   // ⚠️ **A escala é um conjunto de ids, e a lista filtrada é só a vista.** Se a
   // marcação fosse derivada da lista visível — por índice, por exemplo —
@@ -263,7 +210,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     setEnviando(true);
 
     try {
-      const criado = await chamarApi<EventoPublicado>("/organizador/eventos", {
+      const criado = await chamarApi<MeuEventoDetalhe>("/organizador/eventos", {
         method: "POST",
         body: JSON.stringify({
           // Os três campos do catálogo viajam escondidos: o organizador não os
@@ -281,10 +228,14 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         }),
       });
 
-      // Sem `router.push` e sem `router.refresh`: nada da sessão mudou, e não
-      // há para onde ir — "Meus eventos" é a Story 2.6, e a raiz é o estado
-      // vazio da programação até a 3.1. A confirmação toma o lugar do
-      // formulário aqui mesmo.
+      // **Continua sem `router.push`, e agora por outro motivo.** Na Story 2.4
+      // era "não há para onde ir"; desde a 2.6 existe — `/organizador/eventos`
+      // está pronta e no masthead. A decisão de não saltar para lá é do Igor:
+      // esta confirmação é o recibo da publicação, e é a **única** vez que o
+      // organizador vê o inventário e quem ficou com a porta. Não há tela de
+      // editar evento para conferir depois, e trocar o recibo por um redirect
+      // apagaria justamente isso. Quem quiser ir para a lista tem o link
+      // abaixo — a escolha é de quem publicou.
       setPublicado(criado);
     } catch (erroCapturado) {
       // Erro de rede (`TypeError: Failed to fetch`) não passa pelo `ErroDaApi`
@@ -335,9 +286,17 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           </p>
         </div>
 
-        <Link href="/organizador/publicar" className={estilos.publicarOutro}>
-          Publicar outro →
-        </Link>
+        {/* Dois caminhos, nenhum obrigatório: publicar o próximo show ou ir
+            ver o que já está no ar. O segundo nasceu na Story 2.6, junto com a
+            tela para onde ele aponta. */}
+        <div className={estilos.saidas}>
+          <Link href="/organizador/publicar" className={estilos.saida}>
+            Publicar outro →
+          </Link>
+          <Link href="/organizador/eventos" className={estilos.saida}>
+            Ver meus eventos →
+          </Link>
+        </div>
       </div>
     );
   }

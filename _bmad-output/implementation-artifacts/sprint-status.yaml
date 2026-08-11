@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-11 (story 2.5 implementada — suíte 164 → 187, pronta para commit)
+last_updated: 2026-08-11 (story 2.6 implementada — a Epic 2 fechou o código; falta o code review)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -85,7 +85,11 @@ development_status:
   # lista por rota própria com busca pelo nome, vários escalados por evento, e
   # uma segunda conta de portaria no seed.
   2-5-escalar-quem-valida-na-porta: review
-  2-6-ver-e-gerenciar-meus-eventos: backlog
+  # A última da epic, e a primeira story só de leitura. Decisões do Igor: sem
+  # editar nada (o "gerenciar" do título é acompanhar), lista enxuta + página de
+  # detalhe, corte em "Em cartaz" e "Já aconteceram", e `Meus eventos` entrando
+  # no masthead com a confirmação de publicação apontando para lá — sem redirect.
+  2-6-ver-e-gerenciar-meus-eventos: review
   epic-2-retrospective: optional
 
   # ---------- Epic 3: Descoberta e compra ----------

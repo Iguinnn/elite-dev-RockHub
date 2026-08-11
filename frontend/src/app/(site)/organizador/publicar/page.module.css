@@ -384,9 +384,17 @@
   font: 18px/1.5 var(--serif);
 }
 
-.publicarOutro {
-  display: inline-block;
+/* As duas saídas da confirmação, lado a lado: publicar o próximo ou ir ver o
+   que já está no ar (Story 2.6). `flex-wrap` porque abaixo de 560px os dois
+   não cabem numa linha só. */
+.saidas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
   margin-top: 26px;
+}
+
+.saida {
   color: var(--ambar);
   font: 600 10px/1 var(--mono);
   letter-spacing: 0.18em;

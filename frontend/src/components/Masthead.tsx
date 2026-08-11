@@ -35,11 +35,16 @@ export default async function Masthead() {
 
       <nav className={estilos.navbar} aria-label="Navegação principal">
         <NavLink href="/">Início</NavLink>
-        {/* `Meus ingressos` e `Meus eventos` saem daqui até as Stories 4.1 e
-            2.6 criarem as telas: link que cai no 404 não fica no repositório
-            (precedente da Story 1.4). */}
+        {/* `Meus ingressos` sai daqui até a Story 4.1 criar a tela: link que
+            cai no 404 não fica no repositório (precedente da Story 1.4).
+            `Meus eventos` entrou na 2.6, quando a tela dele passou a existir —
+            e vem **antes** de `Publicar evento`, porque acompanhar o que está
+            no ar é o que o organizador faz todo dia; publicar é eventual. */}
         {usuario?.papel === "ORGANIZADOR" && (
-          <NavLink href="/organizador/publicar">Publicar evento</NavLink>
+          <>
+            <NavLink href="/organizador/eventos">Meus eventos</NavLink>
+            <NavLink href="/organizador/publicar">Publicar evento</NavLink>
+          </>
         )}
         {usuario ? (
           <NavLink href="/conta">Minha conta</NavLink>

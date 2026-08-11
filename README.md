@@ -22,8 +22,10 @@ camada.
 > sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado vazio. **A Epic 2 já
 > publica de verdade:** em `/organizador/publicar` o organizador busca a atração no catálogo da
 > Ticketmaster (2.1 e 2.2), preenche data, local e setores (2.3 e 2.4) e escala quem vai validar na
-> porta (2.5) — e o evento vai para o banco com setores e escala na mesma transação. O que ainda não
-> existe é o outro lado: descobrir, comprar e validar são as Epics 3 a 5. A seção [O que não está
+> porta (2.5) — e o evento vai para o banco com setores e escala na mesma transação. Desde a 2.6 ele
+> também **acompanha o que publicou**, em `/organizador/eventos`: a lista com o inventário de cada
+> show e o detalhe setor a setor, com quem ficou na porta. O que ainda não existe é o outro lado:
+> descobrir, comprar e validar são as Epics 3 a 5. A seção [O que não está
 > pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## No ar
@@ -303,7 +305,9 @@ ponta a ponta, do catálogo externo até uma linha no banco:
     desfaz
 24. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`); no passo
     **3 · Escale a portaria**, marcar **as duas** contas → `Publicar evento` devolve a confirmação
-    **na própria tela**, com capacidade e preço exatos e os dois nomes sob `Na porta`
+    **na própria tela**, com capacidade e preço exatos e os dois nomes sob `Na porta`. Dali, seguir o
+    `Ver meus eventos →` → o show que você acabou de publicar está na lista, sob `Em cartaz`, com
+    `0/800` à direita
 25. Conferir no banco que as linhas existem de verdade:
     `docker compose exec db psql -U rockhub -d rockhub -c "select nome, data_hora, local from evento;"`
     e `... -c "select * from evento_portaria;"` → duas linhas para esse evento
@@ -326,6 +330,23 @@ E a escala da portaria, que fecha na Story 2.5 e faz o AD-7 valer:
     o mesmo**, com a mesma mensagem: a rota não diz se a conta existe
 33. `curl` em `/organizador/portarias` com o cookie de **cliente** → `403 SEM_PERMISSAO`; sem cookie
     nenhum → `401 NAO_AUTENTICADO`
+
+E "Meus eventos", que fecha a Epic 2 na Story 2.6 — a primeira tela de leitura do produto:
+
+34. Com a sessão de organizador, o masthead mostra `Início · Meus eventos · Publicar evento ·
+    Minha conta`. Abrir `Meus eventos` → os shows publicados nos passos acima, cada um numa fila com
+    data, nome, `local · cidade` e `vendidos/capacidade` à direita. **Números exatos, sem medidor** —
+    é o inventário de quem é dono da informação
+35. **Publicar um show com data no passado** (a rota aceita, e é pergunta em aberto) → ele aparece
+    numa segunda seção, `Já aconteceram`, separado do que está `Em cartaz`
+36. **Clicar numa fila, em qualquer ponto dela** → o detalhe abre com os setores um a um, com preço,
+    e o bloco `Na porta` com nome e e-mail de quem foi escalado. Não há nada para editar aqui, e é
+    decisão registrada em [O que não está pronto](#o-que-não-está-pronto)
+37. **Pedir o detalhe de um evento que não é seu**, pela API — publique com um segundo organizador ou
+    pegue um id no `psql` — → `404 EVENTO_NAO_ENCONTRADO`, com o corpo **idêntico** ao de um UUID que
+    nunca existiu. A rota não diz se o evento existe
+38. Entrar como `cliente@rockhub.dev` e digitar `/organizador/eventos` na barra → você cai na raiz, e
+    `Meus eventos` não está no masthead
 
 ## Stack e estrutura
 
@@ -1812,6 +1833,75 @@ de tela. E caiu **passar um sinal de "já publicou" da ilha para a página**, qu
 os títulos juntos: exigiria estado subindo de um Client Component para um Server Component, que é
 exatamente a direção que essa fronteira não tem.
 
+### "Meus eventos" só deixa ver, e "gerenciar" aqui quer dizer acompanhar
+
+**Decidi** que a Story 2.6 é leitura pura: duas rotas de `GET`, duas telas, nenhuma rota de escrita,
+nenhuma migração. Depois de publicado, nem os dados do evento nem a escala da portaria mudam.
+
+**Por quê:** é o que os dois blocos de critério do `epics.md` pedem — ver cada evento com data,
+local, setores e números exatos, e não ver os eventos de outro organizador —, e mantém a story do
+tamanho de um commit, que é a régua desta epic inteira. O "gerenciar" do título vira **acompanhar**,
+e isso está dito na tela: não há botão de editar, cancelar ou trocar a escala. Botão que não faz nada
+é pior que botão ausente.
+
+**O que caiu:** **ver + trocar a escala depois de publicar**, que fecharia a pergunta que ficou
+aberta na 2.5 — evento publicado na janela do AD-7 fica sem portaria para sempre. Caiu porque custa
+rota de escrita, uma invariante nova ("não deixar a escala chegar a zero"), mais uma tela e uma dúzia
+de testes, numa story que deveria ser um commit. E caiu **ver + editar o evento inteiro**, que é a
+tela de editar evento já registrada como corte consciente: a regra difícil ali é capacidade não poder
+cair abaixo de `vendidos`, e isso é história para duas stories, não meia.
+
+### A lista é enxuta e o detalhe é uma página, não uma lista só com tudo dentro
+
+**Decidi** partir em duas telas: `/organizador/eventos` mostra data, nome, local e o total
+`vendidos/capacidade`; `/organizador/eventos/[id]` abre os setores um a um e mostra quem está
+escalado na porta.
+
+**Por quê:** é o desenho mais próximo do que uma plataforma real teria, e é **onde a edição moraria**
+se ela vier numa story futura — a rota do detalhe já existiria, e não precisaria ser inventada
+depois. A lista continua escaneável, que é o serviço que ela presta.
+
+**O que caiu:** **uma tela só, com os setores embutidos em cada fila** — que é literalmente o que o
+critério do `epics.md` descreve, uma rota e uma chamada, menos código em todo lugar. Caiu porque a
+fila deixa de ser fila: com três setores por evento e dez eventos, a lista vira um paredão de números
+onde não dá para achar o show de sexta. O UX-DR3 existe justamente para que a listagem seja
+escaneável, e um paredão de números é o oposto disso.
+
+### A lista se parte em "Em cartaz" e "Já aconteceram", e o corte é feito na tela
+
+**Decidi** duas seções na mesma tela: `Em cartaz` (data futura, ordem crescente) e `Já aconteceram`
+(data passada, ordem decrescente). Seção sem nenhum evento não é renderizada. A API não sabe de nada
+disso — ela devolve a lista inteira, em ordem crescente.
+
+**Por quê:** o organizador continua com o histórico dele à mão, sem que ele ocupe o topo da operação
+de hoje. Custa uma comparação de data na tela e nenhum campo novo. E o corte pertence a quem lê: "o
+que interessa agora" depende do relógio de quem está olhando, não de uma regra gravada no servidor.
+
+**O que caiu:** **uma lista só, por data crescente** — menos código, menos texto, menos tudo. Caiu
+porque um show de 2024 apareceria no meio da operação de hoje. E caiu **filtrar no backend,
+devolvendo só os futuros**, que deixaria a tela mais limpa ainda: o organizador **perderia** o
+histórico, um evento sumiria da conta dele sem explicação, e eu teria posto no backend uma regra de
+"o que interessa agora" que a Epic 5, com o painel do turno, vai querer diferente.
+
+### `Meus eventos` entrou no masthead, e a confirmação de publicação continua sem redirecionar
+
+**Decidi** duas coisas juntas: a navegação do organizador passa a ser `Início · Meus eventos ·
+Publicar evento · Minha conta`, e a tela de confirmação da publicação ganha `Ver meus eventos →` ao
+lado de `Publicar outro →` — **sem** trocar a confirmação por um salto para a lista.
+
+**Por quê:** o link estava fora do masthead desde a Story 2.2 por um motivo só — ele cairia em 404 —,
+e esse motivo acabou. `Meus eventos` vem antes de `Publicar evento` porque acompanhar o que está no
+ar é o que se faz todo dia; publicar é eventual. Quanto à confirmação: ela é o **recibo** da
+publicação, e é a única vez que o organizador vê o inventário e **quem ficou com a porta**. Não há
+tela de editar evento onde conferir isso depois.
+
+**O que caiu:** **redirecionar para a lista depois de publicar**, com o evento recém-criado no topo —
+que é o que a maioria dos sistemas faz, e o que eu faria por reflexo. Caiu porque apagaria a tela que
+a 2.4 e a 2.5 construíram: a lista mostra os totais, não a escala, e quem publicou perderia a única
+confirmação de quem vai validar o ingresso na porta. E caiu **mexer só no masthead, sem tocar na
+confirmação** — menos alteração em código já revisado, mas deixaria quem acabou de publicar sem
+caminho para o que acabou de criar.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -1820,7 +1910,7 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | O quê | Por quê |
 |---|---|
 | **Mapa de assentos** | O desafio aceita venda por quantidade em setores. A plataforma é focada em shows — pista, VIP, camarote — onde assento numerado não é o padrão |
-| **Tela de editar evento** | O vínculo com a portaria só é definido na publicação. Num sistema real seria preciso escalar e remover porteiros depois |
+| **Editar evento ou trocar a escala depois de publicar** | **Não existe, e agora existe a tela onde alguém procuraria.** Desde a Story 2.6 o organizador tem `Meus eventos`, com a lista e o detalhe de cada show — e nenhuma das duas telas edita coisa alguma: publicado é publicado. Nem os dados do evento (nome, data, local, capacidade, preço), nem quem valida na porta. O vínculo com a portaria é definido **uma vez**, no ato da publicação, e num sistema real seria preciso escalar e remover porteiros depois. Ficou de fora por custo: a rota de escrita traz uma invariante nova ("a escala não pode chegar a zero"), e editar capacidade traz a regra de ela não poder cair abaixo de `vendidos` — as duas coisas são história para duas stories, não para o fim de uma epic. O raciocínio completo, com as alternativas, está em ["Meus eventos" só deixa ver](#meus-eventos-só-deixa-ver-e-gerenciar-aqui-quer-dizer-acompanhar) |
 | **Evento publicado entre a Story 2.4 e a 2.5 fica sem portaria para sempre** | **A janela fechou; o resíduo é o que sobrou dela.** Publicar exige portaria escalada desde a Story 2.5 — `POST /organizador/eventos` responde `422 EVENTO_SEM_PORTARIA` sem ao menos um escalado, e o AD-7 vale por inteiro. O que **não** volta atrás é o que foi publicado enquanto a exigência não existia: a migração cria a tabela vazia, nada é escalado retroativamente, e não há tela de editar evento (linha acima) por onde consertar. Esses eventos não são validáveis na Epic 5, e o conserto é apagá-los e publicar de novo (`docker compose exec db psql -U rockhub -d rockhub -c "delete from evento;"` no banco local). A janela foi assumida por escrito, e o raciocínio dela continua registrado em [A rota publica de fato](#a-rota-publica-de-fato-mesmo-com-o-ad-7-chegando-só-na-story-seguinte) |
 | **Cancelamento pelo cliente** | O modelo já suporta; faltam endpoint e tela |
 | **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
@@ -1831,7 +1921,7 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das contas, e ele **ainda não é semeado**. O impedimento técnico acabou na Story 2.3 — `evento` e `setor` existem no banco desde ela —, mas `backend/seeds/semear.py` continua criando só contas. O que falta agora é decisão, não tabela: qual show, com que data, com quais setores e a que preços, e em qual story isso entra. A dívida fica registrada aqui de propósito. A alternativa — o avaliador publicar pela interface — deixou de ser hipotética na Story 2.4: o fluxo existe e funciona de ponta a ponta, e desde a 2.5 o evento já nasce com portaria escalada, ou seja, validável na Epic 5. Mesmo assim ela não substitui o seed, porque travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
-| **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` já existe para o organizador desde a Story 2.2 — mas `Meus eventos` (Story 2.6) e `Turnos` para a portaria (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |
+| **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` existe para o organizador desde a Story 2.2 e `Meus eventos` desde a 2.6, quando a tela dele passou a existir — `Meus ingressos` e `Turnos` (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |
 | **Busca do organizador limitada ao Brasil** | `GET /organizador/catalogo` (Story 2.2) fixa `countryCode=BR` na chamada à Discovery. Um show fora do Brasil não aparece nesta busca — decisão registrada em [`countryCode=BR` fixo na busca da Discovery](#countrycodebr-fixo-na-busca-da-discovery), com a alternativa de filtro visível que ficou de fora por custar mais do que uma story de um commit comporta |
 | **Busca por artista sem show marcado no Brasil devolve vazio** | `metallica` e `coldplay` dão zero resultados, e **não é o filtro de classificação**: conferi os dois sem `segmentId` nenhum e continuam em zero. Eles simplesmente não têm evento no catálogo brasileiro da Ticketmaster hoje. A tela mostra "Nenhum show encontrado para essa busca", que é verdade, mas não distingue "não existe no catálogo" de "existe e meu filtro escondeu" — separar os dois exigiria uma segunda chamada sem filtro só para descobrir qual dos casos é, e gastar cota para melhorar uma mensagem de erro não se paga |
 | **Evento sem entrada no catálogo da Ticketmaster** | Não dá para publicar um show que não esteja no catálogo — um cover de bar, um evento independente, uma festa sem página na Ticketmaster. É consequência direta de o enunciado pedir que o evento nasça "a partir de" a API externa, e está detalhado em [Publicação exige atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento), com a alternativa (cadastro manual) que ficou de fora |

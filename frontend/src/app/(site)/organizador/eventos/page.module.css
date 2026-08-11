@@ -1,0 +1,262 @@
+/* "Meus eventos": a lista e o detalhe (Story 2.6).
+
+   **Um módulo para as duas telas**, importado pelo detalhe como
+   `../page.module.css`. Elas compartilham o vocabulário de fila e de
+   inventário, e dois arquivos quase iguais divergiriam na primeira mudança.
+   Precedente: o `FormularioPublicacao` já importa o módulo da página que o
+   hospeda.
+
+   Grade e espaçamento são provisórios (DESIGN.md#Como usar este documento); a
+   ausência de card, sombra e raio é duradoura — UX-DR3. Nenhum hex aqui: só
+   `var(--token)`. */
+
+.pagina {
+  padding: 40px 0 96px;
+}
+
+/* Mesma anatomia do título de seção da tela de publicar: fio embaixo, serifada
+   grande. Repetido em vez de importado porque CSS Module não compartilha
+   classe entre arquivos — e extrair para o `globals.css` promoveria a um
+   utilitário global algo que ainda vive em duas telas. */
+.secTitulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTitulo h1 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+/* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. Sem
+   ilustração e sem botão grande. */
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  font: 19px/1.5 var(--serif);
+}
+
+.secao {
+  margin-top: 40px;
+}
+
+.lista {
+  margin-top: 10px;
+  border-top: 1px solid var(--fio);
+}
+
+/* ---- a fila da lista ---------------------------------------------------- */
+
+/* A fila **inteira** é o link (padrão `fila-listagem`), daí o `color: inherit`
+   e o `text-decoration: none`: o elemento é um `<a>`, a aparência é de linha
+   de jornal. */
+.fila {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  gap: 20px;
+  align-items: center;
+  padding: 16px 8px 16px 10px;
+  border-bottom: 1px solid var(--fio);
+  color: inherit;
+  text-decoration: none;
+}
+
+.fila:hover {
+  background: var(--breu2);
+}
+
+.data {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.diaMes {
+  font: 600 13px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ano {
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  color: var(--fumaca);
+}
+
+.nome {
+  font: 400 20px/1.2 var(--serif);
+}
+
+.origem {
+  margin-top: 5px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* Números exatos, alinhados à direita para as casas baterem entre uma fila e
+   outra. Sem medidor e sem proporção: proporção é para quem compra (UX-DR7). */
+.inventario {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  text-align: right;
+}
+
+.numeros {
+  font: 15px/1 var(--mono);
+}
+
+.rotulo {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* ---- o detalhe ---------------------------------------------------------- */
+
+/* O caminho de volta é **navegação**, não etiqueta: nasceu com os 10px dos
+   kickers e ficou pequeno demais para o que faz. Em 14px ele continua mono
+   versalete (UX-DR2) e passa a ter peso de link, com o `padding` garantindo
+   alvo de toque confortável sem virar botão — que a identidade não usa aqui. */
+.voltar {
+  display: inline-block;
+  margin-bottom: 26px;
+  padding: 6px 0;
+  color: var(--fumaca);
+  font: 600 14px/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.voltar:hover {
+  color: var(--ambar);
+}
+
+.nomeDoEvento {
+  margin-top: 12px;
+  font: 400 34px/1.12 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.linhaDoShow {
+  margin-top: 10px;
+  font: 18px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.bloco {
+  margin-top: 42px;
+}
+
+.linhas {
+  margin-top: 10px;
+  border-top: 1px solid var(--fio);
+}
+
+/* Uma linha por setor: nome à esquerda, vendidos e preço à direita, com as
+   colunas de número na mesma largura para as casas se alinharem. */
+.linhaSetor {
+  display: grid;
+  grid-template-columns: 1fr 160px 140px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+.nomeDoSetor {
+  font: 600 11px/1.5 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.numero {
+  font: 14px/1.4 var(--mono);
+  text-align: right;
+}
+
+.linhaPortaria {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+.nomeDaConta {
+  font: 400 18px/1.2 var(--serif);
+}
+
+.emailDaConta {
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* A frase que toma o lugar da lista quando não há ninguém escalado — existem
+   eventos assim no banco, publicados na janela do AD-7 aberta na Story 2.4. */
+.semNinguem {
+  max-width: 52ch;
+  margin-top: 14px;
+  font: 17px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+/* Cada bloco na largura inteira, um por linha, e nada rolando na horizontal. */
+@media (max-width: 900px) {
+  .fila {
+    grid-template-columns: 1fr auto;
+    gap: 6px 16px;
+    padding: 18px 0;
+  }
+
+  /* A data vira uma linha só acima do nome, em vez de uma coluna estreita que
+     espremeria o título do show em três palavras por linha. */
+  .data {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 9px;
+  }
+
+  .inventario {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .nomeDoEvento {
+    font-size: 27px;
+  }
+
+  .linhaSetor {
+    grid-template-columns: 1fr auto;
+  }
+
+  .nomeDoSetor {
+    grid-column: 1 / -1;
+  }
+
+  .numero {
+    text-align: left;
+  }
+
+  .numero:last-child {
+    text-align: right;
+  }
+
+  .linhaPortaria {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}

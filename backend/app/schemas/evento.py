@@ -163,6 +163,39 @@ class PortariaSaida(BaseModel):
     email: str
 
 
+class EventoResumo(BaseModel):
+    """Um evento como ele aparece na **lista** do organizador (Story 2.6).
+
+    É a primeira vista de leitura deste projeto que não espelha uma linha do
+    banco: `capacidade_total` e `vendidos_total` não existem em coluna nenhuma
+    — são a soma dos setores, feita pelo service (AD-13). Por isso ele é o
+    único dos quatro schemas deste módulo **sem `from_attributes`**: não há
+    `Evento` do ORM de onde ler esses dois atributos, e declarar
+    `from_attributes` prometeria uma conversão que não acontece.
+
+    **Os setores não vêm, e a imagem também não.** O detalhe
+    (`GET /organizador/eventos/{id}`, com `EventoSaida`) é quem abre setor a
+    setor; aqui a fila precisa ser escaneável — data, nome, local e um par de
+    números. Com três setores por evento e dez eventos, devolver a lista
+    inteira transformaria a listagem num paredão onde não se acha o show de
+    sexta.
+    """
+
+    id: UUID
+    nome: str
+    data_hora: datetime
+    local: str
+    cidade: str | None
+    publicado_em: datetime | None
+    # ⚠️ Soma de `setor.capacidade` e `setor.vendidos` — AD-13. É **proibido**
+    # derivar qualquer um dos dois com `COUNT` sobre reserva ou ingresso, em
+    # qualquer camada. As duas tabelas nem existem ainda, e é agora que o
+    # hábito se forma: `setor.vendidos` é a única fonte de verdade da
+    # disponibilidade, e o `UPDATE` condicional da Epic 3 é quem vai mexer nela.
+    capacidade_total: int
+    vendidos_total: int
+
+
 class EventoSaida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

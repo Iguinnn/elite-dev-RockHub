@@ -229,11 +229,12 @@ backend/
       saude.py
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
       organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · GET /organizador/portarias
-                      # · POST /organizador/eventos
+                      # · POST /organizador/eventos · GET /organizador/eventos e /eventos/{id} (2.6)
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
       evento.py       # publicar() — evento, setores e escala na mesma transação (2.4/2.5)
                       # · listar_portarias() — quem pode ser escalado (2.5)
+                      # · listar_do_organizador() e obter_do_organizador() — as leituras da 2.6
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
@@ -242,6 +243,7 @@ backend/
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
       evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida, PortariaSaida
+                      # · EventoResumo — a vista de lista, com os dois totais somados (2.6)
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
       ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
@@ -261,6 +263,7 @@ backend/
     test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
     test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
+    test_organizador_meus_eventos.py # GET /organizador/eventos e /eventos/{id} (Story 2.6)
   alembic.ini
   pyproject.toml
   uv.lock
@@ -936,6 +939,124 @@ A escala é gravada pelo `relationship`, na mesma transação do evento e dos se
 `INSERT` manual na tabela de associação, pela mesma razão de `vendidos` não ser passado ao construir
 `Setor`: dois caminhos para o mesmo fato é um a mais do que se quer.
 
+## Meus eventos
+
+Publicar é metade do trabalho; a outra é conseguir olhar o que já está no ar. A Story 2.6 abriu as
+duas rotas de leitura do organizador — e é a primeira story da epic que **não escreve nada**: sem
+migração, sem modelo novo, sem coluna nova.
+
+```
+GET /organizador/eventos                → 200, os meus eventos, por data crescente
+GET /organizador/eventos/{evento_id}    → 200, um evento com setores e escala
+```
+
+### `EventoResumo`: a primeira vista que não espelha uma linha do banco
+
+```json
+[
+  {
+    "id": "3f2a…",
+    "nome": "Baco Exu do Blues — Bluesman Vivo",
+    "data_hora": "2026-08-15T00:00:00Z",
+    "local": "Espaço Unimed",
+    "cidade": "São Paulo",
+    "publicado_em": "2026-08-11T17:22:04Z",
+    "capacidade_total": 860,
+    "vendidos_total": 12
+  }
+]
+```
+
+`capacidade_total` e `vendidos_total` **não existem em coluna nenhuma**: são a soma de
+`setor.capacidade` e `setor.vendidos`, feita no service, em Python, num lugar só onde um teste
+consegue lê-la. É o **AD-13** — `setor.vendidos` é a única fonte de verdade da disponibilidade, e é
+proibido derivar qualquer um dos dois com `COUNT` sobre reserva ou ingresso, em qualquer camada.
+As duas tabelas nem existem ainda, e é agora que o hábito se forma.
+
+Por isso `EventoResumo` é o único schema de `schemas/evento.py` **sem `from_attributes`**: não há
+`Evento` do ORM de onde ler esses dois atributos. E por isso `listar_do_organizador()` devolve
+`list[EventoResumo]`, não `list[Evento]` — a alternativa era um `@computed_field` no schema ou uma
+`@property` no modelo, e as duas escondem a soma na camada de serialização, um passo mais longe do
+teste que a prova.
+
+A lista **não** traz `setores` nem `imagem_url`. Ela é enxuta de propósito: o detalhe é quem abre
+setor a setor, e com três setores por evento e dez eventos a listagem viraria um paredão de números.
+
+Um evento **sem setor nenhum** — impossível pela rota de publicação, possível por `psql` — soma zero
+e não quebra a listagem. Tem teste.
+
+### Uma consulta a mais, não uma por evento
+
+```python
+select(Evento)
+    .where(Evento.organizador_id == organizador.id)
+    .order_by(Evento.data_hora)
+    .options(selectinload(Evento.setores))
+```
+
+O `selectinload` não é otimização prematura: sem ele, ler `evento.setores` no laço da soma emite uma
+consulta **por evento**, e o custo cresce com o sucesso do organizador. O sintoma só aparece com
+volume — ou seja, nunca, numa avaliação —, e é exatamente por isso que a linha entra agora.
+
+### O escopo é a sessão, e não há por onde outro id entrar
+
+`listar_do_organizador(sessao, organizador)` recebe o `Usuario` da dependência de papel, nunca um
+`organizador_id` solto. É a mesma assinatura do `publicar()` da Story 2.4, e o efeito é o mesmo: ver
+os eventos de outra pessoa não é uma chamada que o service recusa, é uma chamada que **não existe**.
+Não há parâmetro de query, de caminho nem de corpo por onde um id alheio pudesse chegar.
+
+No detalhe, o mesmo princípio vira uma consulta com **as duas** condições:
+
+```python
+select(Evento).where(Evento.id == evento_id, Evento.organizador_id == organizador.id)
+```
+
+E não `sessao.get(Evento, id)` seguido de um `if evento.organizador_id != organizador.id`. As duas
+versões funcionam; a segunda cria dois caminhos para a mesma decisão, e o segundo é o que alguém
+esquece na próxima rota.
+
+### `EVENTO_NAO_ENCONTRADO`, e por que o 404 é um só
+
+| Código | Status | Quando |
+|---|---|---|
+| `EVENTO_NAO_ENCONTRADO` | `404` | O id não existe **ou** o evento é de outro organizador |
+
+Os dois casos respondem **a mesma coisa, byte a byte** — e um teste compara os dois corpos inteiros
+para garantir que continuam idênticos, não só parecidos. Se diferissem em uma palavra, bastaria uma
+sessão de organizador e um laço sobre UUIDs para descobrir quais são eventos de outra pessoa. É a
+mesma disciplina do `PORTARIA_INVALIDA` da Story 2.5 e do login da 1.4, que não diz se o e-mail
+existe.
+
+Um código próprio em vez do `NAO_ENCONTRADO` genérico que o `CODIGO_POR_STATUS` já daria de graça:
+com ele, a tela distingue "esse evento não é seu" de "esse endereço não existe nesta API" — que é a
+diferença entre chamar `notFound()` e ter um bug de URL.
+
+Id em formato inválido é `422 DADOS_INVALIDOS`, de graça, porque o parâmetro de caminho é `UUID`:
+estrutura é do Pydantic. O que o service decide é outra coisa — se o id **resolve** para um evento
+seu.
+
+### O detalhe reusa o `EventoSaida` da publicação, inteiro
+
+Sem um campo novo. É o **mesmo significado** nas duas rotas — "o evento inteiro, como o organizador o
+vê" —, e reusar é o que impede o recibo da publicação e a tela de detalhe de divergirem. Foi o
+caminho oposto ao do `PortariaSaida` da Story 2.5, que **não** reusou o `UsuarioSaida`, e por isso
+mesmo consistente: lá a forma era parecida e o significado, outro.
+
+`senha_hash` não aparece porque o `response_model` está declarado — sem ele, um `Usuario` cru dentro
+de `portarias` traria o hash de quem foi escalado numa resposta de rotina. E `organizador_id` também
+fica de fora: quem chama já sabe quem é.
+
+Evento **sem ninguém escalado** responde `200` com `"portarias": []`, não erro. Existem eventos assim
+no banco — publicados na janela em que a 2.4 já publicava e a 2.5 ainda não exigia a escala.
+
+### As duas passam por service, e o router ficou com cinco rotas
+
+Nenhuma das duas tem transação ou invariante, e mesmo assim nenhuma abre `Session` no router: elas
+**tocam o banco**, e é isso que o critério decide. Com elas, `app/api/organizador.py` passou a ter
+dois exemplos de cada lado — duas leituras com service (`/portarias` e as duas novas), uma leitura
+sem service (`/catalogo`, que fala com integração e não com banco), uma escrita com service
+(`POST /eventos`). Se o arquivo crescer na Epic 3, parti-lo por assunto passa a valer a discussão.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -1006,20 +1127,28 @@ cd backend
 uv run pytest
 ```
 
-São **187 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **203 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
 [Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
 também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Stories 2.4 e
-2.5) e a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5).
+2.5), a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5) e as duas
+rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6).
 
 `test_organizador_portarias.py` prova a ordenação por nome com contas de **nomes diferentes**, criadas
 no próprio arquivo: a `fabricar_usuario` do `conftest.py` grava todo mundo como "Alguém" e parametriza
 só o e-mail, e com nomes iguais "ordenado por nome" não decide nada — o teste passaria por acaso.
 Prova também que a lista não traz organizador nem cliente, que o corpo tem exatamente `id`, `nome` e
 `email`, que `senha_hash` não aparece, e que lista vazia é `200` e não `404`.
+
+`test_organizador_meus_eventos.py` (Story 2.6) grava os eventos **direto pelo ORM**, e não pela rota
+`POST /organizador/eventos`. Publicar pela rota acoplaria dezesseis testes de leitura às quatro
+recusas das Stories 2.4 e 2.5, e o dia em que uma delas mudasse todos quebrariam sem ter nada a ver
+com o assunto — a fixture aqui é o **estado** de que a leitura precisa, não o caminho que o produz.
+É também o único jeito de gravar `vendidos` diferente de zero: nenhuma rota de escrita sabe fazê-lo,
+e só a Epic 3 vai saber. Sem isso, o teste da soma passaria somando dois zeros.
 
 ⚠️ **Nenhuma contagem de `test_seed.py` é literal desde a Story 2.5.** Elas derivam de `CONTAS` —
 `len(CONTAS)`, `Counter` dos papéis declarados. A quinta conta semeada quebrou seis testes que tinham
@@ -1844,3 +1973,36 @@ opcional: era isso ou toda conta nova custar seis correções.
 Vinte e três testes novos — oito casos em `test_organizador_eventos.py`, o arquivo
 `test_organizador_portarias.py` inteiro e dois de migração —, e a suíte foi de 164 para **187**.
 Nenhuma dependência entrou.
+
+### Story 2.6 — ver e gerenciar meus eventos
+
+A última story da Epic 2, e a primeira que **não escreve nada**: duas rotas de leitura, um schema
+novo, zero migração, zero coluna, zero dependência. `GET /organizador/eventos` devolve a lista, e
+`GET /organizador/eventos/{evento_id}` o detalhe.
+
+**`EventoResumo` é a primeira vista deste projeto que não espelha uma linha do banco.**
+`capacidade_total` e `vendidos_total` não existem em coluna nenhuma — são a soma dos setores, feita
+no service, em Python. Considerei um `@computed_field` no schema e uma `@property` no modelo, que
+dariam a mesma resposta com menos código; descartei os dois porque escondem a soma do AD-13 na camada
+de serialização, e é justamente ela que eu quero num lugar onde um teste consiga apontar o dedo. A
+consequência é que o service devolve `list[EventoResumo]` e não `list[Evento]` — precedente: o
+`ticketmaster.buscar_eventos` também devolve schema, não ORM.
+
+**Um `404` só para "não existe" e "não é seu", e um teste compara os dois corpos inteiros.** Se
+diferissem em uma palavra, uma sessão de organizador e um laço sobre UUIDs descobririam quais são
+eventos alheios. Mesma disciplina do `PORTARIA_INVALIDA` da 2.5 e do login da 1.4. Usei um código
+próprio, `EVENTO_NAO_ENCONTRADO`, em vez do `NAO_ENCONTRADO` genérico que o `CODIGO_POR_STATUS` já
+dá de graça: com ele a tela distingue "esse evento não é seu" de "esse endereço não existe nesta
+API" — a diferença entre chamar `notFound()` e ter um bug de URL.
+
+**A consulta do detalhe carrega as duas condições, `id` e `organizador_id`.** A alternativa era
+`sessao.get(Evento, id)` seguido de um `if` conferindo o dono, que funciona e cria dois caminhos para
+a mesma decisão — e o segundo é o que alguém esquece na próxima rota. Com as duas no mesmo `where`,
+"só vejo o que é meu" é verdade por construção.
+
+**`selectinload(Evento.setores)` entrou junto com o laço da soma, não depois.** Sem ele são N+1
+consultas, uma por evento, e o sintoma só apareceria com volume — ou seja, nunca, numa avaliação.
+
+Dezesseis testes novos, todos em `test_organizador_meus_eventos.py`, e a suíte foi de 187 para
+**203**. **Nenhum teste antigo precisou mudar**, que era o resultado esperado: esta story não alterou
+contrato nenhum que já existisse.
