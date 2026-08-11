@@ -1,0 +1,107 @@
+/* Passo 1 do fluxo de publicação: título de seção, barra de busca, filas sem
+   card — UX-DR3. Grade e espaçamento são provisórios (DESIGN.md#Como usar
+   este documento); a ausência de card, sombra e raio é duradoura.
+   [Fonte: proto-jornal-noturno.html:545-570, :227-234] */
+
+.pagina {
+  padding: 40px 0 96px;
+}
+
+.secTitulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTitulo h1 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.busca {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.campoBusca {
+  flex: 1;
+}
+
+.botaoBusca {
+  flex-shrink: 0;
+  width: 160px;
+  /* `Campo` traz `margin-bottom: 20px` do rótulo — sem isso o botão fica
+     mais alto que a entrada, porque ele não tem rótulo acima. */
+  margin-bottom: 20px;
+}
+
+/* Estado vazio (EXPERIENCE.md#Vazio): kicker (o da seção, acima), frase, fim.
+   Sem ilustração e sem botão grande — vale para os três estados: sem busca
+   ainda, busca sem resultado, catálogo indisponível. */
+.aviso {
+  max-width: 46ch;
+  margin-top: 28px;
+  font: 19px/1.5 var(--serif);
+}
+
+.catalogo {
+  margin-top: 10px;
+  border-top: 1px solid var(--fio);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 70px 1fr auto;
+  gap: 20px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+.miniatura {
+  width: 70px;
+  height: 70px;
+  aspect-ratio: 1;
+  object-fit: cover;
+  /* Bloco vazio do mesmo tamanho quando não há `imagem_url` — a grade não
+     pode dançar entre uma fila e outra. */
+  background: var(--breu2);
+}
+
+.nome {
+  font: 400 20px/1.2 var(--serif);
+}
+
+.origem {
+  margin-top: 5px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+@media (max-width: 560px) {
+  .busca {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .botaoBusca {
+    width: auto;
+    margin-bottom: 0;
+  }
+
+  .item {
+    grid-template-columns: 56px 1fr;
+  }
+
+  .miniatura {
+    width: 56px;
+    height: 56px;
+  }
+}

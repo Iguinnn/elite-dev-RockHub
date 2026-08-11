@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 
 _URL_EVENTOS = "https://app.ticketmaster.com/discovery/v2/events.json"
 
+# Sem isto, "metallica" devolve os 20 primeiros shows do mundo — quase todos
+# nos EUA — e nenhum brasileiro entra no `size=20`. `countryCode`, como
+# `locale`, muda o que a busca **acha**, não como ela é transportada.
+_PAIS = "BR"
+
 # 5s de inatividade é generoso para uma chamada que o organizador faz olhando a
 # tela — nem tão curto que uma rede um pouco lenta vire falso negativo, nem tão
 # longo que segure um worker do uvicorn por uma Ticketmaster travada (mesmo
@@ -120,29 +125,36 @@ def _converter_evento(evento: dict) -> ItemDoCatalogo | None:
 def buscar_eventos(termo: str, *, limite: int = 20) -> list[ItemDoCatalogo]:
     """Busca eventos na Discovery por nome de show, atração ou casa.
 
-    Termo em branco não gera requisição: a cota é de 5 000 chamadas por dia e
-    um campo de busca vazio não vale uma delas. Lista vazia (busca sem
-    resultado) e catálogo indisponível (Ticketmaster fora do ar, ou resposta
-    ilegível) são situações diferentes — a primeira devolve `[]`, a segunda
-    levanta `ErroDeDominio`.
+    Termo em branco **também gera requisição** — decisão revisada depois do
+    corte original desta função (Story 2.2): o organizador vê exemplos reais
+    do catálogo assim que abre a tela, em vez de precisar digitar algo
+    primeiro. Sem `keyword`, a Discovery devolve o catálogo do país inteiro; o
+    `sort=date,asc` ordena pelos próximos a acontecer, para a listagem parecer
+    uma lista de exemplos e não uma amostra aleatória.
+
+    Lista vazia (sem resultado, com ou sem termo) e catálogo indisponível
+    (Ticketmaster fora do ar, ou resposta ilegível) são situações diferentes —
+    a primeira devolve `[]`, a segunda levanta `ErroDeDominio`.
     """
     termo = termo.strip()
-    if not termo:
-        return []
-
     settings = obter_settings()
+
+    params = {
+        "apikey": settings.ticketmaster_api_key,
+        "size": limite,
+        "locale": "*",
+        "countryCode": _PAIS,
+    }
+    if termo:
+        params["keyword"] = termo
+    else:
+        # Sem termo não há por que ordenar por relevância — relevância de quê?
+        # Por data é o que faz a listagem parecer uma vitrine de exemplos.
+        params["sort"] = "date,asc"
 
     try:
         with _criar_cliente() as cliente:
-            resposta = cliente.get(
-                _URL_EVENTOS,
-                params={
-                    "apikey": settings.ticketmaster_api_key,
-                    "keyword": termo,
-                    "size": limite,
-                    "locale": "*",
-                },
-            )
+            resposta = cliente.get(_URL_EVENTOS, params=params)
             resposta.raise_for_status()
             dados = resposta.json()
     except httpx.HTTPError as erro:

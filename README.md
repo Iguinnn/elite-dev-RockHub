@@ -20,10 +20,10 @@ camada.
 > comando semeia as quatro contas de avaliação (abaixo, em
 > [Contas semeadas](#contas-semeadas)). O backend sobe com PostgreSQL migrado por Alembic e a tabela
 > `usuario`; o frontend sobe com a identidade visual aplicada, o cabeçalho e as páginas de estado
-> vazio. A Epic 2 começou: o backend já sabe buscar eventos no catálogo da Ticketmaster
-> (Story 2.1), mas isso ainda não tem rota nem tela — só teste. Ainda não há evento nenhum para
-> descobrir ou comprar. A seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a
-> cada passo.
+> vazio. A Epic 2 está em andamento: o organizador já busca a atração no catálogo da Ticketmaster em
+> `/organizador/publicar` (Stories 2.1 e 2.2) — mas ainda não publica nada: a tabela `evento` é da
+> Story 2.3, e selecionar a atração é da 2.4. Ainda não há evento nenhum para descobrir ou comprar. A
+> seção [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
 
 ## No ar
 
@@ -293,7 +293,7 @@ E o ciclo da sessão, que fecha na Story 1.6:
 | Sessão | Argon2id (`argon2-cffi`) para a senha · JWT HS256 (`PyJWT`) em cookie `httpOnly` |
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
-| Catálogo externo | Ticketmaster Discovery v2 *(Epic 2)* |
+| Catálogo externo | Ticketmaster Discovery v2 — `GET /organizador/catalogo` no ar desde a Story 2.2 |
 | Deploy | Vercel (frontend) e Railway (API e banco) — **as duas no ar** |
 
 ```text
@@ -1248,6 +1248,117 @@ já. O custo é maior que o ganho: a story deixaria de ser um commit e passaria 
 emendados. A prova desta story é a suíte, não o `curl` — dezesseis afirmações de teste para menos de
 cem linhas de código de produção.
 
+### O router do catálogo chama a integração direto, sem `services/catalogo.py`
+
+**Decidi** que `app/api/organizador.py` importa `app.integrations.ticketmaster` e devolve o
+resultado numa linha (`return ticketmaster.buscar_eventos(q)`), pulando a camada de `services` que
+o resto do backend usa sem exceção.
+
+**Por quê:** `buscar_eventos` já faz tudo que um service faria — `.strip()` no termo,
+curto-circuito de termo vazio antes de qualquer I/O, limite, conversão para `ItemDoCatalogo` e
+tradução de toda falha em `ErroDeDominio`. Não sobra regra de negócio para lugar nenhum, e é a
+própria espinha da arquitetura que rejeita interpor "camada de repasse" — a mesma frase que já
+justificava não ter `app/repositories/`. Seria inconsistente aceitar aqui o que recusei ali só
+porque o nome da pasta é outro.
+
+**O que caiu:** um **service fino**, só para manter a seta `routers → services → models` literal e
+uniforme — ao custo de um módulo cujo corpo inteiro seria `return ticketmaster.buscar_eventos(q)`,
+a definição de camada de repasse. E um **service com trabalho real**, subindo o `strip`, o limite e
+o filtro de país para dentro dele: deixaria o diagrama verdadeiro, mas reabriria
+`ticketmaster.py` — entregue e revisado na story anterior — e moveria dois critérios de aceite da
+2.1 de arquivo, por uma story do tamanho de um commit. **A exceção vale só para o catálogo**: a
+Story 2.4 grava evento e setor no banco, tem transação e invariante, e por isso tem service, sem
+discussão.
+
+### A busca do organizador é `<form method="get">`, não um Client Component
+
+**Decidi** que a tela `/organizador/publicar` busca por um `<form method="get">` num Server
+Component, sem `"use client"` nenhum.
+
+**Por quê:** o termo fica na URL — a página é recarregável, compartilhável, e o botão voltar
+funciona — e a tela continua Server Component por padrão, a convenção do projeto desde a Story 1.2.
+Quando a Story 2.4 acrescentar os passos 2 e 3 do fluxo de publicação, o estado de "qual atração foi
+escolhida" continua morando num lugar só.
+
+**O que caiu:** um **Client Component com `chamarApi`**, que reusaria `lib/api.ts`, `AvisoDeErro` e
+o tratamento de erro por `codigo` que já existem, e buscaria sem recarregar a página. Perdeu por
+três razões: a busca deixaria de estar na URL; a tela inteira viraria ilha de cliente, contra a
+convenção que todas as outras telas seguem; e o "sem spinner: a estrutura aparece e o conteúdo
+preenche" do `EXPERIENCE.md` é natural no servidor e artificial no cliente.
+
+### A tela do organizador mora em `/organizador/publicar`, dentro da casca `(site)`
+
+**Decidi** o caminho `/organizador/publicar`, na mesma casca com masthead que o resto do site
+autenticado usa.
+
+**Por quê:** `/publicar` seria mais curto, mas deixaria a Story 2.6 ("Meus eventos") sem opção boa
+de rota — `/meus-eventos` fica perto demais de `/meus-ingressos` da Epic 4, e confundir as duas em
+texto corrido é fácil. E o `EXPERIENCE.md` é explícito: o organizador usa "a mesma casca do cliente,
+com navegação própria" — um grupo de rotas `(organizador)` com layout próprio criaria uma terceira
+casca para manter sem que nada a justificasse.
+
+**O que caiu:** **`/publicar`** — mais curto, com o papel implícito pela sessão, mas empurra a 2.6
+para um nome de rota ruim. E um **grupo `(organizador)` com layout próprio**, que contraria
+literalmente o `EXPERIENCE.md`.
+
+### `countryCode=BR` fixo na busca da Discovery
+
+**Decidi** acrescentar `countryCode=BR` à chamada da Ticketmaster, ao lado de `apikey`, `keyword`,
+`size` e `locale`.
+
+**Por quê:** sem ele, buscar "metallica" devolve os vinte primeiros shows do mundo — quase todos nos
+Estados Unidos — e nenhum brasileiro entra no `size=20`. A tela pareceria quebrada justamente para
+quem estiver avaliando.
+
+**O que caiu:** **sem filtro nenhum**, que é literalmente o que o `epics.md` especifica e não
+esconderia resultado algum — mas o sintoma acima seria exatamente o que apareceria na primeira busca
+de teste. E um **filtro visível, marcado por padrão** (um campo "só Brasil" na tela): mais honesto
+com os dois lados da decisão, ao custo de mais um parâmetro na rota, mais um campo na tela e mais
+dois testes, numa story dimensionada como um commit. **A limitação assumida**: um show fora do
+Brasil não aparece nesta busca — está também em [O que não está
+pronto](#o-que-não-está-pronto).
+
+### Publicação exige atração do catálogo — sem cadastro manual de evento
+
+**Decidi** que o organizador só publica um evento a partir de uma atração encontrada no catálogo da
+Ticketmaster. Não existe, e não vai existir, um caminho de "não achei — cadastro na mão" com nome,
+imagem e local digitados livremente.
+
+**Por quê:** é o que o enunciado do desafio descreve literalmente — "o organizador monta um evento
+**a partir de** um catálogo de shows [...] vindo de uma API externa" — e é o que o `AD-1` da
+arquitetura pressupõe: o dado do catálogo vira cópia no banco no momento da publicação, o que só
+faz sentido existindo uma atração de origem. Confirmei isso depois de notar, testando a Story 2.2,
+que o `countryCode=BR` limita a busca a shows com data real marcada aqui — e que, por exemplo, um
+cover de banda tocando num bar da esquina nunca vai aparecer nela.
+
+**O que caiu:** um segundo caminho na tela de publicação, tipo "não encontrou? cadastre
+manualmente" — cobriria casos reais como cover, evento independente ou show sem página na
+Ticketmaster, mas abriria um formulário novo (nome, atração, imagem opcional, validação própria)
+que a Story 2.4 não estava dimensionada para ter, e sairia do que o enunciado pede para demonstrar.
+Fica fora do escopo deste desafio, registrado como limitação abaixo.
+
+### A busca do organizador lista exemplos reais mesmo sem termo digitado
+
+**Decidi** — revisando a Story 2.2 no mesmo dia, depois de testar a tela pela primeira vez — que
+`GET /organizador/catalogo` sem `q` não devolve mais `[]`: chama a Ticketmaster sem `keyword` e com
+`sort=date,asc`, e devolve os próximos eventos do catálogo no Brasil. A tela `/organizador/publicar`
+chega mostrando esses exemplos, em vez de um convite "busque pelo nome do show" antes de qualquer
+resultado aparecer.
+
+**Por quê:** testando a primeira versão, o padrão original — nenhuma chamada até alguém digitar
+algo — deixava o organizador sem noção nenhuma do que existe no catálogo até começar a buscar. Ver
+exemplos reais assim que a tela abre é mais útil do que um campo vazio esperando um termo, e
+continua respeitando a decisão de que publicação exige atração de um catálogo de verdade (acima):
+os exemplos **são** o catálogo, não dado inventado.
+
+**O que caiu:** a versão original desta story, que fazia exatamente o oposto — nenhuma requisição
+sem termo, para poupar a cota de 5.000 chamadas/dia. Ela continua correta como raciocínio de cota;
+perdeu porque a tela sem nenhum exemplo pareceu vazia demais na prática. E uma **fileira de termos
+sugeridos, clicáveis** ("chips" com nomes como Metallica, Baco Exu do Blues): preservaria a cota de
+quem só abre a tela para olhar, sem gastar chamada até o clique — mas exigiria manter uma lista de
+sugestões própria (fixa no código, ou alimentada de algum outro lugar, que é escopo novo) e não
+mostraria nenhum exemplo real antes do clique, só nomes.
+
 ## O que não está pronto
 
 Além do que ainda está por vir nas stories, estes são cortes conscientes — estão detalhados em
@@ -1266,7 +1377,9 @@ Além do que ainda está por vir nas stories, estes são cortes conscientes — 
 | **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das quatro contas, e ele **ainda não é semeado**: `Evento` e `Setor` só passam a existir na Story 2.3, e não há como semear tabela que não existe. A dívida está registrada aqui de propósito, e o seed da Epic 2 acrescenta o evento ao mesmo `backend/seeds/`. A alternativa — o avaliador publicar pela interface — mostraria o fluxo do organizador funcionando, mas travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar naquele minuto |
 | **Enumeração de e-mail no cadastro** | O `409 EMAIL_JA_CADASTRADO` revela que aquele e-mail tem conta — exatamente o que o login gasta um hash fantasma para não revelar. É inevitável aqui: o login pode esconder porque as duas respostas cabem numa frase só ("e-mail **ou** senha incorretos"), e o cadastro não tem essa saída — ou ele diz que o e-mail já existe, ou mente para quem está tentando criar a conta. A mitigação padrão é responder sempre "enviamos um e-mail para você" e resolver a diferença por fora, o que exige verificação por e-mail, que está fora do escopo. O que continua valendo: o login não entrega a lista de graça — quem quiser precisa passar pelo cadastro, um e-mail por vez |
 | **Login que encaminha por papel** | Entrar leva para a raiz, ou para o `?voltar=` quando a pessoa veio de uma página protegida. Encaminhar organizador e portaria para as telas deles depende dessas telas existirem (Epics 2 e 5); inventar a rota antes só produziria um 404 |
-| **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. Pelo mesmo motivo não há `Meus eventos` para organizador nem `Turnos` para portaria — navegação diferente por papel nasce nas Epics 2 e 5, com as telas |
+| **`Meus ingressos` no masthead** | **Saiu na Story 1.6, e volta na Epic 4** — junto da tela que ele abre. O masthead nasceu na 1.2 com três links, dois deles caindo no 404; a 1.6 criou a `/conta` e removeu o que ainda não existe. É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório. `Publicar evento` já existe para o organizador desde a Story 2.2 — mas `Meus eventos` (Story 2.6) e `Turnos` para a portaria (Epic 5) continuam de fora pelo mesmo motivo, até as telas deles existirem |
+| **Busca do organizador limitada ao Brasil** | `GET /organizador/catalogo` (Story 2.2) fixa `countryCode=BR` na chamada à Discovery. Um show fora do Brasil não aparece nesta busca — decisão registrada em [`countryCode=BR` fixo na busca da Discovery](#countrycodebr-fixo-na-busca-da-discovery), com a alternativa de filtro visível que ficou de fora por custar mais do que uma story de um commit comporta |
+| **Evento sem entrada no catálogo da Ticketmaster** | Não dá para publicar um show que não esteja no catálogo — um cover de bar, um evento independente, uma festa sem página na Ticketmaster. É consequência direta de o enunciado pedir que o evento nasça "a partir de" a API externa, e está detalhado em [Publicação exige atração do catálogo](#publicação-exige-atração-do-catálogo--sem-cadastro-manual-de-evento), com a alternativa (cadastro manual) que ficou de fora |
 | **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
 | **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**, porque o `API_URL` está definido com o mesmo valor em Production e Preview. Uma conta criada num Preview é uma conta no banco real. A alternativa — definir a variável só para Production — deixaria todo Preview com o login quebrado em silêncio, que é pior; e um segundo serviço Railway com banco próprio é infraestrutura que não se paga em sete dias. A mitigação que existe hoje: no plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |
 | **Domínio próprio** | A aplicação vive em `elite-dev-rock-hub.vercel.app` e a API em `elite-dev-rockhub-production.up.railway.app`. Domínio custa dinheiro e propagação de DNS, e não acrescenta nada ao que está sendo avaliado |

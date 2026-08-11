@@ -97,6 +97,20 @@ def test_chave_sai_em_apikey_e_termo_em_keyword(monkeypatch: pytest.MonkeyPatch)
     assert capturado["url"].params["keyword"] == "metallica"
 
 
+def test_country_code_e_br(monkeypatch: pytest.MonkeyPatch) -> None:
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    ticketmaster.buscar_eventos("metallica")
+
+    assert capturado["url"].params["countryCode"] == "BR"
+
+
 def test_url_e_o_endpoint_de_eventos_da_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -378,22 +392,58 @@ def test_resposta_sem_embedded_devolve_lista_vazia_sem_estourar(
 
 
 # --------------------------------------------------------------------------- #
-# AC6 — termo em branco não gasta uma chamada da cota
+# Termo em branco lista exemplos, sem `keyword`, ordenado por data
+# (revisado depois do corte original: termo vazio deixou de significar
+# "sem requisição" — ver Change Log da Story 2.2)
 # --------------------------------------------------------------------------- #
 
 
-def test_termo_vazio_ou_so_espacos_nao_faz_requisicao(
+def test_termo_vazio_chama_sem_keyword_e_ordena_por_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    chamadas = 0
+    capturado: dict[str, httpx.URL] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal chamadas
-        chamadas += 1
+        capturado["url"] = request.url
         return httpx.Response(200, json={"page": {"totalElements": 0}})
 
     _instalar_transporte(monkeypatch, handler)
 
     assert ticketmaster.buscar_eventos("") == []
+
+    assert "keyword" not in capturado["url"].params
+    assert capturado["url"].params["sort"] == "date,asc"
+
+
+def test_termo_so_com_espacos_chama_sem_keyword_tambem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
     assert ticketmaster.buscar_eventos("   ") == []
-    assert chamadas == 0
+
+    assert "keyword" not in capturado["url"].params
+    assert capturado["url"].params["sort"] == "date,asc"
+
+
+def test_termo_com_conteudo_chama_com_keyword_e_sem_sort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capturado: dict[str, httpx.URL] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado["url"] = request.url
+        return httpx.Response(200, json={"page": {"totalElements": 0}})
+
+    _instalar_transporte(monkeypatch, handler)
+
+    ticketmaster.buscar_eventos("metallica")
+
+    assert capturado["url"].params["keyword"] == "metallica"
+    assert "sort" not in capturado["url"].params

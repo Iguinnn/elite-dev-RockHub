@@ -1,5 +1,6 @@
-import { cookies } from "next/headers";
 import { cache } from "react";
+
+import { API_URL, cabecalhoDeSessao } from "./servidor";
 
 /**
  * Leitura da sessão **do lado do servidor**. Só Server Components entram aqui.
@@ -15,29 +16,6 @@ import { cache } from "react";
  * segredo do token. Sessão duplicada no cliente é a origem clássica da tela que
  * continua mostrando o usuário antigo depois do logout.
  */
-
-// URL absoluta, e a mesma variável do `next.config.ts`. O `rewrite` de `/api/*`
-// é do navegador: um `fetch("/api/…")` daqui não tem origem para resolver.
-const API = process.env.API_URL ?? "http://localhost:8000";
-
-// O padrão `localhost` é o valor certo em desenvolvimento e um bug silencioso
-// em produção: o servidor da Vercel tentaria falar consigo mesmo, o `catch`
-// abaixo devolveria `null`, e o sintoma seria "todo mundo aparece deslogado"
-// sem uma única linha de erro em lugar nenhum. O aviso é impresso uma vez, na
-// primeira renderização do servidor, e não derruba o build de propósito —
-// derrubar deixaria todo deploy de Preview sem subir.
-if (process.env.NODE_ENV === "production" && !process.env.API_URL) {
-  console.error(
-    "[RockHub] API_URL não está definida. A leitura de sessão vai tentar " +
-      "http://localhost:8000 e falhar, e a aplicação inteira vai renderizar " +
-      "como visitante. Defina API_URL no painel da Vercel, para Production E " +
-      "Preview, e refaça o deploy.",
-  );
-}
-
-// Acoplamento assumido: o mesmo nome está em `cookie_sessao_nome`, no
-// `backend/app/core/config.py`. Trocar lá exige trocar aqui.
-const NOME_DO_COOKIE = "rockhub_sessao";
 
 export type UsuarioDaSessao = {
   id: string;
@@ -56,17 +34,14 @@ export type UsuarioDaSessao = {
  */
 export const obterUsuarioDaSessao = cache(
   async (): Promise<UsuarioDaSessao | null> => {
-    const sessao = (await cookies()).get(NOME_DO_COOKIE);
     // Sem cookie não há o que perguntar. A raiz é pública e visitante é o caso
     // comum: não vale uma ida à rede para ouvir 401.
-    if (!sessao) return null;
+    const cabecalho = await cabecalhoDeSessao();
+    if (!cabecalho) return null;
 
     try {
-      const resposta = await fetch(`${API}/auth/eu`, {
-        // O `fetch` do servidor não herda cookie do pedido que está sendo
-        // atendido. Repassar à mão é o que separa "renderiza logado" de
-        // "renderiza deslogado sem erro nenhum para investigar".
-        headers: { Cookie: `${sessao.name}=${sessao.value}` },
+      const resposta = await fetch(`${API_URL}/auth/eu`, {
+        headers: cabecalho,
         cache: "no-store",
       });
       // 401 aqui é resposta esperada, não falha: cookie velho ou adulterado.
@@ -83,7 +58,7 @@ export const obterUsuarioDaSessao = cache(
       // pista nenhuma — nem na tela, nem no console, nem no Network. O
       // comportamento continua o mesmo; o que muda é que agora ele deixa
       // rastro no log do servidor.
-      console.error(`[RockHub] Não foi possível ler a sessão em ${API}:`, erro);
+      console.error(`[RockHub] Não foi possível ler a sessão em ${API_URL}:`, erro);
       return null;
     }
   },

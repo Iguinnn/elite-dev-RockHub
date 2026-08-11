@@ -5,10 +5,12 @@ shows, a compra, o ingresso com QR e a tela de validação da portaria. A API vi
 [`../backend`](../backend/README.md) e este projeto só a consome.
 
 Hoje está de pé a casca — o sistema visual "jornal noturno" aplicado, o masthead, a raiz em estado
-vazio e um 404 com a cara do projeto —, as **duas telas de acesso**, login e cadastro, e o **ciclo
+vazio e um 404 com a cara do projeto —, as **duas telas de acesso**, login e cadastro, o **ciclo
 de sessão fechado**: o masthead sabe quem está do outro lado, existe uma `/conta` com os dados e o
 botão de sair, e quem abre uma página protegida sem sessão é levado ao login e devolvido ao destino
-depois de entrar.
+depois de entrar — e a primeira tela **restrita por papel**: `/organizador/publicar`, onde o
+organizador busca a atração no catálogo da Ticketmaster para publicar um evento (passo 1 de 3; os
+outros dois chegam nas Stories 2.4 e 2.5).
 
 **E está publicado:** <https://elite-dev-rock-hub.vercel.app> — dá para entrar por lá, com as contas
 de avaliação, sem instalar nada. Como o projeto foi configurado no painel, campo por campo, está em
@@ -306,12 +308,20 @@ Dois detalhes que já estão tratados e que é fácil quebrar sem querer:
   genérica — sem isso a tela quebra em branco quando a API cai, que é o primeiro estado que alguém
   encontra ao subir só o frontend
 
-### E o caminho do servidor: `src/lib/sessao.ts`
+### E o caminho do servidor: `src/lib/servidor.ts` e `sessao.ts`
 
-`api.ts` é o caminho do **navegador**. A leitura da sessão a partir de um Server Component é outro
+`api.ts` é o caminho do **navegador**. A leitura de dado a partir de um Server Component é outro
 arquivo, e a separação não é organização — é obrigatória: `api.ts` é importado pelos formulários,
 que são `"use client"`, e `next/headers` num módulo que chega ao bundle do cliente **quebra o
 build**. A fronteira aqui é física.
+
+**`src/lib/servidor.ts` nasceu na Story 2.2**, quando `catalogo.ts` se tornou o segundo consumidor
+do que até então era detalhe interno do `sessao.ts`: `API_URL`, o aviso de `API_URL` ausente em
+produção, o nome do cookie e `cabecalhoDeSessao()` — a função que devolve `{ Cookie: string } |
+null` a partir do cookie da requisição. O corpo de `obterUsuarioDaSessao` não mudou de
+comportamento ao ser extraído — o `cache()`, o curto-circuito sem cookie e o `console.error` do
+`catch` são exatamente os que o code review da Epic 1 conquistou, só que agora chamando
+`cabecalhoDeSessao()` em vez de repetir a leitura do cookie.
 
 ```ts
 const usuario = await obterUsuarioDaSessao();   // UsuarioDaSessao | null
@@ -379,6 +389,10 @@ frontend/
         conta/
           page.tsx            # Server Component com a guarda de sessão
           page.module.css
+        organizador/
+          publicar/
+            page.tsx          # Server Component — passo 1: busca no catálogo (Story 2.2)
+            page.module.css
       (entrada)/              # casca sem masthead: só a marca
         layout.tsx
         layout.module.css
@@ -405,7 +419,9 @@ frontend/
       BotaoSair.tsx           # "use client" — logout + router.refresh()
     lib/
       api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
+      servidor.ts             # API_URL + cabecalhoDeSessao() — o que sessao.ts e catalogo.ts compartilham
       sessao.ts               # obterUsuarioDaSessao() — só servidor
+      catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
 
@@ -550,15 +566,23 @@ está no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
 
 ### O masthead sabe quem está do outro lado
 
-Ele virou Server Component `async`: lê a sessão e monta a navegação a partir dela.
+Ele virou Server Component `async`: lê a sessão e monta a navegação a partir dela — e, desde a
+Story 2.2, também a partir do **papel**.
 
 | Estado | Navegação |
 |---|---|
 | Sem sessão | `Início` · `Entrar` |
-| Com sessão | `Início` · `Minha conta` |
+| Com sessão, papel `CLIENTE` ou `PORTARIA` | `Início` · `Minha conta` |
+| Com sessão, papel `ORGANIZADOR` | `Início` · `Publicar evento` · `Minha conta` |
 
-**`Meus ingressos` saiu do masthead** até a Epic 4 criar a tela. É o precedente que firmei na 1.4:
-link que cai no 404 não fica no repositório.
+**`Meus ingressos` e `Meus eventos` saíram do masthead** até as Stories 4.1 e 2.6 criarem as telas.
+É o precedente que firmei na 1.4: link que cai no 404 não fica no repositório — e ele valeu de novo
+na 2.2, quando fiquei tentado a incluir `Meus eventos` "já que estava ali".
+
+`Publicar evento` é a primeira entrada do masthead condicionada a **papel**, não só a sessão existir
+ou não. O `usuario?.papel === "ORGANIZADOR"` mora no próprio `Masthead.tsx`: entrando como cliente
+ou portaria o link **não existe no HTML**, nem escondido por CSS — a decisão é do servidor, antes de
+qualquer coisa chegar ao navegador.
 
 **E o nome de quem entrou não aparece ali**, mesmo agora que o componente o conhece. O
 `DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio duplo, e nada mais —, e o
@@ -629,6 +653,110 @@ formulário. `useSearchParams()` no Client Component funcionaria e exigiria fron
 
 **Convenção:** parâmetro de URL que vira navegação passa por `caminhoInternoSeguro`. Vale para o
 retorno depois do checkout (Epic 3) e para o link compartilhado (Epic 4).
+
+## A tela do organizador: `/organizador/publicar`
+
+Passo 1 do fluxo de publicação (Story 2.2): buscar a atração no catálogo da Ticketmaster. Só o
+passo 1 — selecionar a atração (2.4), o formulário de data/local/setores (2.4) e escalar a portaria
+(2.5) ainda não existem. Nada nesta tela é clicável.
+
+### `<form method="get">`, sem uma linha de `"use client"`
+
+```tsx
+<form method="get">
+  <input name="q" defaultValue={termo} />
+  <Botao type="submit">Buscar</Botao>
+</form>
+```
+
+Sem `action`: o formulário envia para a própria URL, o navegador monta `?q=…` sozinho, o Next
+re-renderiza no servidor com o termo novo. A busca inteira é `zero JavaScript, zero estado`. Foi a
+decisão que mais pesei nesta story, contra um `Client Component` com `chamarApi` — que reusaria mais
+código (`AvisoDeErro`, o tratamento por `codigo`), mas tiraria a busca da URL (nada de recarregar,
+compartilhar ou voltar), transformaria a tela inteira em ilha de cliente contra a convenção *"Server
+Component por padrão"*, e faria o estado do resultado morar em dois lugares quando a Story 2.4
+acrescentar os passos 2 e 3. A alternativa completa, com o motivo de cada peça descartada, está no
+[README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+`defaultValue`, nunca `value`: com `value` sem `onChange` o campo vira somente-leitura e o React
+avisa no console. `defaultValue` é o certo para campo não controlado, que é exatamente o que este é
+— o servidor manda o valor inicial, o navegador cuida do resto.
+
+### A tela busca sempre — não existe mais um "ninguém buscou ainda"
+
+⚠️ **Revisado no mesmo dia, depois do primeiro corte da story.** A primeira versão tinha um terceiro
+estado — "ninguém buscou ainda", com um convite curto e nenhuma chamada à Ticketmaster — igual ao
+padrão de estado vazio do resto do site. Testando a tela, o Igor pediu o contrário: que ela já
+chegue mostrando exemplos reais do catálogo, para o organizador ver do que se trata sem precisar
+digitar nada primeiro. `page.tsx` agora chama `buscarNoCatalogo(termoLimpo)` sempre, mesmo com
+`termoLimpo` vazio — e é `catalogo.ts` → a rota do backend quem decide o que "sem termo" significa
+(ver [Catálogo da Ticketmaster](../backend/README.md#catálogo-da-ticketmaster) no README do
+backend: sem termo, sem `keyword`, com `sort=date,asc`).
+
+Restaram dois estados vazios, e `itens.length === 0` continua verdadeiro nos dois — achatá-los
+continua sendo o defeito mais fácil de cometer:
+
+| Situação | O que a tela diz |
+|---|---|
+| Sem resultado, sem termo (listagem padrão vazia) | "Não há shows no catálogo agora." |
+| Buscou um termo, não achou | "Nenhum show encontrado para essa busca." — literal do `EXPERIENCE.md#Vazio` |
+| Catálogo fora do ar (com ou sem termo) | "O catálogo da Ticketmaster não respondeu. Tente de novo em instantes." |
+
+O terceiro é escolhido pelo **estado** que `buscarNoCatalogo` devolve
+(`{ estado: "ok" | "indisponivel" }`), nunca por uma exceção pega no meio do caminho — não existe
+`error.tsx` neste projeto, e uma exceção não capturada num Server Component derruba a página
+inteira, não só esta seção. É por isso que `catalogo.ts` **nunca levanta**: `try/catch` em volta do
+`fetch`, e `!resposta.ok` também vira `"indisponivel"`.
+
+**O que caiu:** uma fileira de termos sugeridos e clicáveis ("chips") — Metallica, Baco Exu do
+Blues — que só disparariam a busca de verdade ao clicar. Preservaria a cota de quem só abre a tela
+para olhar, mas exigiria manter uma lista de sugestões própria (fixa no código, ou vinda de algum
+outro lugar — escopo novo) e não mostraria nada real antes do clique. A alternativa completa está
+no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
+
+### `src/lib/catalogo.ts` reusa a armadilha que `sessao.ts` já tinha resolvido
+
+O `fetch` do servidor não herda o cookie do pedido que está sendo atendido — é a mesma armadilha que
+o `sessao.ts` resolve desde a Story 1.9, e `catalogo.ts` precisava resolver de novo. Daí
+`servidor.ts` ter ganhado `cabecalhoDeSessao()` nesta story, em vez de `catalogo.ts` reimplementar a
+leitura do cookie por conta própria: sem o cabeçalho repassado à mão, o backend responde `401`, o
+`!resposta.ok` vira `"indisponivel"`, e a tela diz "o catálogo não respondeu" quando o catálogo
+respondeu perfeitamente — o sintoma aponta para o lugar errado, e é o motivo de esta ser a armadilha
+mais cara da story.
+
+A segunda: `encodeURIComponent(termo)` ao montar a query. Sem ele, buscar `AC/DC & Guns` monta
+`?q=AC/DC & Guns`, o `&` encerra o parâmetro `q`, e o backend recebe `q=AC/DC ` mais um parâmetro
+`Guns` que ninguém pediu.
+
+### A imagem é `<img>`, não `next/image`
+
+A Discovery serve imagem de mais de um host (`s1.ticketm.net`, `media.ticketmaster.com`), e
+`next/image` exige `remotePatterns` declarado por host — errar um produz erro em tempo de execução,
+na tela do organizador. `<img loading="lazy">` com dimensão fixa no CSS (70×70px, `object-fit:
+cover`) resolve sem essa dependência, com o
+`// eslint-disable-next-line @next/next/no-img-element` acompanhado do motivo, no próprio código.
+Sem `imagem_url`, o bloco fica com o fundo `--breu2` do mesmo tamanho — a grade não pode dançar
+entre uma fila e outra.
+
+A linha de origem (`Ticketmaster · <id_externo> · <local> · <cidade>`) monta só o que existe:
+`local` e `cidade` podem ser `null`, e um `.filter(Boolean).join(" · ")` evita o
+`Ticketmaster · G5VYZ9A1KD ·  · ` cheio de buracos que sobraria de concatenar direto.
+
+### Duas guardas, e por que a segunda não é `notFound()`
+
+```ts
+if (!usuario) redirect("/login?voltar=%2Forganizador%2Fpublicar");
+if (usuario.papel !== "ORGANIZADOR") redirect("/");
+```
+
+O padrão da guarda é o mesmo da `/conta` (ler a sessão, `redirect` na página, sem `middleware` — ver
+[A guarda mora na página](#a-guarda-mora-na-página-não-em-middleware)). O que é novo aqui é a
+segunda linha: **papel errado vai para a raiz, não para um 404.** Um cliente que digitar
+`/organizador/publicar` na barra é mandado para a programação, não para `notFound()`. Cogitei o
+404 — reusaria o `not-found.tsx` que já existe e não revelaria que a rota existe —, mas mandar
+alguém **logado** para um 404 parece defeito de navegação, e a rota não é segredo nenhum: a API
+responde `403`, que é público por natureza. Fica registrado como suposição minha, não decisão de
+produto — é uma linha para trocar se eu discordar depois de ver a tela no ar.
 
 ## O sistema visual
 
@@ -836,6 +964,19 @@ E a lista original das telas de acesso:
 - **`Tab` percorre** nome → e-mail → senha → repetir → botão → link, com contorno âmbar em todos, e os
   links levam de uma tela à outra sem digitar URL
 
+A lista da Story 2.2, `/organizador/publicar`:
+
+- **`organizador@rockhub.dev`** → `Publicar evento` aparece no masthead, e a tela abre
+- **`cliente@rockhub.dev`** → o link **não** aparece; digitar `/organizador/publicar` na barra
+  manda para a raiz
+- **Sem sessão**, abrir `/organizador/publicar` → cai no login, e entrar leva de volta para a tela
+- **Abrir a tela sem digitar nada** → já vêm exemplos reais do catálogo, ordenados por data, sem
+  precisar buscar primeiro
+- **Buscar `baco`** → filas com fio, sem card, origem em versalete monoespaçada
+  (`Ticketmaster · <id_externo>`)
+- **Derrubar a Ticketmaster de propósito** (`TICKETMASTER_API_KEY` errada no `.env` do backend) →
+  a tela mostra o aviso de indisponível e **não quebra**, com ou sem termo digitado
+
 ### E a mesma lista, em produção
 
 Desde a Story 1.9 as verificações acima deixaram de valer só em `localhost`. Contra
@@ -909,3 +1050,41 @@ e a chave (`TICKETMASTER_API_KEY`) viaja só pelo processo do backend: nenhuma v
 catálogo, é o backend quem consulta a Ticketmaster e devolve o formato próprio do projeto — o
 navegador nunca vê `apikey=` na URL. Confirmado por busca: `ticketmaster` e `NEXT_PUBLIC` não
 aparecem em `frontend/` nenhuma vez.
+
+### Story 2.2 — buscar a atração no catálogo
+
+A primeira tela **restrita por papel**, não só por sessão. A `/conta` pergunta "tem alguém?"; esta
+pergunta "quem?" — e as duas guardas moram na página, pelo mesmo motivo de sempre: `middleware` só
+enxerga que existe cookie, não que ele vale, e validar o papel ali exigiria o segredo de sessão no
+ambiente do frontend, o contrário do AD-2.
+
+Também é a primeira vez que um Server Component busca **dado de domínio**, não sessão. Isso puxou a
+única refatoração da story: o que era detalhe interno do `sessao.ts` — `API_URL`, o cookie
+repassado à mão, o aviso de `API_URL` ausente — ganhou um segundo consumidor e virou
+`src/lib/servidor.ts`. Fiz questão de que o corpo de `obterUsuarioDaSessao` não mudasse de
+comportamento nessa extração: é código que o code review da Epic 1 já tinha conferido, e reescrevê-lo
+por conta de uma story que não pede isso seria arriscar uma regressão sem relação com o que a 2.2
+pede.
+
+A tela em si (`/organizador/publicar`) é `<form method="get">` num Server Component, sem
+`"use client"` nenhum — decisão registrada com a alternativa descartada no [README da
+raiz](../README.md#decisões-por-que-isso-e-não-aquilo). Todas as decisões de UI desta story estão
+detalhadas em [A tela do organizador](#a-tela-do-organizador-organizadorpublicar) acima: os
+estados vazios que `itens.length === 0` torna parecidos, a armadilha do cookie que o `fetch` do
+servidor não herda, `encodeURIComponent` no termo de busca, e `<img>` em vez de `next/image` por
+causa dos múltiplos hosts que a Discovery usa para servir imagem.
+
+**Revisão no mesmo dia, depois do primeiro corte.** Testando a tela pela primeira vez, o Igor notou
+que ela nascia com um convite ("busque pelo nome do show...") e nenhum exemplo — fiel ao desenho
+original, mas sem dar ideia nenhuma do que existe no catálogo antes de digitar. Pediu que a tela já
+mostre exemplos reais ao abrir. `page.tsx` passou a chamar `buscarNoCatalogo` sempre — mesmo com o
+termo vazio —, e quem decide o que "sem termo" significa é a rota do backend (ver [Catálogo da
+Ticketmaster](../backend/README.md#catálogo-da-ticketmaster) no README de lá). O terceiro estado
+vazio da tela ("ninguém buscou ainda") deixou de existir; os dois que restaram estão detalhados em
+[A tela busca sempre](#a-tela-busca-sempre--não-existe-mais-um-ninguém-buscou-ainda) acima, junto
+da alternativa que caiu (uma fileira de termos sugeridos, clicáveis).
+
+Não há teste automatizado aqui — é o corte já registrado em [Sobre não ter teste automatizado
+aqui](#sobre-não-ter-teste-automatizado-aqui) —, mas o backend ganhou testes novos para a rota
+que esta tela consome (a suíte foi de 107 para 121, contando a revisão), documentados no [README do
+backend](../backend/README.md#story-22--buscar-a-atração-no-catálogo).

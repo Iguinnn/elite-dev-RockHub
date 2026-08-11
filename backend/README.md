@@ -219,6 +219,7 @@ backend/
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
+      organizador.py  # GET /organizador/catalogo — exceção ao paradigma, ver abaixo
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
     models/          # SQLAlchemy
@@ -242,6 +243,7 @@ backend/
     semear.py          # as quatro contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
+    test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
   alembic.ini
   pyproject.toml
   uv.lock
@@ -486,6 +488,17 @@ Dependência sempre para dentro, nunca o inverso, nunca pulando camada.
 **Não existe `app/repositories/`, e isso foi escolhido.** O motivo está no
 [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo).
 
+**`app/api/organizador.py` é a única exceção ao paradigma, e é deliberada.** `GET
+/organizador/catalogo` (Story 2.2) chama `app.integrations.ticketmaster` direto — pula a camada de
+`services`. Não existe `services/catalogo.py` porque `buscar_eventos` já faz tudo que um service
+faria: `.strip()` no termo, curto-circuito de termo vazio antes de qualquer I/O, limite, conversão
+para `ItemDoCatalogo` e tradução de toda falha em `ErroDeDominio`. Interpor um módulo cujo corpo
+inteiro seria `return ticketmaster.buscar_eventos(termo)` é a "camada de repasse" que este próprio
+parágrafo rejeita para `repositories/` — seria inconsistente aceitar aqui o que recuso ali só porque
+o nome da pasta é outro. **A exceção vale só para o catálogo.** A Story 2.4 grava evento e setor no
+banco: tem transação e invariante, então tem service, sem discussão — o critério que separa os dois
+casos é justamente esse.
+
 ## Catálogo da Ticketmaster
 
 `app/integrations/ticketmaster.py` (Story 2.1) é a única peça do backend que fala com um serviço
@@ -493,9 +506,20 @@ fora dele. `buscar_eventos(termo, *, limite=20)` consulta a Discovery API e devo
 `list[ItemDoCatalogo]` — o formato **deste projeto**, não o da Ticketmaster.
 
 ```
+# com termo
 GET https://app.ticketmaster.com/discovery/v2/events.json
-    ?apikey=<TICKETMASTER_API_KEY>&keyword=<termo>&size=<limite>&locale=*
+    ?apikey=<TICKETMASTER_API_KEY>&keyword=<termo>&size=<limite>&locale=*&countryCode=BR
+
+# sem termo — lista de exemplos (Story 2.2, revisada)
+GET https://app.ticketmaster.com/discovery/v2/events.json
+    ?apikey=<TICKETMASTER_API_KEY>&size=<limite>&locale=*&countryCode=BR&sort=date,asc
 ```
+
+**`countryCode=BR` entrou na Story 2.2**, junto com a superfície HTTP. Sem ele, buscar "metallica"
+devolve os vinte primeiros shows do mundo — quase todos nos EUA — e nenhum brasileiro entra no
+`size=20`; a tela do organizador pareceria quebrada para quem estiver avaliando. **Limitação
+assumida**: um show fora do Brasil não aparece nesta busca. Está registrada também em [O que não
+está pronto](../README.md#o-que-não-está-pronto) do README da raiz.
 
 | Limite da Discovery | Valor | O que faço com ele |
 |---|---|---|
@@ -531,12 +555,23 @@ dá para publicar nada na Story 2.4. Quando há mais de uma imagem, escolho a ma
 `ratio == "16_9"` e sem `fallback: true` (as `fallback` são genéricas da Ticketmaster e não têm
 nada a ver com o show) — é a proporção que a chamada principal da Story 3.3 vai consumir (UX-DR4).
 
-**Nenhuma rota usa isto ainda.** `GET /organizador/catalogo?q=` é da Story 2.2 — esta story só
-prova a integração, sem superfície HTTP, tela ou banco.
+**A rota é `GET /organizador/catalogo?q=`** (Story 2.2), protegida por
+`Depends(exigir_papel(PapelUsuario.ORGANIZADOR))` — só o organizador toca o catálogo (AD-1). `q`
+tem `max_length=120` porque vai inteiro para a URL da Ticketmaster. O corpo do handler é uma linha
+(`return ticketmaster.buscar_eventos(q)`); por que não há service ao redor dela está em [O
+paradigma: `routers → services → models`](#o-paradigma-routers--services--models).
 
-Zero rede na suíte: `tests/test_ticketmaster.py` substitui o cliente por `httpx.MockTransport`, que
-recebe a `httpx.Request` de verdade — construída pelo código de produção, com a query string
-montada por ele — em vez de um `monkeypatch` em `httpx.get`.
+⚠️ **`q` ausente, vazio ou só espaços não devolve `[]` — revisado depois do primeiro corte desta
+story.** A primeira versão respondia lista vazia sem chamar a Ticketmaster, pelo mesmo raciocínio de
+poupar cota que valia para a integração isolada da Story 2.1. Pedido do Igor depois de testar a
+tela: sem termo, `buscar_eventos` chama a Discovery sem o parâmetro `keyword` e com
+`sort=date,asc`, e devolve os próximos eventos do catálogo no Brasil como **exemplo** do que dá para
+publicar — o organizador não precisa digitar nada antes de ver do que se trata. `422` continua fora
+de cogitação: campo de busca vazio é o estado inicial da tela, não erro de quem chamou.
+
+Zero rede na suíte: `tests/test_ticketmaster.py` e `tests/test_organizador_catalogo.py` substituem o
+cliente por `httpx.MockTransport`, que recebe a `httpx.Request` de verdade — construída pelo código
+de produção, com a query string montada por ele — em vez de um `monkeypatch` em `httpx.get`.
 
 ## Convenções que nascem aqui
 
@@ -608,11 +643,12 @@ cd backend
 uv run pytest
 ```
 
-São **107 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **121 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, o modelo `Usuario`, o
 hash e o token de sessão, as quatro rotas de autenticação, a dependência de papel, o seed de
-avaliação e o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
-[Catálogo da Ticketmaster](#catálogo-da-ticketmaster)).
+avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
+[Catálogo da Ticketmaster](#catálogo-da-ticketmaster)) e a rota `GET /organizador/catalogo`
+(`test_organizador_catalogo.py`, Story 2.2, também offline).
 
 ### O que `test_seed.py` prova
 
@@ -1238,3 +1274,48 @@ As quatro decisões desta story — `httpx` síncrono em vez de `AsyncClient` ou
 `/events.json` em vez de `/attractions.json`, chave ausente derrubando só a produção, e nenhuma rota
 nesta story — estão no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo), cada uma
 com a alternativa que descartei.
+
+### Story 2.2 — buscar a atração no catálogo
+
+A story que dá superfície ao que a 2.1 entregou: a integração existia, tinha 20 testes, e não era
+observável por nenhum caminho — sem rota, sem tela, sem entrada no `/docs`. Entrou um router só,
+`app/api/organizador.py`, com uma rota (`GET /organizador/catalogo`) e um corpo de uma linha.
+**Nenhum dado é gravado** — a tabela `evento` é da Story 2.3.
+
+A decisão mais visível para quem revisa código é a que **não** tomei: não criei
+`app/services/catalogo.py`. Está registrada, com a alternativa descartada, em [O paradigma:
+`routers → services → models`](#o-paradigma-routers--services--models) — é a única exceção ao
+paradigma que existe no projeto até aqui, e ela é deliberada, não esquecimento.
+
+`countryCode=BR` entrou na chamada da Discovery nesta story, não na 2.1, porque só fazia sentido
+decidir isso quando existisse uma tela para mostrar o resultado. Sem ele a busca por "metallica"
+volta cheia de shows americanos e a avaliação pareceria estar vendo um catálogo quebrado. É
+limitação assumida, não bug: está em [O que não está pronto](../README.md#o-que-não-está-pronto) do
+README da raiz.
+
+Doze testes novos (onze em `test_organizador_catalogo.py`, um em `test_ticketmaster.py` para o
+`countryCode`), a suíte foi de 107 para 119. Reaproveitei os dois helpers de teste da Epic 1 sem
+alteração — `_instalar_transporte` (o `MockTransport` que substitui `_criar_cliente` do módulo da
+integração, nunca o da rota) e `_entrar` (login de verdade contra o `TestClient`) — porque a rota
+nova não inventa forma de testar nova, só combina as duas que já existiam.
+
+**Revisão pós-review, no mesmo dia.** Testando a tela pela primeira vez, notei — e o Igor confirmou
+que queria diferente — que uma busca vazia simplesmente não mostrava nada: era fiel ao AC3 original
+("`q` ausente devolve `[]`, zero chamada à Ticketmaster"), mas o organizador abria a tela e via um
+convite para digitar, sem noção nenhuma do que existe no catálogo. Reescrevi `buscar_eventos`: sem
+termo, ela chama a Discovery do mesmo jeito, só que sem `keyword` e com `sort=date,asc` — os
+próximos eventos do Brasil como exemplo do que dá para publicar, sem custar uma segunda forma de
+buscar. Dois testes trocaram de forma (de "afirma que não chamou" para "afirma que chamou sem
+`keyword`"), e um teste novo cobre a busca com termo continuando sem `sort`. **Suíte final desta
+story: 121.**
+
+**A alternativa que caiu:** uma fileira de termos sugeridos (chips clicáveis, tipo "Metallica ·
+Baco Exu do Blues") que só disparariam a chamada de verdade ao clicar — preservaria a cota de quem
+só abre a tela para olhar, mas exigiria manter uma lista própria de sugestões (fixa no código ou
+vinda de algum outro lugar, o que é escopo novo) e não mostraria exemplo real nenhum antes do
+clique. Perdeu para "mostrar de verdade o que existe", que é o que o Igor pediu.
+
+O frontend desta story está documentado em [`frontend/README.md`](../frontend/README.md); as
+decisões de produto (quem chama a integração, mecânica da busca, onde mora a tela, o filtro de
+país, e a listagem sem termo) estão no [README da raiz](../README.md#decisões-por-que-isso-e-não-aquilo),
+cada uma com a alternativa que descartei.
