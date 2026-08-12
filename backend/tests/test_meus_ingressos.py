@@ -1,4 +1,5 @@
-"""`GET /ingressos` — a lista de "Meus ingressos" (Story 4.1, techspec do grupo).
+"""`GET /ingressos` e `GET /ingressos/{id}` — "Meus ingressos" e o canhoto com
+o QR (Stories 4.1 e 4.2, a mesma techspec do grupo).
 
 Precisa do Compose no ar: a consulta faz `join` com `reserva`, `evento` e
 `setor`, e os quatro leem do mesmo Postgres da suíte.
@@ -19,7 +20,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.core.seguranca import assinar_ingresso, gerar_nonce
+from app.core.seguranca import assinar_ingresso, gerar_nonce, montar_codigo
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
@@ -320,3 +321,157 @@ def test_o_openapi_declara_ingresso_na_lista(cliente: TestClient) -> None:
     rota = especificacao["paths"]["/ingressos"]["get"]
     schema = rota["responses"]["200"]["content"]["application/json"]["schema"]
     assert schema["items"]["$ref"].endswith("/IngressoNaLista")
+
+
+# =============================================================================
+# `GET /ingressos/{id}` — o canhoto cheio, com o `codigo` que vira QR (4.2)
+# =============================================================================
+
+
+def test_o_canhoto_traz_evento_setor_titular_codigo_e_usado_em(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd1@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-cd1@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador, nome="Baco Exu do Blues")
+    ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, comprador)
+
+    resposta = cliente.get(f"/ingressos/{ingresso.id}")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["id"] == str(ingresso.id)
+    assert corpo["evento_nome"] == "Baco Exu do Blues"
+    assert corpo["evento_local"] == evento.local
+    assert corpo["evento_cidade"] == evento.cidade
+    assert corpo["setor_nome"] == setor.nome
+    assert corpo["titular_nome"] == comprador.nome
+    assert corpo["usado_em"] is None
+
+
+def test_o_codigo_e_montado_a_partir_da_coluna_sem_recalcular(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ `montar_codigo(id, assinatura)`, e nada mais — o aviso do AD-5.
+
+    Recalcular a assinatura aqui daria o mesmo valor no caso feliz e
+    esconderia o ponto: só a portaria (Epic 5) recalcula, nunca esta rota.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd2@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-cd2@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, comprador)
+
+    codigo = cliente.get(f"/ingressos/{ingresso.id}").json()["codigo"]
+
+    assert codigo == montar_codigo(ingresso.id, ingresso.assinatura)
+
+
+def test_usado_em_aparece_no_canhoto_quando_gravado_a_mao(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Um canhoto já utilizado não pode parecer válido na tela."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd3@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "porteiro-cd3@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-cd3@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    entrada = datetime(2026, 8, 15, 20, 51, tzinfo=timezone.utc)
+    ingresso = _ingresso_gravado(
+        sessao, comprador, evento, setor, usado_em=entrada, validado_por=porteiro
+    )
+    _entrar(cliente, comprador)
+
+    corpo = cliente.get(f"/ingressos/{ingresso.id}").json()
+
+    assert corpo["usado_em"] == entrada.isoformat().replace("+00:00", "Z")
+
+
+def test_ingresso_de_outra_pessoa_responde_404_ingresso_nao_encontrado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd4@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-cd4@exemplo.com")
+    curioso = fabricar_usuario(PapelUsuario.CLIENTE, "curioso-cd4@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    alheio = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, curioso)
+
+    resposta = cliente.get(f"/ingressos/{alheio.id}")
+
+    assert resposta.status_code == 404
+    assert resposta.json()["erro"]["codigo"] == "INGRESSO_NAO_ENCONTRADO"
+
+
+def test_a_resposta_de_ingresso_alheio_e_identica_a_de_um_id_inexistente(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A rota não vira oráculo de "esse ingresso existe?" — mesma disciplina
+    do `PORTARIA_INVALIDA` da 2.5 e do `RESERVA_NAO_ENCONTRADA` da 3.6."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd5@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-cd5@exemplo.com")
+    curioso = fabricar_usuario(PapelUsuario.CLIENTE, "curioso-cd5@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    alheio = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, curioso)
+
+    do_alheio = cliente.get(f"/ingressos/{alheio.id}")
+    do_inexistente = cliente.get(f"/ingressos/{uuid4()}")
+
+    assert do_alheio.status_code == do_inexistente.status_code == 404
+    assert do_alheio.json() == do_inexistente.json()
+
+
+def test_id_em_formato_invalido_responde_422_dados_invalidos(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "malformado-cd@exemplo.com")
+    _entrar(cliente, comprador)
+
+    resposta = cliente.get("/ingressos/nao-e-uuid")
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+def test_organizador_e_portaria_recebem_403_no_canhoto(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    for papel, email in (
+        (PapelUsuario.ORGANIZADOR, "org-403-cd@exemplo.com"),
+        (PapelUsuario.PORTARIA, "porta-403-cd@exemplo.com"),
+    ):
+        usuario = fabricar_usuario(papel, email)
+        _entrar(cliente, usuario)
+
+        resposta = cliente.get(f"/ingressos/{uuid4()}")
+
+        assert resposta.status_code == 403, papel
+        assert resposta.json()["erro"]["codigo"] == "SEM_PERMISSAO"
+        cliente.cookies.clear()
+
+
+def test_sem_cookie_recebe_401_no_canhoto(cliente: TestClient) -> None:
+    resposta = cliente.get(f"/ingressos/{uuid4()}")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+
+def test_o_openapi_declara_ingresso_detalhe(cliente: TestClient) -> None:
+    especificacao = cliente.get("/openapi.json").json()
+
+    rota = especificacao["paths"]["/ingressos/{ingresso_id}"]["get"]
+    schema = rota["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema["$ref"].endswith("/IngressoDetalhe")

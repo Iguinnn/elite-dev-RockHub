@@ -229,9 +229,27 @@ development_status:
   epic-3-retrospective: optional
 
   # ---------- Epic 4: Meus ingressos e compartilhamento ----------
-  epic-4: backlog
-  4-1-ver-meus-ingressos: backlog
-  4-2-ver-o-canhoto-com-o-qr: backlog
+  # MUDANÇA DE FORMATO, seguindo a 3.7-3.9: a 4.1 e a 4.2 saem de uma
+  # techspec só (docs/techspec-meus-ingressos.md) — o grupo de leitura do
+  # mesmo agregado, lista e detalhe pelo mesmo caminho (reserva → cliente da
+  # sessão), com o mesmo 404 de "não é seu". O commit continua um por story.
+  epic-4: in-progress
+  # Commit 1: migração de `usado_em`/`validado_por` (AD-6, adiantada da 5.2
+  # porque o primeiro consumidor é a leitura, não a porta), `services/
+  # ingresso.py` (arquivo novo — o agregado tem vida própria desde a 3.9),
+  # `GET /ingressos` e a tela `/ingressos` com os blocos Ativos/Utilizados.
+  # ⚠️ O bloco Utilizados nasce vazio de propósito: nada escreve `usado_em`
+  # antes da Story 5.2 existir — provado por teste que grava a coluna à mão.
+  4-1-ver-meus-ingressos: done
+  # Commit 2: `GET /ingressos/{id}` (IngressoDetalhe, com `codigo` montado da
+  # coluna sem recalcular — AD-5), a tela do canhoto com QR em duas colunas
+  # (talão/corpo com picote tracejado), e `/reservas/{id}` enxugada: perde os
+  # canhotos, ganha a confirmação mais o link para `/ingressos`. Decisão da
+  # techspec: o canhoto cheio existe só em `/ingressos/{id}` — duas versões
+  # do mesmo canhoto convivendo obrigaria quem lê a decidir qual é o de
+  # verdade. `bgColor`/`fgColor` do QR via `var(--cal)`/`var(--breu)`, não
+  # hex — mesmas cores que a spec pedia em `#e4ebea`/`#0b1618`.
+  4-2-ver-o-canhoto-com-o-qr: done
   4-3-compartilhar-o-ingresso-por-link: backlog
   4-4-revogar-o-link-compartilhado: backlog
   epic-4-retrospective: optional

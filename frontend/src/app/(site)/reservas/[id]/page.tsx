@@ -130,40 +130,17 @@ export default async function PaginaDaReserva({
 
       {/* A cara de cada desfecho, acima dos itens: quem chega aqui depois de
           pagar quer saber o que aconteceu antes de reler a conta. */}
+      {/* ⚠️ **A partir da Story 4.2, esta tela não desenha mais canhoto**
+          (decisão da techspec do grupo). `/reservas/{id}` é sobre a
+          **compra** — o que foi cobrado e o desfecho —, não sobre o que se
+          apresenta na porta; o canhoto cheio, com QR, mora só em
+          `/ingressos/{id}`. Duas versões do mesmo canhoto convivendo
+          obrigaria quem lê a decidir qual é o ingresso de verdade. */}
       {reserva.estado === "PAGA" && (
-        <>
-          <p className={estilos.confirmacao}>
-            <strong>Pagamento aprovado.</strong> Seus lugares estão garantidos.
-          </p>
-
-          {/* ⚠️ **Um canhoto por ingresso** (EXPERIENCE.md): dois ingressos são
-              dois blocos, com códigos diferentes — nunca uma linha dizendo
-              "2 ×". É essa separação que faz sentido na porta, onde cada pessoa
-              apresenta o dela.
-
-              ⚠️ **O código aparece, o QR ainda não.** Esta story entrega o
-              código não forjável; desenhá-lo como QR é a Story 4.2, junto do
-              canhoto cheio e de `Meus ingressos`. O componente de QR já existe
-              no projeto desde o Pix da 3.8, então lá é reuso, não trabalho
-              novo. Antecipá-lo aqui deixaria a 4.2 sem conteúdo e duplicaria a
-              tela em duas rotas. */}
-          <div className={estilos.canhotos}>
-            {reserva.ingressos.map((ingresso) => (
-              <div key={ingresso.id} className={estilos.canhoto}>
-                <div className={estilos.identidadeDoCanhoto}>
-                  <span className={estilos.setorDoCanhoto}>
-                    {ingresso.setor_nome}
-                  </span>
-                  <span className={estilos.titular}>{ingresso.titular_nome}</span>
-                </div>
-
-                {/* `<code>` e não `<span>`: é dado de máquina, e a semântica
-                    ajuda quem copia com leitor de tela. */}
-                <code className={estilos.codigoDoIngresso}>{ingresso.codigo}</code>
-              </div>
-            ))}
-          </div>
-        </>
+        <p className={estilos.confirmacao}>
+          <strong>Pagamento aprovado.</strong> Seus lugares estão garantidos.{" "}
+          <Link href="/ingressos">Ver meus ingressos</Link>.
+        </p>
       )}
 
       {reserva.estado === "RECUSADA" && (

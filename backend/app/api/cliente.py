@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.core.db import obter_sessao
 from app.core.dependencias import exigir_papel
 from app.models.usuario import PapelUsuario, Usuario
-from app.schemas.ingresso import IngressoNaLista
+from app.schemas.ingresso import IngressoDetalhe, IngressoNaLista
 from app.schemas.pagamento import PagamentoEntrada
 from app.schemas.reserva import ReservaEntrada, ReservaSaida
 from app.services import ingresso as servico_de_ingresso
@@ -168,3 +168,21 @@ def listar_ingressos(
     mesmo molde do `GET /organizador/eventos` da 2.6.
     """
     return servico_de_ingresso.listar(sessao, cliente)
+
+
+@router.get("/ingressos/{ingresso_id}", response_model=IngressoDetalhe)
+def obter_ingresso(
+    ingresso_id: UUID,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> IngressoDetalhe:
+    """O canhoto cheio, com o `codigo` que vira QR — a Story 4.2.
+
+    **Um `404 INGRESSO_NAO_ENCONTRADO` para "não existe" e para "não é seu"**,
+    nunca `403`: mesma disciplina do `obter_reserva` acima e do
+    `obter_do_organizador` da 2.6.
+
+    **`ingresso_id: UUID`, e não `str`**: o Pydantic recusa um caminho que não
+    seja UUID com `422` antes de a consulta ser montada.
+    """
+    return servico_de_ingresso.obter(sessao, cliente, ingresso_id)

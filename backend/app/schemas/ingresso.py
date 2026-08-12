@@ -44,3 +44,36 @@ class IngressoNaLista(BaseModel):
     evento_local: str
     setor_nome: str
     usado_em: datetime | None
+
+
+class IngressoDetalhe(BaseModel):
+    """O canhoto cheio — `GET /ingressos/{id}` (Story 4.2), o que vira QR.
+
+    **`codigo` entra aqui, e só aqui.** É `ID.ASSINATURA` (AD-5), montado a
+    partir da coluna `assinatura` sem recalcular — o mesmo aviso do
+    `_ingressos()` de `services/reserva.py`: a validação da portaria é quem
+    sempre recalcula (AD-5), esta rota só monta o texto que vira QR.
+
+    **`usado_em` entra também aqui**, e não só na lista: um canhoto já
+    utilizado que parecesse válido mandaria alguém para a fila da porta à
+    toa. A tela não desenha um veredito — isso é a Epic 5 —, mas não pode
+    fingir que o ingresso ainda vale.
+
+    `evento_cidade` entra e não entrava em `IngressoNaLista`: a ficha do
+    canhoto tem espaço para "casa e cidade" por extenso; a fila da lista já
+    aperta com quatro colunas.
+
+    **Sem `from_attributes`**, pelo mesmo motivo do `IngressoNaLista`: nenhum
+    dos campos de `Evento`/`Setor` é atributo de `Ingresso`, e `codigo` não é
+    coluna nenhuma — quem monta os três é `services/ingresso.py`.
+    """
+
+    id: UUID
+    evento_nome: str
+    evento_data_hora: datetime
+    evento_local: str
+    evento_cidade: str | None
+    setor_nome: str
+    titular_nome: str
+    codigo: str
+    usado_em: datetime | None

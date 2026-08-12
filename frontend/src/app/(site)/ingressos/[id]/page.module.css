@@ -1,0 +1,143 @@
+/* O canhoto cheio, com o QR (Story 4.2).
+
+   Duas colunas com um picote entre elas — o fio tracejado que separa o talão
+   (o que identifica) do corpo (o que se apresenta na porta). Sem card, sem
+   sombra, sem raio (UX-DR3): a separação é o próprio fio, como em toda tela
+   deste produto. */
+
+.pagina {
+  padding: 0 0 96px;
+}
+
+.voltar {
+  display: inline-block;
+  margin: 20px 0 6px;
+  padding: 6px 12px;
+  color: var(--fumaca);
+  font: 600 14px/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.voltar:hover {
+  color: var(--neon);
+}
+
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding: 0 12px;
+  font: 19px/1.5 var(--serif);
+}
+
+/* Neutro, não vermelho (EXPERIENCE.md#veredito): um canhoto já utilizado não
+   é fraude nem falha, é um ingresso que já cumpriu o que prometia. */
+.jaUtilizado {
+  max-width: 52ch;
+  margin: 22px 12px 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--fio2);
+  font: 17px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.jaUtilizado strong {
+  display: block;
+  font-weight: 400;
+  color: var(--cal);
+}
+
+/* ---- o canhoto ------------------------------------------------------------ */
+
+.canhoto {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  margin: 28px 12px 0;
+  border: 1px solid var(--fio);
+}
+
+.talao {
+  padding: 28px 26px;
+}
+
+.nomeDoEvento {
+  margin: 10px 0 6px;
+  font: 400 32px/1.1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.dataDoEvento {
+  font: 400 17px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.casa {
+  margin-top: 2px;
+  font: 400 15px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.dados {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--fio);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 16px;
+  row-gap: 10px;
+}
+
+.dados dt {
+  font: 600 11px/1.5 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.dados dd {
+  font: 400 17px/1.4 var(--serif);
+}
+
+/* O picote: fio tracejado entre o talão e o corpo. */
+.corpo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 28px 22px;
+  border-left: 2px dashed var(--fio);
+  background: var(--cal);
+  color: var(--breu);
+}
+
+.qr {
+  line-height: 0;
+}
+
+/* O payload tem ~80 caracteres; espaçado em blocos de 4 (ver o comentário no
+   componente) para o olho ter onde parar ao conferir contra a tela da porta.
+   `overflow-wrap` porque, mesmo em blocos, é uma coluna estreita no celular. */
+.codigo {
+  max-width: 34ch;
+  text-align: center;
+  font: 12px/1.6 var(--mono);
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .canhoto {
+    grid-template-columns: 1fr;
+  }
+
+  .corpo {
+    border-left: none;
+    border-top: 2px dashed var(--fio);
+  }
+
+  .nomeDoEvento {
+    font-size: 27px;
+  }
+}
