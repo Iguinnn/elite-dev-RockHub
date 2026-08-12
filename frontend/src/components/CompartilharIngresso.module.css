@@ -69,3 +69,9 @@
   border-color: var(--neon);
   color: var(--neon);
 }
+
+/* O gatilho da revogação (Story 4.4) reusa o `.acao` acima — mesma largura do
+   *Compartilhar*, logo abaixo do link, com o `<Botao variante="destrutivo">`
+   no mesmo `--brasa` da caixa de confirmação (decisão do Igor). Não há regra
+   própria para ele: forma, largura e estados vêm do `Botao`, e é isso que
+   mantém os dois botões desta ilha idênticos em tudo menos na tinta. */

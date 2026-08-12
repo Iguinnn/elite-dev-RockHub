@@ -178,6 +178,37 @@ def compartilhar(
     return _montar_detalhe(ingresso, evento, setor)
 
 
+def revogar_compartilhamento(
+    sessao: Session, cliente: Usuario, ingresso_id: UUID
+) -> None:
+    """Apaga o link público de um ingresso meu — a Story 4.4.
+
+    **Grava `NULL`, e não um estado "revogado".** A coluna volta a ser
+    exatamente o que era antes de o link existir, e é isso que torna token
+    revogado indistinguível de token que nunca existiu na rota pública: mesmo
+    `404`, mesma frase. Uma marca de "isto já foi um link" transformaria a
+    revogação num aviso de que existiu algo ali.
+
+    ⚠️ **Idempotente: sem link, não faz nada e não é erro.** Quem pediu para o
+    link não valer mais obteve exatamente isso, e o `DELETE` do HTTP é
+    idempotente por definição. Um `404` ou um `409` na segunda chamada faria a
+    tela ter de tratar um caso que, para quem clicou, é sucesso.
+
+    **Compartilhar de novo depois disto gera um token diferente**, porque o
+    `compartilhar` só reaproveita o que existe — e é aqui que o link antigo
+    morre de verdade: ninguém volta a recebê-lo.
+
+    Devolve `None`: a rota responde `204`, e não há corpo a montar. O `404` de
+    ingresso inexistente ou de outra pessoa vem do `_carregar_do_cliente`, o
+    mesmo das duas irmãs.
+    """
+    ingresso, _, _ = _carregar_do_cliente(sessao, cliente, ingresso_id)
+
+    if ingresso.share_token is not None:
+        ingresso.share_token = None
+        sessao.commit()
+
+
 def obter_por_share_token(sessao: Session, token: str) -> IngressoDetalhe:
     """O canhoto que um link compartilhado abre — **sem sessão nenhuma** (4.3).
 

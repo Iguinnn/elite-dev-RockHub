@@ -458,6 +458,249 @@ def test_a_rota_do_dono_continua_de_pe_ao_lado_da_publica(
 
 
 # --------------------------------------------------------------------------- #
+# Revogar: o link para de valer, e nada diz que ele existiu (Story 4.4)
+# --------------------------------------------------------------------------- #
+
+
+def test_revogar_apaga_o_token_e_o_link_antigo_passa_a_responder_404(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O AC central da 4.4: o endereço que funcionava para de funcionar."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv1@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv1@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+    token = cliente.post(f"/ingressos/{ingresso.id}/compartilhamento").json()[
+        "share_token"
+    ]
+    assert cliente.get(f"/ingressos/compartilhados/{token}").status_code == 200
+
+    resposta = cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    assert resposta.status_code == 204
+    # `204` é sem corpo — com corpo, a resposta é malformada.
+    assert resposta.content == b""
+    gravado = sessao.get(Ingresso, ingresso.id)
+    assert gravado is not None
+    assert gravado.share_token is None
+    assert cliente.get(f"/ingressos/compartilhados/{token}").status_code == 404
+
+
+def test_o_link_revogado_responde_igual_a_um_token_que_nunca_existiu(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ Mesmo status, mesmo código, mesma frase — é o que faz a revogação ser
+    um corte, e não um aviso de que existiu algo ali."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv2@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv2@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+    token = cliente.post(f"/ingressos/{ingresso.id}/compartilhamento").json()[
+        "share_token"
+    ]
+    cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+    cliente.cookies.clear()
+
+    do_revogado = cliente.get(f"/ingressos/compartilhados/{token}")
+    do_inexistente = cliente.get("/ingressos/compartilhados/token-que-nunca-existiu")
+
+    assert do_revogado.status_code == do_inexistente.status_code == 404
+    assert do_revogado.json() == do_inexistente.json()
+
+
+def test_compartilhar_depois_de_revogar_gera_um_token_diferente(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ O par exato do teste da idempotência: **com** link, devolve o mesmo;
+    **sem** link — inclusive por revogação —, gera outro. Se o token voltasse a
+    ser o mesmo, revogar não teria cortado nada."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv3@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv3@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+    primeiro = cliente.post(f"/ingressos/{ingresso.id}/compartilhamento").json()[
+        "share_token"
+    ]
+    cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    segundo = cliente.post(f"/ingressos/{ingresso.id}/compartilhamento").json()[
+        "share_token"
+    ]
+
+    assert segundo != primeiro
+    # E o primeiro continua morto: revogar não é "trocar de endereço".
+    cliente.cookies.clear()
+    assert cliente.get(f"/ingressos/compartilhados/{primeiro}").status_code == 404
+
+
+def test_revogar_duas_vezes_responde_204_nas_duas(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ Idempotência do `DELETE`: a segunda chamada não é erro nenhum.
+
+    Quem pediu para o link não valer mais obteve exatamente isso — e a tela não
+    precisa tratar um caso que, para quem clicou, é sucesso.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv4@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv4@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+    cliente.post(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    primeira = cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+    segunda = cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    assert primeira.status_code == segunda.status_code == 204
+
+
+def test_revogar_ingresso_nunca_compartilhado_responde_204(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Sem link nenhum desde o começo é o mesmo caso da segunda revogação."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv5@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv5@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    assert resposta.status_code == 204
+
+
+def test_revogar_nao_apaga_o_ingresso_nem_o_codigo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ O `DELETE` é do **link**, não do ingresso.
+
+    O endereço é `/compartilhamento`, e é só isso que ele remove: o canhoto
+    continua inteiro, com o mesmo `codigo` que vale na porta. Um `DELETE` que
+    encostasse na linha do ingresso apagaria a compra de alguém.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv6@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv6@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+    antes = cliente.get(f"/ingressos/{ingresso.id}").json()
+    cliente.post(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    depois = cliente.get(f"/ingressos/{ingresso.id}").json()
+    assert depois == antes
+    assert depois["codigo"] == antes["codigo"]
+    assert depois["share_token"] is None
+
+
+def test_revogar_o_link_de_outra_pessoa_responde_404_e_nao_apaga_nada(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ O teste que a `_carregar_do_cliente` existe para garantir: sem o
+    `Reserva.cliente_id` no mesmo `where`, qualquer cliente derrubaria o link
+    de qualquer outro."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv7@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv7@exemplo.com")
+    curioso = fabricar_usuario(PapelUsuario.CLIENTE, "curioso-rv7@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    alheio = _ingresso_gravado(sessao, dono, evento, setor)
+    _entrar(cliente, dono)
+    token = cliente.post(f"/ingressos/{alheio.id}/compartilhamento").json()[
+        "share_token"
+    ]
+    cliente.cookies.clear()
+    _entrar(cliente, curioso)
+
+    resposta = cliente.delete(f"/ingressos/{alheio.id}/compartilhamento")
+
+    assert resposta.status_code == 404
+    assert resposta.json()["erro"]["codigo"] == "INGRESSO_NAO_ENCONTRADO"
+    # O link do dono continua de pé.
+    cliente.cookies.clear()
+    assert cliente.get(f"/ingressos/compartilhados/{token}").status_code == 200
+
+
+def test_revogar_com_id_que_nao_e_uuid_responde_422(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "malformado-rv@exemplo.com")
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete("/ingressos/nao-e-uuid/compartilhamento")
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+def test_organizador_e_portaria_recebem_403_ao_revogar(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv8@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv8@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+
+    for papel, email in (
+        (PapelUsuario.ORGANIZADOR, "org-403-rv@exemplo.com"),
+        (PapelUsuario.PORTARIA, "porta-403-rv@exemplo.com"),
+    ):
+        usuario = fabricar_usuario(papel, email)
+        _entrar(cliente, usuario)
+
+        resposta = cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+        assert resposta.status_code == 403, papel
+        assert resposta.json()["erro"]["codigo"] == "SEM_PERMISSAO"
+        cliente.cookies.clear()
+
+
+def test_sem_cookie_recebe_401_ao_revogar(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-rv9@exemplo.com")
+    dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-rv9@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    ingresso = _ingresso_gravado(sessao, dono, evento, setor)
+
+    resposta = cliente.delete(f"/ingressos/{ingresso.id}/compartilhamento")
+
+    assert resposta.status_code == 401
+    assert resposta.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+
+def test_a_rota_publica_nao_aceita_delete(cliente: TestClient) -> None:
+    """⚠️ Revogar é do dono, e o endereço público não é um segundo caminho para
+    isso. Sem sessão, o `DELETE` ali não existe — e o `405` do `erros.py` já
+    responde no formato da API."""
+    resposta = cliente.delete("/ingressos/compartilhados/qualquer-token")
+
+    assert resposta.status_code == 405
+    assert resposta.json()["erro"]["codigo"] == "METODO_NAO_PERMITIDO"
+
+
+# --------------------------------------------------------------------------- #
 # O contrato declarado no OpenAPI
 # --------------------------------------------------------------------------- #
 
@@ -473,3 +716,14 @@ def test_o_openapi_declara_as_duas_rotas_do_compartilhamento(
     for rota in (criacao, publica):
         schema = rota["responses"]["200"]["content"]["application/json"]["schema"]
         assert schema["$ref"].endswith("/IngressoDetalhe")
+
+
+def test_o_openapi_declara_o_delete_sem_corpo_de_resposta(cliente: TestClient) -> None:
+    """`204` declarado, e **nenhum** `200` — a rota não devolve ingresso."""
+    especificacao = cliente.get("/openapi.json").json()
+
+    rota = especificacao["paths"]["/ingressos/{ingresso_id}/compartilhamento"]["delete"]
+
+    assert "204" in rota["responses"]
+    assert "content" not in rota["responses"]["204"]
+    assert "200" not in rota["responses"]

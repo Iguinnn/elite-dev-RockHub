@@ -265,7 +265,19 @@ development_status:
   # antes: o que salva a rota pública são os três segmentos do caminho contra os
   # dois da autenticada. Há teste provando as duas de pé.
   4-3-compartilhar-o-ingresso-por-link: done
-  4-4-revogar-o-link-compartilhado: backlog
+  # Commit 2: `DELETE /ingressos/{id}/compartilhamento` → 204 (o primeiro
+  # DELETE da API), `Botao` com a prop `variante` que o docstring dele previa
+  # desde a 1.2, `<Confirmacao>` com <dialog> nativo e o gatilho *Revogar link*
+  # na ilha. A janela do commit anterior fechou aqui.
+  # ⚠️ `showModal()`, nunca `show()`: o segundo não trava foco, não põe
+  # backdrop e não torna a página inerte — parece funcionar e não é modal.
+  # ⚠️ 204 também quando já não havia link: o DELETE é idempotente, e revogar
+  # duas vezes não é erro. Token revogado responde igual a token que nunca
+  # existiu — é isso que faz a revogação ser um corte, não um aviso.
+  # ⚠️ O `close()` do <dialog> ENFILEIRA o evento `close`; a ilha desliga o
+  # estado de confirmação na mão antes de chamar a API, senão a desmontagem
+  # do diálogo no sucesso engole o evento e a caixa reabre sozinha depois.
+  4-4-revogar-o-link-compartilhado: done
   epic-4-retrospective: optional
 
   # ---------- Epic 5: Portaria ----------

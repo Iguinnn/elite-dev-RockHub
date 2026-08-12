@@ -21,7 +21,7 @@ pessoa não é uma chamada que o service recusa, é uma chamada que não existe.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
@@ -223,3 +223,48 @@ def compartilhar_ingresso(
     pessoa, com a mesma frase do `GET` acima e pelo mesmo motivo.
     """
     return servico_de_ingresso.compartilhar(sessao, cliente, ingresso_id)
+
+
+@router.delete(
+    "/ingressos/{ingresso_id}/compartilhamento",
+    status_code=204,
+    response_class=Response,
+)
+def revogar_compartilhamento(
+    ingresso_id: UUID,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> Response:
+    """Faz o link deste ingresso parar de valer — a Story 4.4.
+
+    ⚠️ **O primeiro `DELETE` da API, e ele não quebra padrão nenhum.** Nunca
+    houve aqui uma operação com forma de remoção: `POST /reservas/{id}/pagamento`
+    não é "evitamos `DELETE`", é um comando que de fato não remove nada.
+    *Descartei* `POST /ingressos/{id}/revogar`, que preservaria a uniformidade
+    ao custo de esconder num verbo em português a operação idempotente que o
+    HTTP já nomeia — e que teria de ser explicada num comentário em vez de ser
+    lida no método. O par fica: `POST` cria o link, `DELETE` do mesmo endereço o
+    revoga.
+
+    ⚠️ **`204` também quando já não havia link.** O `DELETE` é idempotente por
+    definição, e quem pediu para o link não valer mais obteve exatamente isso.
+    Revogar duas vezes responde `204` nas duas — a segunda chamada não é erro
+    nenhum, é a mesma verdade dita de novo.
+
+    **`204`, e não `200` com o ingresso.** Não há estado novo para a tela
+    aprender: o link deixou de existir, e a ilha já sabe disso por ter pedido. O
+    `share_token` volta a `null` no próximo `GET`, que o `router.refresh()`
+    dispara.
+
+    **Depois disto, compartilhar gera um token diferente** — o link antigo não
+    volta, e é isso que faz a revogação ser um corte de verdade.
+
+    Erro possível: `404 INGRESSO_NAO_ENCONTRADO` — inexistente **ou** de outra
+    pessoa, como nas duas irmãs e pelo mesmo motivo.
+    """
+    servico_de_ingresso.revogar_compartilhamento(sessao, cliente, ingresso_id)
+    # `Response` explícito, e não `return None`: com `status_code=204` o
+    # FastAPI serializaria o `None` como o corpo `null`, e uma resposta `204`
+    # com corpo é resposta malformada — o `chamarApi` do frontend, que corta no
+    # `status === 204` antes de chamar `.json()`, nunca veria o defeito.
+    return Response(status_code=204)

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
+import Confirmacao from "@/components/Confirmacao";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { IngressoDetalhe } from "@/lib/ingressos";
 
@@ -22,10 +23,15 @@ import estilos from "./CompartilharIngresso.module.css";
  * token; o endereço sai de `window.location.origin`. O backend não conhece — nem
  * deve — o domínio do frontend, que muda a cada Preview da Vercel.
  *
- * ⚠️ **`router.refresh()` depois da mutação.** A página é Server Component:
- * sem o refresh, o estado desta ilha e o que o servidor renderizou divergem, e
- * um *Voltar* do navegador mostraria a tela de antes. É o mesmo aviso que o
- * `FormularioLogin` carrega desde a Story 1.4.
+ * ⚠️ **`router.refresh()` depois de cada mutação.** A página é Server
+ * Component: sem o refresh, o estado desta ilha e o que o servidor renderizou
+ * divergem, e um *Voltar* do navegador mostraria o link revogado ainda ali. É o
+ * mesmo aviso que o `FormularioLogin` carrega desde a Story 1.4.
+ *
+ * **A Story 4.4 acrescentou *Revogar link*, e ele é a única ação do produto que
+ * pergunta antes.** Compartilhar de novo devolve o mesmo token justamente para
+ * que revogar seja o único caminho que invalida um link — e um caminho que
+ * corta o acesso de quem já recebeu não pode acontecer por um clique distraído.
  */
 export default function CompartilharIngresso({
   ingresso,
@@ -38,6 +44,7 @@ export default function CompartilharIngresso({
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<React.ReactNode>(null);
   const [copiado, setCopiado] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
 
   // ⚠️ **Os dois nascem vazios e são preenchidos no `useEffect`, nunca no
   // `useState` inicial.** `window` e `navigator` não existem no servidor, e um
@@ -84,14 +91,50 @@ export default function CompartilharIngresso({
     } catch (erroCapturado) {
       // `instanceof` antes de ler `.codigo`: erro de rede não tem código.
       if (erroCapturado instanceof ErroDaApi) {
-        setErro(mensagemParaCodigo(erroCapturado.codigo));
+        setErro(mensagemParaCodigo(erroCapturado.codigo, MENSAGEM_DE_GERACAO));
       } else {
-        setErro(MENSAGEM_GENERICA);
+        setErro(MENSAGEM_DE_GERACAO);
       }
     } finally {
       // Aqui o botão **volta** sempre, ao contrário do `EscolhaDeIngressos`:
       // não há navegação nenhuma a caminho, a tela fica, e um botão preso em
       // "Compartilhando…" seria um botão morto.
+      setEnviando(false);
+    }
+  }
+
+  async function revogar() {
+    if (enviando) return;
+
+    // ⚠️ **Desliga a confirmação aqui, e não só pelo `close` do `<dialog>`.**
+    // O `close()` do navegador **enfileira** o evento em vez de disparar na
+    // hora, e o `setToken(null)` do sucesso desmonta o `<Confirmacao>` — se a
+    // desmontagem chegar antes do evento, o `aoFechar` nunca roda e este estado
+    // fica preso em `true`. O sintoma seria a caixa abrindo sozinha no clique
+    // seguinte em *Compartilhar*, sem ninguém ter pedido.
+    setConfirmando(false);
+    setErro(null);
+    setEnviando(true);
+
+    try {
+      // `204` sem corpo: o `chamarApi` corta antes do `.json()` e devolve
+      // `undefined`. Não há estado novo para aprender — o link deixou de
+      // existir, e quem pediu isso foi esta tela.
+      await chamarApi<void>(`/ingressos/${ingresso.id}/compartilhamento`, {
+        method: "DELETE",
+      });
+      setToken(null);
+      // O botão de copiar podia estar dizendo "Copiado" de um link que não
+      // existe mais.
+      setCopiado(false);
+      router.refresh();
+    } catch (erroCapturado) {
+      if (erroCapturado instanceof ErroDaApi) {
+        setErro(mensagemParaCodigo(erroCapturado.codigo, MENSAGEM_DE_REVOGACAO));
+      } else {
+        setErro(MENSAGEM_DE_REVOGACAO);
+      }
+    } finally {
       setEnviando(false);
     }
   }
@@ -139,6 +182,38 @@ export default function CompartilharIngresso({
               </button>
             )}
           </div>
+
+          {/* **O gatilho é o próprio botão destrutivo, no mesmo `--brasa` da
+              confirmação** (decisão do Igor). Eu tinha posto um gatilho
+              discreto que só ficava vermelho no hover, para o vermelho aparecer
+              junto com a intenção de clicar; ele preferiu a cor desde o início,
+              e a consistência com o botão que confirma é o argumento a favor —
+              a ação é a mesma, e a tinta anuncia a consequência antes do
+              clique, não depois. */}
+          <div className={estilos.acao}>
+            <Botao
+              type="button"
+              variante="destrutivo"
+              onClick={() => setConfirmando(true)}
+              disabled={enviando}
+            >
+              {enviando ? "Revogando…" : "Revogar link"}
+            </Botao>
+          </div>
+
+          {/* ⚠️ **Cancelar não chama a API.** Fechar a caixa pelo `Esc` ou
+              pelo *Cancelar* só desliga este estado — a única linha que fala
+              com o servidor é o `aoConfirmar`. (Clique no backdrop não fecha:
+              é o comportamento nativo do `<dialog>`, e mantê-lo é de propósito
+              numa ação sem volta.) */}
+          <Confirmacao
+            aberta={confirmando}
+            titulo="Revogar este link?"
+            consequencia="Quem já recebeu o link deixa de conseguir abrir o ingresso. Você pode gerar um novo depois, mas ele terá outro endereço."
+            rotuloDaAcao="Revogar link"
+            aoConfirmar={revogar}
+            aoFechar={() => setConfirmando(false)}
+          />
         </>
       ) : (
         <>
@@ -162,13 +237,27 @@ export default function CompartilharIngresso({
   );
 }
 
-const MENSAGEM_GENERICA =
+const MENSAGEM_DE_GERACAO =
   "Não foi possível gerar o link agora. Tente de novo em instantes.";
+
+/**
+ * ⚠️ **Uma frase própria para a falha ao revogar, e não a de gerar.** As duas
+ * ações moram na mesma ilha e falham pelos mesmos códigos, mas "não foi
+ * possível gerar o link" depois de clicar em *Revogar* diria à pessoa que ela
+ * fez outra coisa — e, pior, deixaria no ar se o link ainda vale. A frase daqui
+ * responde a única pergunta que importa nesse momento: **ele continua valendo**.
+ */
+const MENSAGEM_DE_REVOGACAO =
+  "Não foi possível revogar o link agora, e ele continua valendo. Tente de novo em instantes.";
 
 /**
  * Mesma convenção do resto do frontend: **o texto vem do `codigo`, nunca da
  * `mensagem` do servidor.** A `mensagem` é para humano e pode mudar sem quebrar
  * ninguém; o `codigo` é a parte estável do contrato.
+ *
+ * A frase genérica chega por parâmetro porque **as duas ações desta ilha falham
+ * pelos mesmos códigos e precisam dizer coisas diferentes** — ver o comentário
+ * da `MENSAGEM_DE_REVOGACAO` logo acima.
  *
  * ⚠️ `NAO_AUTENTICADO` e `SEM_PERMISSAO` entram desde a primeira linha, e não
  * como remendo: foi o buraco que o code review da Epic 2 encontrou no
@@ -176,12 +265,12 @@ const MENSAGEM_GENERICA =
  * tela aberta — sem estas duas entradas, o `401` cairia na frase genérica
  * "tente de novo em instantes", e tentar de novo daria `401` outra vez.
  */
-function mensagemParaCodigo(codigo: string): string {
+function mensagemParaCodigo(codigo: string, generica: string): string {
   if (codigo === "INGRESSO_NAO_ENCONTRADO") {
     return "Esse ingresso não está mais disponível. Recarregue a página.";
   }
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return "Sua sessão expirou. Entre de novo para compartilhar.";
+    return "Sua sessão expirou. Entre de novo para continuar.";
   }
-  return MENSAGEM_GENERICA;
+  return generica;
 }

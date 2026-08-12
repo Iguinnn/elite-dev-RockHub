@@ -47,3 +47,22 @@
   opacity: 0.35;
   cursor: default;
 }
+
+/* A variante destrutiva (Story 4.4): fundo `--brasa`, do DESIGN.md#botao.
+
+   **Só a tinta muda.** Forma, tipografia, entreletra, hover, `:active` e
+   `:disabled` continuam vindo do `.botao` acima — é por isso que esta regra
+   tem duas linhas e não é um segundo botão. Um destrutivo com forma própria
+   diria que ele é outra categoria de controle, quando ele é a mesma ação com
+   outra consequência.
+
+   ⚠️ **`--brasa`, e não uma nona cor.** É a mesma tinta de erro, esgotado e
+   pagamento recusado, e é ela que o DESIGN.md nomeia. O `globals.css` continua
+   sendo o único lugar do frontend onde cor é declarada por valor.
+
+   O texto continua `--breu`, herdado do `.botao`: sobre o `--brasa` isso dá
+   contraste de sobra, e é a mesma relação do primário — tinta forte, letra do
+   chão da página. */
+.destrutivo {
+  background: var(--brasa);
+}

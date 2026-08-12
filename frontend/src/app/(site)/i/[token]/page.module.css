@@ -46,6 +46,25 @@
   font: 19px/1.5 var(--serif);
 }
 
+/* O link que não vale mais (Story 4.4). Mesmo padrão de estado vazio do
+   `not-found.module.css` e da raiz: kicker, frase em serifada, e a saída é a
+   navegação do masthead — sem ilustração, sem botão grande de chamada.
+
+   A frase é `--cal` e a orientação é `--fumaca`: quem abriu precisa ler
+   primeiro o que aconteceu, e só depois o que fazer. */
+.frase {
+  max-width: 46ch;
+  margin: 12px 12px 0;
+  font: 19px/1.5 var(--serif);
+}
+
+.detalhe {
+  max-width: 46ch;
+  margin: 10px 12px 0;
+  font: 16px/1.55 var(--serif);
+  color: var(--fumaca);
+}
+
 /* ⚠️ **`miolo`, e nunca `corpo`** — o mesmo motivo escrito por extenso em
    `(site)/ingressos/[id]/page.module.css`: o `<Canhoto>` tem um `.corpo`, e
    este `div` é ancestral dele. */

@@ -1,5 +1,3 @@
-import { notFound } from "next/navigation";
-
 import Canhoto from "@/components/Canhoto";
 import { horaDeEntrada } from "@/lib/formato";
 import { obterIngressoCompartilhado } from "@/lib/ingressos";
@@ -26,6 +24,10 @@ import estilos from "./page.module.css";
  * O canhoto é **o mesmo** `<Canhoto>` do dono, `titular_nome` e `usado_em`
  * inclusive — um canhoto que escondesse o titular ou fingisse que o ingresso
  * ainda vale seria um segundo canhoto, e a diferença apareceria na porta.
+ *
+ * **Três estados, e nenhum deles é a 404 do projeto**: o canhoto, o link que
+ * não vale mais e a indisponibilidade da API. O do meio é o que a Story 4.4
+ * acrescentou — ver o comentário longo dentro da função.
  */
 export default async function IngressoCompartilhado({
   params,
@@ -34,11 +36,32 @@ export default async function IngressoCompartilhado({
 
   const resultado = await obterIngressoCompartilhado(token);
 
-  // Link revogado e link que nunca existiu caem os dois aqui, com a 404 do
-  // projeto — é o que faz a revogação da Story 4.4 ser um corte, e não um
-  // aviso de que existiu algo ali.
+  // ⚠️ **Tela própria, e não o `notFound()` do projeto** (decisão do Igor, na
+  // conferência da 4.4). A 404 genérica — "este endereço não existe, confira o
+  // link" — manda quem recebeu o link conferir um endereço que ele copiou
+  // certo, e não diz a única coisa acionável: o link foi cortado, peça outro.
+  //
+  // ⚠️ **A frase é a mesma para link revogado e para token que nunca
+  // existiu**, e é isso que preserva a decisão da techspec: os dois casos
+  // continuam indistinguíveis daqui de fora, porque o backend responde o mesmo
+  // `404 LINK_NAO_ENCONTRADO` para ambos e não guarda nada que diga que um
+  // link existiu. Distinguir de verdade exigiria gravar a revogação numa
+  // coluna — o oposto de escrever `NULL` — e aí o endereço morto viraria um
+  // oráculo de "este ingresso existe". O custo assumido é que um token
+  // digitado errado também lê "revogado"; é o caso raro, e a orientação que a
+  // frase dá (peça um link novo) continua sendo a certa nele.
   if (resultado.estado === "nao-encontrado") {
-    notFound();
+    return (
+      <section className={estilos.pagina}>
+        <p className={`kicker ${estilos.procedencia}`}>Link indisponível</p>
+        <p className={estilos.frase}>
+          Link revogado pelo proprietário do ingresso.
+        </p>
+        <p className={estilos.detalhe}>
+          Peça um link novo a quem compartilhou o ingresso com você.
+        </p>
+      </section>
+    );
   }
 
   if (resultado.estado === "indisponivel") {
