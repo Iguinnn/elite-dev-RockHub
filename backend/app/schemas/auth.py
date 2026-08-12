@@ -19,7 +19,7 @@ from app.models.usuario import PapelUsuario
 # clássica de recusar o e-mail de alguém real. Esta regra existe para pegar o
 # erro de digitação óbvio — `igor`, `igor@`, `igor@exemplo` —, e a decisão de
 # não instalar `email-validator` por causa disso está no README da raiz.
-_FORMATO_DE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+FORMATO_DE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _normalizar_email(valor: object) -> object:
@@ -76,7 +76,7 @@ class CadastroEntrada(BaseModel):
     @field_validator("email")
     @classmethod
     def _conferir_formato_do_email(cls, valor: str) -> str:
-        if not _FORMATO_DE_EMAIL.match(valor):
+        if not FORMATO_DE_EMAIL.match(valor):
             raise ValueError("e-mail inválido")
         return valor
 

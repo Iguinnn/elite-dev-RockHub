@@ -177,8 +177,20 @@ development_status:
   # `pagar_reserva`: a expiração da 3.7 dispara dentro da rota que a 3.8 cria, e a
   # emissão da 3.9 acontece na mesma transação da transição para PAGA (AD-14).
   # O commit continua um por story — a spec agrupa, o histórico não.
-  3-7-reserva-abandonada-devolve-o-estoque: backlog
-  3-8-pagar-com-aprovacao-e-com-recusa: backlog
+  3-7-reserva-abandonada-devolve-o-estoque: review
+  # Commit 2: `PaymentGateway` (Protocol) + `PagamentoSimulado`, a rota
+  # `POST /reservas/{id}/pagamento` e o checkout. Fecha o AC1 da 3.7, que o
+  # commit da 3.7 deixou aberto de propósito. Decisões do Igor: `402` para a
+  # recusa (não é conflito de estado, é resposta do gateway); checkout com
+  # nome/e-mail/CPF/telefone mais escolha entre cartão e Pix, com o Pix gerando
+  # QR e código falsos na tela e um botão "cobrança paga" como atalho do
+  # avaliador; nada persistido além do nome; e CPF só de formato — o dígito
+  # verificador recusaria o dado fictício que a própria tela manda usar.
+  # ⚠️ A armadilha da story: os dois caminhos de recusa dão `commit` **antes**
+  # do `raise`, o oposto do `criar()` da 3.6. A reserva precisa ficar
+  # `RECUSADA`/`EXPIRADA` com o estoque devolvido; sem o commit, o status sai
+  # idêntico e o estoque nunca volta — falha invisível fora do banco.
+  3-8-pagar-com-aprovacao-e-com-recusa: review
   3-9-receber-ingressos-com-codigo-nao-forjavel: backlog
   epic-3-retrospective: optional
 

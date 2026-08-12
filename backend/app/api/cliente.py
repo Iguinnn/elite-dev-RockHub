@@ -27,8 +27,10 @@ from sqlalchemy.orm import Session
 from app.core.db import obter_sessao
 from app.core.dependencias import exigir_papel
 from app.models.usuario import PapelUsuario, Usuario
+from app.schemas.pagamento import PagamentoEntrada
 from app.schemas.reserva import ReservaEntrada, ReservaSaida
 from app.services import reserva as servico_de_reserva
+from app.services.pagamento import PaymentGateway, obter_gateway
 
 router = APIRouter(tags=["cliente"])
 
@@ -98,3 +100,48 @@ def obter_reserva(
     `preco_unitario_centavos` e `total_centavos` são a compra, não o inventário.
     """
     return servico_de_reserva.obter(sessao, cliente, reserva_id)
+
+
+@router.post("/reservas/{reserva_id}/pagamento", response_model=ReservaSaida)
+def pagar_reserva(
+    reserva_id: UUID,
+    dados: PagamentoEntrada,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+    gateway: PaymentGateway = Depends(obter_gateway),
+) -> ReservaSaida:
+    """Cobra a reserva e a leva a `PAGA` ou `RECUSADA` (Story 3.8).
+
+    **Ação sobre um recurso que já tem endereço**, e não `POST /pagamentos` com
+    `reserva_id` no corpo — que inventaria um recurso sem tabela — nem
+    `PATCH /reservas/{id}` com o estado, que deixaria o cliente **nomear** o
+    estado de destino. O AD-4 diz que transição é do servidor; a URL não pode
+    dizer o contrário.
+
+    **`200`, e não `201`**: nada nasce com endereço próprio aqui. A reserva
+    continua sendo a mesma, com outro estado — e é ela que volta no corpo, para
+    a tela não precisar de uma segunda chamada para saber o que aconteceu.
+
+    **O gateway entra por dependência** (AD-10). É o que permite ao teste trocar
+    a implementação com `dependency_overrides`, e é a prova prática de que este
+    caminho não conhece `PagamentoSimulado`.
+
+    **Os erros possíveis:**
+
+    - `404 RESERVA_NAO_ENCONTRADA` — inexistente **ou** de outra pessoa, como no
+      `GET` acima e pelo mesmo motivo
+    - `409 RESERVA_EXPIRADA` — o prazo acabou. A reserva vira `EXPIRADA`, o
+      estoque volta e **nada é cobrado** (AC1 da Story 3.7)
+    - `409 RESERVA_NAO_PENDENTE` — já `PAGA`, `RECUSADA` ou `CANCELADA`.
+      Pagamento reprocessado cai aqui, e é por isso que ele não emite ingresso
+      novo (AD-14)
+    - `402 PAGAMENTO_RECUSADO` — cartão terminado em `0002` (AD-10). A reserva
+      vira `RECUSADA` e o estoque volta
+    - `422 DADOS_INVALIDOS` — corpo malformado, inclusive "meio é cartão e
+      faltou o número"
+
+    ⚠️ **O `402` é o único status desta API fora da tabela de sempre**, e é
+    decisão do Igor: recusa de pagamento não é conflito de estado. O **corpo**
+    continua `{"erro": {"codigo", "mensagem"}}`, sem exceção ao `core/erros.py`.
+    """
+    return servico_de_reserva.pagar(sessao, cliente, reserva_id, dados, gateway)

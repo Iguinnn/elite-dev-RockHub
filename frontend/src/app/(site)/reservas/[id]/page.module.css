@@ -124,14 +124,52 @@
   white-space: nowrap;
 }
 
-/* A frase que explica o prazo — e, por ora, o único conteúdo abaixo do total. É
-   aqui que o pagamento da Story 3.8 entra. */
+/* A frase que explica o prazo, e o caminho de volta quando a reserva já morreu.
+   Abaixo dela entra o checkout da Story 3.8. */
 .nota {
   max-width: 52ch;
-  margin: 0;
+  margin: 0 0 8px;
   padding: 0 12px;
   font: 16px/1.6 var(--serif);
   color: var(--fumaca);
+}
+
+.nota a {
+  color: var(--neon);
+}
+
+/* ---- o desfecho: as três frases de estado (Story 3.8) ------------------- */
+
+/* ⚠️ **Fio à esquerda, e a palavra dizendo o que a cor diz** (UX-DR9): quem não
+   distingue verde de vermelho lê "Pagamento aprovado" e "Pagamento recusado" do
+   mesmo jeito. A cor é leitura periférica, nunca a informação.
+
+   `--verde` é o token que o `globals.css` reservou para "o veredito VÁLIDO e a
+   confirmação de pagamento", e `--brasa` para "erro, esgotado, pagamento
+   recusado" — os dois usados aqui pela primeira vez, no lugar para o qual foram
+   criados. */
+.confirmacao,
+.recusa {
+  max-width: 52ch;
+  margin: 22px 12px 4px;
+  padding: 2px 0 2px 14px;
+  font: 17px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.confirmacao {
+  border-left: 2px solid var(--verde);
+}
+
+.recusa {
+  border-left: 2px solid var(--brasa);
+}
+
+.confirmacao strong,
+.recusa strong {
+  display: block;
+  font-weight: 400;
+  color: var(--cal);
 }
 
 /* ---- abaixo de 700px ----------------------------------------------------- */

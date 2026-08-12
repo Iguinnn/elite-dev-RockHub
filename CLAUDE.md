@@ -30,7 +30,7 @@ Apresentar trade-offs, alternativas e consequências é bem-vindo. Escolher no l
 
 Da Story 3.7 em diante eu não escrevo mais arquivo de story. Escrevo uma **techspec que cobre um
 grupo de stories**, no formato de [docs/techspec-filtro-do-catalogo.md](docs/techspec-filtro-do-catalogo.md),
-e implemento a partir dela. As specs moram em `docs/techspec-<assunto>.md`.
+e implemento a partir dela, **em outra sessão**. As specs moram em `docs/techspec-<assunto>.md`.
 
 **Por quê:** medi o ritmo pelos arquivos da Epic 3 — ~73 min por story, ponta a ponta. As stories
 tinham entre 8,6 e 11,4 mil palavras; a techspec do filtro do catálogo resolveu trabalho equivalente
@@ -52,6 +52,13 @@ revogável), 5.2+5.3+5.5 (um endpoint de validação, três formas de entrada).
 gate de um commit, e o `sprint-status.yaml` continua marcando story a story. O histórico do git é
 parte da avaliação e não muda de granularidade.
 
+🛑 **Um commit por vez, e pare.** Terminado um commit, rode a suíte inteira, mostre o resultado e
+**avise que está pronto para o Igor commitar** — sem escrever README, sem tocar no próximo. Só emende
+o seguinte depois que ele mandar. **Uma spec cobrir três stories não autoriza implementá-las de uma
+vez**: a tentação é exatamente essa, porque o documento é um só, e ceder a ela custa o commit por
+story — a única coisa que a spec agrupada não pode custar. Esta regra vale para toda techspec, e
+cada spec nova a repete logo abaixo da tabela de commits.
+
 **Seis seções, teto de ~2.500 palavras por spec:**
 
 1. **Escopo e commits** — quais commits saem daqui
@@ -64,11 +71,17 @@ parte da avaliação e não muda de granularidade.
 Fica de fora o que a story tinha e ninguém lia: contexto reexplicado, tarefas numeradas, Dev Agent
 Record, referências cruzadas ao planejamento, seção de testes narrada.
 
-**Sempre em dois passos.** Passo 1: leia os ACs do `epics.md`, os ADs vinculantes e o código que já
-existe, e volte **só com a lista de decisões em aberto** — cada uma com as opções, a consequência de
-cada lado e sua leitura. Nada de spec ainda. Passo 2, depois que eu responder: a spec com as
-respostas dentro, e então o código. Despejar dez decisões no fim de um documento pronto é como se
-perde a qualidade que o formato longo garantia.
+**Sempre em dois passos, e o segundo termina na spec.** Passo 1: leia os ACs do `epics.md`, os ADs
+vinculantes e o código que já existe, e volte **só com a lista de decisões em aberto** — cada uma com
+as opções, a consequência de cada lado e sua leitura. Nada de spec ainda. Passo 2, depois que eu
+responder: a spec com as respostas dentro — **e para aí**. Despejar dez decisões no fim de um
+documento pronto é como se perde a qualidade que o formato longo garantia.
+
+⚠️ **Escrever a spec não é autorização para implementar.** A sessão que produz a techspec entrega o
+arquivo e para; quem codifica é **outra sessão**, que recebe a spec pronta como entrada. É a divisão
+de modelos logo abaixo (Opus especifica, Sonnet implementa) e é o que mantém o passo 1 valendo
+alguma coisa — quem acabou de decidir dez coisas sozinho é o pior revisor delas. Se eu quiser que a
+mesma sessão emende o código, eu mando; sem isso, entregue a spec e pergunte.
 
 **Este formato vence o template de qualquer skill.** Se a sessão começar por `bmad-spec`,
 `bmad-quick-dev` ou outra, é a skill que se adapta a estas seis seções — nunca o contrário.

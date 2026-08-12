@@ -1,0 +1,202 @@
+/* O checkout da reserva (Story 3.8).
+
+   ⚠️ **Nenhum hex aqui — só `var(--token)`.** Sem card, sem sombra, sem raio
+   (UX-DR3): quem separa os blocos é o fio de 1px, como em toda tela do produto.
+   O recuo lateral de 12px é o mesmo da página, e é ele que faz os fios correrem
+   de ponta a ponta da coluna. */
+
+.formulario {
+  padding: 0 12px;
+  border-top: 1px solid var(--fio);
+  margin-top: 8px;
+  padding-top: 26px;
+}
+
+.titulo {
+  margin: 0 0 4px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* ---- o aviso de ambiente ------------------------------------------------- */
+
+/* ⚠️ **Fio à esquerda, não caixa amarela.** O produto não tem card nem cor de
+   alerta de painel administrativo; o que marca o bloco é o mesmo filete de 1px
+   de todo o resto, em `--neon` para ele não se perder no meio do formulário. */
+.aviso {
+  margin: 0 0 26px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--neon);
+  max-width: 60ch;
+  font: 15px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.aviso strong {
+  color: var(--cal);
+  font-weight: 400;
+}
+
+/* ---- os dois campos por linha -------------------------------------------- */
+
+.dupla {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+
+/* ---- a escolha do meio --------------------------------------------------- */
+
+.meios {
+  margin: 12px 0 24px;
+  padding: 0;
+  border: 0;
+}
+
+/* `<legend>` com a mesma anatomia do rótulo do `Campo`: a pergunta não pode
+   parecer de outro sistema que o resto do formulário. */
+.legenda {
+  margin-bottom: 10px;
+  padding: 0;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.opcoes {
+  display: flex;
+  gap: 10px;
+}
+
+/* O rótulo inteiro é o alvo — o `<input type="radio">` fica visualmente
+   escondido, mas **presente e focável** (nada de `display: none`, que o tiraria
+   do Tab e do leitor de tela). */
+.opcao {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px 12px;
+  border: 1px solid var(--fio);
+  background: var(--breu2);
+  color: var(--fumaca);
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.opcao:hover {
+  border-color: var(--fumaca);
+}
+
+/* O estado escolhido **não é dado só por cor** (UX-DR9): a borda muda junto, e
+   o `aria-checked` do rádio é o que atravessa para quem não vê nenhum dos dois. */
+.opcaoAtiva {
+  border-color: var(--neon);
+  color: var(--neon);
+}
+
+/* `clip` em vez de `display: none`/`visibility: hidden`: o rádio continua
+   focável pelo teclado e anunciado pelo leitor de tela. */
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- a área que expande -------------------------------------------------- */
+
+.expansao {
+  padding-top: 4px;
+  border-top: 1px solid var(--fio);
+  margin-bottom: 8px;
+}
+
+.dicaDoCartao {
+  margin: 0 0 20px;
+  padding-top: 16px;
+  font: 14px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.dicaDoCartao code {
+  font: 600 13px/1 var(--mono);
+  color: var(--cal);
+}
+
+/* ---- o Pix --------------------------------------------------------------- */
+
+.pix {
+  display: flex;
+  gap: 26px;
+  align-items: flex-start;
+  padding: 22px 0 4px;
+}
+
+/* Fundo claro atrás do QR, e é a única superfície clara do produto: leitor de QR
+   precisa de contraste na direção certa, e código escuro sobre breu não lê. */
+.qr {
+  flex-shrink: 0;
+  padding: 12px;
+  background: var(--cal);
+  line-height: 0;
+}
+
+.pixTexto {
+  min-width: 0;
+}
+
+.rotuloDoCodigo {
+  display: block;
+  margin-bottom: 8px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* `overflow-wrap` porque o código é uma palavra só de 60 caracteres: sem ele,
+   ele estoura a coluna no celular. */
+.codigo {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--fio);
+  background: var(--breu2);
+  font: 13px/1.5 var(--mono);
+  color: var(--cal);
+  overflow-wrap: anywhere;
+}
+
+/* ---- a ação -------------------------------------------------------------- */
+
+.acao {
+  padding: 22px 0 0;
+  border-top: 1px solid var(--fio);
+  margin-top: 22px;
+}
+
+@media (max-width: 700px) {
+  /* Um campo por linha: dois campos de 16px num celular espremem o rótulo em
+     duas linhas e o valor em três. */
+  .dupla {
+    grid-template-columns: 1fr;
+  }
+
+  /* O QR desce para cima do código — lado a lado sobra menos de 10ch para o
+     código copia-e-cola. */
+  .pix {
+    flex-direction: column;
+    gap: 18px;
+  }
+}

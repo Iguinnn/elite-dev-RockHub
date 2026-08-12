@@ -15,6 +15,12 @@ caindo no vão entre eles.
 
 Três commits, na ordem numerada. Cada um passa na suíte sozinho.
 
+🛑 **Um commit por vez, e pare.** Terminado um commit, rode a suíte inteira, mostre o resultado e
+**avise que está pronto para eu commitar** — sem escrever README, sem tocar no seguinte. Só emende o
+próximo depois de eu mandar. Esta spec cobrir três stories **não** autoriza implementá-las de uma
+vez: o histórico do git é parte da avaliação, e o commit por story é o que a spec agrupada não pode
+custar.
+
 | Commit | Story | O que entrega |
 |---|---|---|
 | 1 | 3.7 | `expirar_vencidas()` no service e a chamada dela em `criar()` |

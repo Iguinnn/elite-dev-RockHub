@@ -56,14 +56,16 @@ from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
 from app.models.usuario import Usuario
+from app.schemas.pagamento import PagamentoEntrada
 from app.schemas.reserva import ItemDaReservaSaida, ReservaEntrada, ReservaSaida
+from app.services.pagamento import PaymentGateway
 
 # ⚠️ **Importado, nunca redeclarado** (decisão registrada na Story 3.4). O
 # docstring do `EventoPublico` diz, com todas as letras, que esta story cobraria
@@ -82,6 +84,74 @@ from app.services.evento import MAXIMO_POR_COMPRA
 # na Railway para um cenário de demonstração, e a expiração da Story 3.7 é
 # provada por teste, que é onde ela precisa ser verdade.
 PRAZO_DE_RESERVA_MINUTOS = 10
+
+
+def _transicionar(
+    sessao: Session,
+    reserva_id: UUID,
+    *,
+    de: EstadoReserva,
+    para: EstadoReserva,
+    condicao_extra: ColumnElement[bool] | None = None,
+) -> bool:
+    """Muda o estado da reserva **condicionado ao estado anterior** (AD-4).
+
+    Este é o único lugar do projeto que escreve `reserva.estado`, e existe para
+    a regra do AD-4 ser verdade por construção em vez de por disciplina de quem
+    escrever a próxima transição. Devolve se **esta** chamada foi a que mudou:
+    `False` não é erro, é "alguém chegou primeiro".
+
+    É daqui que sai, de graça, a garantia que o AC de reprocessamento da Story
+    3.9 pede — um pagamento executado duas vezes só emite ingresso na execução
+    que vence o `rowcount`.
+    """
+    condicoes = [Reserva.id == reserva_id, Reserva.estado == de.value]
+    if condicao_extra is not None:
+        condicoes.append(condicao_extra)
+
+    resultado = sessao.execute(
+        update(Reserva)
+        .where(*condicoes)
+        .values(estado=para.value)
+        # Os `Reserva` carregados ficam com o estado velho na sessão; quem
+        # precisa do novo relê. Sincronizar aqui seria trabalho para manter em
+        # dia um objeto que este service não consulta mais.
+        .execution_options(synchronize_session=False)
+    )
+    return resultado.rowcount == 1
+
+
+def _devolver_estoque(sessao: Session, reserva_id: UUID) -> None:
+    """Solta ao estoque tudo o que os itens desta reserva seguravam.
+
+    ⚠️ **Chamado só por quem venceu um `_transicionar`.** Devolver sem ter
+    vencido a transição é devolver duas vezes quando duas conexões colhem a
+    mesma reserva — a transição é o cadeado, e esta função é o que ele protege.
+
+    ⚠️ **Todos os itens, sempre.** A colheita pode ter sido disparada por um
+    setor só, mas a reserva expira inteira: deixar um item de fora a marcaria
+    `EXPIRADA` com estoque preso para sempre, porque nada volta a colher uma
+    reserva que já saiu de `PENDENTE`.
+    """
+    itens = sessao.scalars(
+        select(ItemReserva).where(ItemReserva.reserva_id == reserva_id)
+    ).all()
+
+    for item in itens:
+        sessao.execute(
+            update(Setor)
+            .where(
+                Setor.id == item.setor_id,
+                # ⚠️ Condicional também na devolução — o AD-3 vale para **toda**
+                # escrita em estoque, não só para a que consome.
+                # `vendidos - quantidade` calculado em Python parece seguro
+                # porque "devolver nunca estoura", e é a mesma quebra com o
+                # resultado certo em 99% dos casos.
+                Setor.vendidos >= item.quantidade,
+            )
+            .values(vendidos=Setor.vendidos - item.quantidade)
+            .execution_options(synchronize_session=False)
+        )
 
 
 def expirar_vencidas(sessao: Session, setor_ids: Collection[UUID]) -> None:
@@ -134,40 +204,17 @@ def expirar_vencidas(sessao: Session, setor_ids: Collection[UUID]) -> None:
     ).all()
 
     for reserva_id in ids_vencidas:
-        transicao = sessao.execute(
-            update(Reserva)
-            .where(
-                Reserva.id == reserva_id,
-                # Condicionada ao estado anterior, sempre (AD-4). Zero linhas
-                # aqui não é erro: é "alguém chegou primeiro".
-                Reserva.estado == EstadoReserva.PENDENTE.value,
-            )
-            .values(estado=EstadoReserva.EXPIRADA.value)
-            .execution_options(synchronize_session=False)
-        )
-
-        if transicao.rowcount == 0:
-            continue
-
-        itens = sessao.scalars(
-            select(ItemReserva).where(ItemReserva.reserva_id == reserva_id)
-        ).all()
-
-        for item in itens:
-            sessao.execute(
-                update(Setor)
-                .where(
-                    Setor.id == item.setor_id,
-                    # ⚠️ Condicional também na devolução — o AD-3 vale para
-                    # **toda** escrita em estoque, não só para a que consome.
-                    # `vendidos - quantidade` calculado em Python parece seguro
-                    # porque "devolver nunca estoura", e é a mesma quebra com o
-                    # resultado certo em 99% dos casos.
-                    Setor.vendidos >= item.quantidade,
-                )
-                .values(vendidos=Setor.vendidos - item.quantidade)
-                .execution_options(synchronize_session=False)
-            )
+        if _transicionar(
+            sessao,
+            reserva_id,
+            de=EstadoReserva.PENDENTE,
+            para=EstadoReserva.EXPIRADA,
+            # A condição de prazo entra **na mesma linha da transição**, e não
+            # num `if` antes dela: entre ler "venceu" e gravar "expirou" cabe
+            # outra conexão fazendo o mesmo.
+            condicao_extra=Reserva.expira_em < func.now(),
+        ):
+            _devolver_estoque(sessao, reserva_id)
 
 
 def criar(sessao: Session, cliente: Usuario, dados: ReservaEntrada) -> ReservaSaida:
@@ -382,6 +429,150 @@ def obter(sessao: Session, cliente: Usuario, reserva_id: UUID) -> ReservaSaida:
     # Impossível pelo banco: `reserva.evento_id` é FK sem `ondelete`, e apagar um
     # evento com reserva é recusado pelo Postgres (Story 3.5). O `assert` diria a
     # mesma coisa e sumiria com `-O`.
+    if evento is None:  # pragma: no cover
+        raise ErroDeDominio(
+            "RESERVA_NAO_ENCONTRADA",
+            "Essa reserva não existe ou não é sua.",
+            status_http=404,
+        )
+
+    return _para_saida(reserva, evento)
+
+
+def pagar(
+    sessao: Session,
+    cliente: Usuario,
+    reserva_id: UUID,
+    dados: PagamentoEntrada,
+    gateway: PaymentGateway,
+) -> ReservaSaida:
+    """Cobra a reserva e a leva a `PAGA` ou `RECUSADA` — a Story 3.8.
+
+    ⚠️ **Aqui o `commit` acontece ANTES de duas das recusas, e isso é o oposto
+    do `criar()` logo acima.** Lá, levantar `ErroDeDominio` é a forma de desfazer
+    os `UPDATE` já aplicados — o "tudo ou nada". Aqui, dois caminhos de recusa
+    **precisam** que o trabalho sobreviva: reserva vencida vira `EXPIRADA` e
+    devolve estoque *antes* de responder `409`, e pagamento recusado vira
+    `RECUSADA` e devolve estoque *antes* de responder `402`. Sem o `commit`
+    antes do `raise`, o `finally: sessao.close()` do `obter_sessao` descartaria
+    exatamente a mudança que o AC exige — e o sintoma seria o estoque nunca
+    voltar de uma recusa, com o teste sequencial passando.
+
+    **O gateway é chamado antes da transição**, e é o `UPDATE` condicional que
+    decide quem escreve. Duas requisições simultâneas podem ambas autorizar
+    (contra um gateway simulado isso é grátis; contra um real, é o problema que
+    idempotência de cobrança resolve, e está fora do escopo do desafio) — mas
+    exatamente uma vence o `rowcount`, e é ela que emite ingresso na Story 3.9.
+    """
+    reserva = sessao.scalars(
+        select(Reserva)
+        .where(Reserva.id == reserva_id, Reserva.cliente_id == cliente.id)
+        .options(selectinload(Reserva.itens))
+    ).first()
+
+    if reserva is None:
+        # O mesmo `404` do `obter`, e pelo mesmo motivo: distinguir "não existe"
+        # de "não é sua" diria a quem varresse UUIDs quais deles são reservas de
+        # alguém.
+        raise ErroDeDominio(
+            "RESERVA_NAO_ENCONTRADA",
+            "Essa reserva não existe ou não é sua.",
+            status_http=404,
+        )
+
+    # A colheita da Story 3.7 no segundo dos dois gatilhos do AD-4 — é este o
+    # AC1 que a 3.7 deixou aberto por uma story, porque a rota que ele descreve
+    # é a desta função.
+    if _transicionar(
+        sessao,
+        reserva.id,
+        de=EstadoReserva.PENDENTE,
+        para=EstadoReserva.EXPIRADA,
+        condicao_extra=Reserva.expira_em < func.now(),
+    ):
+        _devolver_estoque(sessao, reserva.id)
+        sessao.commit()
+        raise ErroDeDominio(
+            "RESERVA_EXPIRADA",
+            "O prazo desta reserva acabou e os ingressos voltaram para a venda. "
+            "Nada foi cobrado.",
+            status_http=409,
+        )
+
+    # Relê o estado: a reserva pode ter saído de `PENDENTE` por outra conexão
+    # entre o `select` acima e agora.
+    sessao.expire(reserva)
+
+    if reserva.estado == EstadoReserva.EXPIRADA.value:
+        # Já estava expirada quando chegou aqui — nada mudou, nada a confirmar.
+        raise ErroDeDominio(
+            "RESERVA_EXPIRADA",
+            "O prazo desta reserva acabou e os ingressos voltaram para a venda. "
+            "Nada foi cobrado.",
+            status_http=409,
+        )
+
+    if reserva.estado != EstadoReserva.PENDENTE.value:
+        # `PAGA`, `RECUSADA` ou `CANCELADA`. Um `409` e não um `200` silencioso:
+        # quem repete o pagamento de uma reserva já paga precisa saber que a
+        # segunda tentativa não fez nada, e `GET /reservas/{id}` diz o estado.
+        raise ErroDeDominio(
+            "RESERVA_NAO_PENDENTE",
+            "Esta reserva não está mais aguardando pagamento.",
+            status_http=409,
+        )
+
+    autorizacao = gateway.autorizar(
+        total_centavos=reserva.total_centavos,
+        meio=dados.meio,
+        numero_cartao=dados.numero_cartao,
+    )
+
+    if not autorizacao.aprovada:
+        if _transicionar(
+            sessao,
+            reserva.id,
+            de=EstadoReserva.PENDENTE,
+            para=EstadoReserva.RECUSADA,
+        ):
+            _devolver_estoque(sessao, reserva.id)
+            sessao.commit()
+
+        # ⚠️ **`402`, e não o `409` das outras recusas do domínio** (decisão do
+        # Igor): recusa de pagamento não é conflito de estado, é a resposta do
+        # gateway, e o `402 Payment Required` existe para exatamente isto. O
+        # corpo continua `{codigo, mensagem}`, sem exceção ao formato único.
+        raise ErroDeDominio(
+            "PAGAMENTO_RECUSADO",
+            "O pagamento foi recusado. Nada foi cobrado, e os lugares voltaram "
+            "para a venda.",
+            status_http=402,
+        )
+
+    if not _transicionar(
+        sessao,
+        reserva.id,
+        de=EstadoReserva.PENDENTE,
+        para=EstadoReserva.PAGA,
+    ):
+        # Outra conexão saiu de `PENDENTE` entre a autorização e esta linha.
+        # Nada é emitido, e nada é confirmado — a transação morre no `raise`.
+        raise ErroDeDominio(
+            "RESERVA_NAO_PENDENTE",
+            "Esta reserva não está mais aguardando pagamento.",
+            status_http=409,
+        )
+
+    # É aqui que a Story 3.9 emite os ingressos, na **mesma transação** desta
+    # transição (AD-14) e depois deste `if`: só quem venceu o `rowcount` chega
+    # nesta linha, e é isso que faz "pagamento reprocessado não gera ingresso
+    # novo" ser verdade por construção.
+
+    sessao.commit()
+
+    evento = sessao.get(
+        Evento, reserva.evento_id, options=[selectinload(Evento.setores)]
+    )
     if evento is None:  # pragma: no cover
         raise ErroDeDominio(
             "RESERVA_NAO_ENCONTRADA",
