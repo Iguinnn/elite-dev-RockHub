@@ -203,17 +203,35 @@ Fora da numeração, um commit `feat` avulso acrescentou o filtro de classifica�
 (spec em `docs/techspec-filtro-do-catalogo.md`). O `bmad-code-review` rodou em 2026-08-11: 16
 patches aplicados, 7 adiados (`deferred-work.md`), 11 descartados; a suíte foi de 203 para 218.
 
-**Epic 3 em andamento**, na branch `Epic-3--Descoberta-e-compra`. As stories 3.1 a 3.6 estão
-implementadas e commitadas — programação pública, busca e filtros, chamada principal, página do
-evento com setores, modelo de reserva e a reserva com `UPDATE` condicional do AD-3. Faltam **3.7,
-3.8 e 3.9**, e elas são a primeira techspec agrupada do projeto (expiração preguiçosa, pagamento
-com recusa e emissão de ingresso convergem na mesma função `pagar_reserva`).
+**Epic 3 concluída, revisada e no ar.** As nove stories (3.1 a 3.9) — programação pública, busca e
+filtros, chamada principal, página do evento com setores, modelo de reserva, a reserva com `UPDATE`
+condicional do AD-3, e as três últimas pela primeira techspec agrupada do projeto (expiração
+preguiçosa, pagamento com recusa e emissão de ingresso, todas convergindo na função `pagar`).
 
-⚠️ **Antes do merge da Epic 3:** conferir que a `TICKET_SIGNING_SECRET` no painel da Railway **não**
-é o valor de exemplo. Ela já estava definida lá, mas a Story 3.9 passou a lê-la e a validá-la — com
-o valor de exemplo, a aplicação recusa subir. O `CREATE EXTENSION unaccent` da 3.2 **já foi
-conferido** em 2026-08-11 (usuário `postgres`, `usesuper = true`, extensão criada à mão pelo painel);
-o registro está no docstring da própria migração, e não há o que refazer.
+O `bmad-code-review` da epic rodou em 2026-08-12, no primeiro formato de **três camadas × três
+grupos** — nove subagentes, com o diff recortado por fronteira de transação em vez de por tamanho.
+Saldo: 7 decisões, 31 patches aplicados, 18 adiados, 9 descartados; a suíte foi de 379 para 395.
+Achados em `code-review-epic-3.md`, adiados em `deferred-work.md`.
+
+⚠️ **A lição que vale para as próximas epics:** os três achados de alta eram **invisíveis para a
+suíte**, e o pior deles porque a fixture de teste divergia da sessão de produção
+(`expire_on_commit`). Teste que não imita produção esconde exatamente a classe de bug que ele
+deveria pegar — a regra ficou escrita no docstring da fixture `sessao` do `conftest.py`.
+
+Fora da numeração das stories, dois ajustes entraram depois do review: a marca virou o lettering
+próprio (`public/logotipo-rockhub.png` e `src/app/icon.png`, que substituiu o `icon.svg`), e o
+checkout ganhou uma tela de espera de 6s com pontinhos — **a única animação do produto**, exceção
+pedida pelo Igor contra o `EXPERIENCE.md#Carregando` e registrada nos dois arquivos que a
+implementam.
+
+⚠️ **A `TICKET_SIGNING_SECRET` na Railway derruba o deploy se estiver errada.** A Story 3.9 passou a
+lê-la e a validá-la, e o code review **endureceu o validador**: além do valor de exemplo, ele agora
+recusa a variável vazia, só com espaço, ou com menos de 32 caracteres. O campo apagado num painel de
+deploy era o buraco mais fácil de acontecer e passava batido, porque string vazia não é a string de
+exemplo. Em qualquer um dos casos a aplicação **recusa subir**, e o mesmo vale para o `JWT_SECRET`.
+Se o deploy da `main` falhar na inicialização, é o primeiro lugar a olhar. O `CREATE EXTENSION
+unaccent` da 3.2 **já foi conferido** em 2026-08-11 (usuário `postgres`, `usesuper = true`, extensão
+criada à mão pelo painel); o registro está no docstring da própria migração, e não há o que refazer.
 
 **As duas metades estão no ar:** frontend em <https://elite-dev-rock-hub.vercel.app> (Vercel)
 e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), **os dois
@@ -234,8 +252,18 @@ identidade "jornal noturno" aplicada, telas de acesso, `/conta` protegida, `/org
 `/organizador/eventos`, a programação na raiz com busca e filtros, `/eventos/{id}` e `/reservas/{id}`
 com o cronômetro, e masthead que reage à sessão e ao papel.
 
-**Próximo passo: a techspec de 3.7+3.8+3.9**, depois o `bmad-code-review` da Epic 3 e o merge. O
-`sprint-status.yaml` é a fonte da verdade sobre o andamento — consulte-o antes de assumir o que
+**Próximo passo: a techspec de 4.1+4.2** — `Meus ingressos` e o canhoto com o QR, que são o grupo de
+leitura previsto na seção *Techspec no lugar de story*. Depois dela, 4.3+4.4 (o link revogável).
+Sobram **14 stories**: 4 na Epic 4, 6 na Epic 5 e 4 na Epic 6, sendo estas últimas de documentação.
+
+Duas coisas da Epic 3 que a Epic 5 vai encontrar, e que já estão resolvidas para não custarem
+descoberta: **o AD-5 foi reescrito** — a promessa de recusar assinatura divergente "sem consultar o
+banco" não se sustenta com o `nonce` na fórmula, porque o QR carrega só `ID.ASSINATURA` e o `nonce`
+mora na coluna; a garantia real, e a que a Story 5.2 pode invocar, é o **recálculo**. E o
+`conferir_codigo` **já tem a guarda de não-ASCII** que a portaria precisa: sem ela, um QR que
+decodifique com acento virava `500` na fila da porta.
+
+O `sprint-status.yaml` é a fonte da verdade sobre o andamento — consulte-o antes de assumir o que
 está pronto.
 
 ### Documentos congelados — não atualize
