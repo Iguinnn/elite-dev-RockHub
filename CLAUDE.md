@@ -26,54 +26,88 @@ exatamente o "AI slop" que o enunciado penaliza.
 
 Apresentar trade-offs, alternativas e consequências é bem-vindo. Escolher no lugar dele, não.
 
-### Os READMEs — só a camada que a story tocou, e só o que passa na régua
+### Techspec no lugar de story — decidido em 2026-08-12
 
-Terminou uma story, **antes de considerá-la concluída**, atualize **o README da camada que a story
-tocou**. Story que só mexe no backend não encosta no `frontend/README.md`. Se nenhum arquivo daquela
-camada mudou, não há o que escrever ali.
+Da Story 3.7 em diante eu não escrevo mais arquivo de story. Escrevo uma **techspec que cobre um
+grupo de stories**, no formato de [docs/techspec-filtro-do-catalogo.md](docs/techspec-filtro-do-catalogo.md),
+e implemento a partir dela. As specs moram em `docs/techspec-<assunto>.md`.
 
-O `README.md` da raiz só é tocado quando a story produz uma **decisão que muda o produto ou a
-arquitetura** — o que é raro, e deve continuar raro.
+**Por quê:** medi o ritmo pelos arquivos da Epic 3 — ~73 min por story, ponta a ponta. As stories
+tinham entre 8,6 e 11,4 mil palavras; a techspec do filtro do catálogo resolveu trabalho equivalente
+com 2 mil. Sobram 13 stories de código e cerca de três dias de prazo. Cortando o arquivo de 10 mil
+palavras e a redação de README a cada commit, o ciclo cai para ~45 min. O que isso **não** corta é a
+conversa das decisões — ela é exatamente o que está sendo avaliado, e continua acontecendo inteira.
 
-**A régua da raiz, aplicada em 2026-08-11:** entra na seção *Decisões* se, tivesse eu escolhido a
-alternativa, quem avalia veria **um sistema diferente**. Não entra: detalhe de UI, nome de
-componente, ordem de campo, escolha de biblioteca menor, bug corrigido, decisão de processo. Essas
-moram no README da camada, ao lado do código que elas afetam — ou em lugar nenhum.
+**O que descartei:** fechar a Epic 3 no formato antigo e trocar só na Epic 4. Caiu porque 3.7, 3.8 e
+3.9 são as mais pesadas que sobraram — esperar seria abrir mão da economia justo onde ela é maior.
 
-**Por que a régua existe:** os três READMEs chegaram a 5.093 linhas e 54 mil palavras, com a mesma
-decisão escrita três e quatro vezes (raiz + seção temática da camada + histórico da camada + notas
-da story). Ninguém lê 1.900 linhas de README, e 66 subseções de decisão enterram as 20 que importam
-— inclusive *O que não está pronto*, que é o único requisito do enunciado com penalidade escrita.
-Um README que não é lido não pontua, por melhor que seja.
+**Agrupe por transação ou invariante compartilhada, não "de três em três".** 3.7+3.8+3.9 são uma
+techspec só porque os próprios ACs do `epics.md` as costuram na mesma função `pagar_reserva`: a
+expiração da 3.7 dispara dentro da rota que a 3.8 cria, e a emissão da 3.9 acontece na mesma
+transação da transição para `PAGA`. Especificar isso em três documentos deixaria as decisões de
+fronteira caindo no vão entre eles. Os outros grupos naturais: 4.1+4.2 (leitura), 4.3+4.4 (o link
+revogável), 5.2+5.3+5.5 (um endpoint de validação, três formas de entrada).
 
-Cada decisão que passa na régua entra com três partes:
+**A spec agrupa; o commit continua um por story.** Cada bloco de critérios de pronto da spec é o
+gate de um commit, e o `sprint-status.yaml` continua marcando story a story. O histórico do git é
+parte da avaliação e não muda de granularidade.
 
-1. **O que foi decidido**
-2. **Por quê** — o problema que essa escolha resolve
-3. **O que foi descartado, e por quê não** — a alternativa considerada e o motivo de ter caído
+**Seis seções, teto de ~2.500 palavras por spec:**
 
-A terceira parte é a que o desafio avalia e a que quase todo mundo esquece. Uma decisão sem
-alternativa descartada parece que não houve escolha — que é exatamente a acusação de "AI slop".
+1. **Escopo e commits** — quais commits saem daqui
+2. **O que existe hoje** — curto, só o que a spec assume pronto
+3. **Decisões, com a alternativa descartada** — a parte avaliada, a única que não pode encolher
+4. **Contrato** — rotas, schemas, códigos de erro, migrações
+5. **Critérios de pronto, por commit** — é o que o `bmad-code-review` lê no lugar dos ACs
+6. **Armadilhas** — os ⚠️ que antes moravam nos comentários do `sprint-status.yaml`
 
-Matéria-prima pronta para isso: os `.memlog.md` do brainstorming, da arquitetura e do UX registram,
-em ordem, tudo que foi considerado e recusado ao longo do processo.
+Fica de fora o que a story tinha e ninguém lia: contexto reexplicado, tarefas numeradas, Dev Agent
+Record, referências cruzadas ao planejamento, seção de testes narrada.
 
-**Não existe mais seção `## Histórico desta camada`.** Ela foi removida dos dois READMEs de camada
-em 2026-08-11: era duplicata literal das seções temáticas do mesmo arquivo. O que a story mudou vai
-para a seção temática do assunto (`## Publicar evento`, `## O sistema visual`), não para uma linha
-do tempo paralela. Não recrie a seção.
+**Sempre em dois passos.** Passo 1: leia os ACs do `epics.md`, os ADs vinculantes e o código que já
+existe, e volte **só com a lista de decisões em aberto** — cada uma com as opções, a consequência de
+cada lado e sua leitura. Nada de spec ainda. Passo 2, depois que eu responder: a spec com as
+respostas dentro, e então o código. Despejar dez decisões no fim de um documento pronto é como se
+perde a qualidade que o formato longo garantia.
 
-**A régua da camada, definida em 2026-08-11: no máximo cinco parágrafos por story ou review.**
-Sem tabela nova, sem subseção nova, sem "a lição que fica". Escreva o que mudou e por quê, na
-seção temática que já existe, e pare. Se não couber em cinco parágrafos, provavelmente é decisão
-de raiz — aí aplique a régua da raiz — ou é detalhe que já está no comentário do código.
+**Este formato vence o template de qualquer skill.** Se a sessão começar por `bmad-spec`,
+`bmad-quick-dev` ou outra, é a skill que se adapta a estas seis seções — nunca o contrário.
 
-**Por quê:** o code review da Epic 2 gastou mais tempo escrevendo README do que revisando código.
-A raiz tinha régua e as camadas não, e foi exatamente onde o texto inchou. Documentação não pode
-bloquear o commit: aplique o código, rode a suíte, mostre o resultado — **depois** escreva.
+**A spec é escrita antes do código.** Spec redigida depois de implementar é memória com outro nome,
+e aí a economia vira prejuízo: o porquê fresco era o único motivo de o formato antigo existir.
 
-**Mas README não é só explicação.** A parte operacional vem primeiro, porque é o que alguém precisa
-em dez segundos. Estrutura do `README.md` da raiz, nesta ordem:
+### Os READMEs — escrita adiada, com uma exceção
+
+**Desde 2026-08-12 eu não escrevo README a cada commit.** Quem registra a decisão e o porquê
+enquanto estão frescos é a techspec do grupo (seção acima); a passagem final da Epic 6 transcreve
+dali para os READMEs. Não pare no meio de um grupo de stories para escrever README.
+
+**A exceção, e é só uma:** `README.md#o-que-não-está-pronto` continua sendo escrito **na hora**.
+É o único requisito do enunciado com penalidade escrita, e o jeito de falhar nele é esquecer — corte
+consciente que ninguém anotou vira lacuna não declarada, que é justamente o caso penalizado. Uma
+linha custa trinta segundos.
+
+O resto desta seção é **material da Epic 6** — não abra durante a implementação. Está aqui só para
+a passagem final não precisar redescobrir as réguas.
+
+**A régua da raiz:** entra na seção *Decisões* se, tivesse eu escolhido a alternativa, quem avalia
+veria **um sistema diferente**. Não entra: detalhe de UI, nome de componente, ordem de campo,
+biblioteca menor, bug corrigido, decisão de processo. Cada decisão que entra tem três partes — **o
+que foi decidido**, **por quê**, e **o que foi descartado e por quê não**. A terceira é a que o
+desafio avalia: decisão sem alternativa descartada parece que não houve escolha, que é exatamente a
+acusação de "AI slop". Matéria-prima pronta: as techspecs em `docs/` e os `.memlog.md` do
+brainstorming, da arquitetura e do UX.
+
+**A régua da camada: no máximo cinco parágrafos por assunto**, na seção temática que já existe
+(`## Publicar evento`, `## O sistema visual`). Sem tabela nova, sem subseção nova, sem "a lição que
+fica", e **sem recriar `## Histórico desta camada`** — ela foi removida em 2026-08-11 por ser
+duplicata literal das seções temáticas do mesmo arquivo.
+
+**Por que as duas réguas existem:** os três READMEs chegaram a 5.093 linhas e 54 mil palavras, com
+a mesma decisão escrita quatro vezes. Ninguém lê 1.900 linhas, e 66 subseções de decisão enterram as
+20 que importam — inclusive *O que não está pronto*. Um README que não é lido não pontua.
+
+Estrutura do `README.md` da raiz, nesta ordem:
 
 1. **O que é** — dois parágrafos
 2. **No ar** — as URLs publicadas (vale +1 ponto no enunciado)
@@ -92,40 +126,29 @@ em dez segundos. Estrutura do `README.md` da raiz, nesta ordem:
 Estrutura dos READMEs de camada: como rodar, variáveis, estrutura de pastas, convenções, seções
 temáticas por assunto, armadilhas reais e deploy. Sem linha do tempo.
 
-**Construção incremental, revisão no fim.** As seções 1 a 6 nascem e crescem junto com o código:
-a story que adiciona migração adiciona o comando de migração no mesmo commit; a que cria o seed
-documenta as credenciais ali. A seção 7 ganha uma entrada quando — e só quando — uma decisão passa
-na régua, enquanto o motivo ainda está fresco.
+**De onde sai cada parte na passagem final:** as seções 1 a 6 saem de rodar o projeto numa máquina
+limpa — comandos, variáveis, contas e roteiro se conferem, não se lembram. A seção 7 sai das
+techspecs, que já registraram cada decisão com a alternativa descartada enquanto o motivo estava
+fresco. **É essa transferência que sustenta o corte de tempo:** se uma spec não registrar a decisão
+na hora, a passagem final vira redação de memória e perde exatamente a parte avaliada.
 
-As stories da Epic 6 **não escrevem o README do zero** — elas fazem a passagem final: conferir se o
-passo a passo realmente funciona numa máquina limpa, ordenar o histórico, fechar as lacunas.
-
-Nunca deixe documentação acumulada para o fim: motivo escrito de memória, três dias depois, perde
-exatamente a parte que está sendo avaliada.
-
-**Escreva em primeira pessoa, como se fosse o Igor escrevendo.** "Usei o X porque…", "fiz assim
-para…", "decidi trocar Y por Z quando percebi que…". Nunca terceira pessoa, nunca voz de
-documentação gerada.
-
-**Por quê:** o desafio avalia documentação clara e o raciocínio por trás das escolhas, e o README
-é lido antes do código. Documentação escrita no fim, de memória, perde exatamente o "porquê" —
-que é a parte avaliada.
-
-Isto é uma regra permanente, não um pedido pontual. Vale para toda sessão, sem precisar ser
-relembrada.
+**Escreva em primeira pessoa, como se fosse o Igor escrevendo.** "Usei o X porque…", "decidi trocar
+Y por Z quando percebi que…". Nunca terceira pessoa, nunca voz de documentação gerada. Vale também
+para as techspecs.
 
 ### Ritmo de trabalho: branch por epic, review por epic
 
 - **Uma branch por epic** — o Igor cria, faz merge e gerencia. Você nunca roda comando git
-- **Um commit por story** — as stories foram dimensionadas exatamente para isso
+- **Um commit por story** — as stories foram dimensionadas exatamente para isso, e isso não muda
+  com a techspec: uma spec de três stories produz três commits
 - **Code review ao fim de cada epic**, não a cada story. Rodar `bmad-code-review` 38 vezes não
   cabe no prazo; ao fim de cada epic o retorno é melhor, porque o revisor vê o conjunto
 
-Ao terminar uma story, atualize os READMEs (regra acima) e avise que a story está pronta para
-commit. Não emende a próxima story sem o Igor mandar.
+Ao terminar cada story, rode a suíte, mostre o resultado e avise que está pronta para commit —
+sem escrever README (ver *Techspec no lugar de story*). Não emende a próxima sem o Igor mandar.
 
 ### Divisão de modelos
-- **Opus** — planejamento, brainstorm, PRD, arquitetura, specs, epics e stories
+- **Opus** — planejamento, brainstorm, PRD, arquitetura, techspecs, epics e stories
 - **Sonnet** — implementação de código
 
 ### Fluxo BMAD
@@ -149,7 +172,10 @@ Sequência (comprimida por causa do prazo — PRD foi cortado de propósito):
 4. ~~`bmad-create-epics-and-stories`~~ ✅ **concluído** — `_bmad-output/planning-artifacts/epics.md`
    com 6 epics e 38 stories, uma por commit. Cobertura validada: 16/16 FRs e 11/11 UX-DRs
 5. ~~`bmad-sprint-planning`~~ ✅ **concluído** — `_bmad-output/implementation-artifacts/sprint-status.yaml`
-6. `bmad-dev-story` — implementar story a story ← **em andamento**
+6. `bmad-dev-story` — implementou as stories 1.1 a 3.6, uma a uma. **Encerrado em 2026-08-12**
+7. **Techspec por grupo de stories** ← **em andamento** desde a 3.7. Ver *Techspec no lugar de
+   story*. As specs saem em `docs/`, fora do `_bmad-output/`, seguindo o precedente do filtro do
+   catálogo
 
 ## Estado atual
 
@@ -158,11 +184,20 @@ Sequência (comprimida por causa do prazo — PRD foi cortado de propósito):
 As correções do review já estão aplicadas; a mais relevante está registrada como decisão
 no README da raiz.
 
-**Epic 2 com o código fechado.** As seis stories (2.1 a 2.6) estão implementadas — cliente da
-Ticketmaster, busca no catálogo, modelo de evento e setor, publicação com setores, escala da
-portaria e `Meus eventos`. Fora da numeração, um commit `feat` avulso acrescentou o filtro de
-classificação do catálogo (spec em `docs/techspec-filtro-do-catalogo.md`). **Falta o
-`bmad-code-review` da epic**, e é o próximo passo.
+**Epic 2 concluída e revisada.** As seis stories (2.1 a 2.6) — cliente da Ticketmaster, busca no
+catálogo, modelo de evento e setor, publicação com setores, escala da portaria e `Meus eventos`.
+Fora da numeração, um commit `feat` avulso acrescentou o filtro de classificação do catálogo
+(spec em `docs/techspec-filtro-do-catalogo.md`). O `bmad-code-review` rodou em 2026-08-11: 16
+patches aplicados, 7 adiados (`deferred-work.md`), 11 descartados; a suíte foi de 203 para 218.
+
+**Epic 3 em andamento**, na branch `Epic-3--Descoberta-e-compra`. As stories 3.1 a 3.6 estão
+implementadas e commitadas — programação pública, busca e filtros, chamada principal, página do
+evento com setores, modelo de reserva e a reserva com `UPDATE` condicional do AD-3. Faltam **3.7,
+3.8 e 3.9**, e elas são a primeira techspec agrupada do projeto (expiração preguiçosa, pagamento
+com recusa e emissão de ingresso convergem na mesma função `pagar_reserva`).
+
+⚠️ **Antes do merge da Epic 3:** a migração da 3.2 roda `CREATE EXTENSION unaccent`. Se o Postgres
+da Railway recusar, o deploy inteiro falha — não só a busca. Confirmar no painel.
 
 **As duas metades estão no ar:** frontend em <https://elite-dev-rock-hub.vercel.app> (Vercel)
 e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), **os dois
@@ -172,15 +207,18 @@ novo — nem `Root Directory`, nem Production Branch, nem variável de ambiente 
 `TICKETMASTER_API_KEY` já está definida na Railway desde a 1.8, só falta a `Settings` declará-la
 na Story 2.1).
 
-O que existe hoje: backend FastAPI com Alembic e as tabelas `usuario`, `evento`, `setor` e
-`evento_portaria`; cadastro, login, logout e `/auth/eu` com senha em Argon2id e sessão em cookie
-`httpOnly` de 8h; autorização por papel como dependência de rota; integração com a Ticketmaster
-Discovery; publicação de evento com setores e escala de portaria na mesma transação; leitura de
-`Meus eventos` com lista e detalhe; seed das cinco contas de avaliação; frontend Next.js com a
-identidade "jornal noturno" aplicada, telas de acesso, `/conta` protegida, `/organizador/publicar`
-e `/organizador/eventos`, e masthead que reage à sessão e ao papel.
+O que existe hoje: backend FastAPI com Alembic e as tabelas `usuario`, `evento`, `setor`,
+`evento_portaria`, `reserva` e `item_reserva`; cadastro, login, logout e `/auth/eu` com senha em
+Argon2id e sessão em cookie `httpOnly` de 8h; autorização por papel como dependência de rota;
+integração com a Ticketmaster Discovery; publicação de evento com setores e escala de portaria na
+mesma transação; `Meus eventos` com lista e detalhe; as quatro rotas públicas de `publico.py`
+(`GET /eventos`, `/eventos/cidades`, `/eventos/destaque`, `/eventos/{id}`); `POST /reservas` e
+`GET /reservas/{id}` em `cliente.py`; seed das cinco contas de avaliação; frontend Next.js com a
+identidade "jornal noturno" aplicada, telas de acesso, `/conta` protegida, `/organizador/publicar`,
+`/organizador/eventos`, a programação na raiz com busca e filtros, `/eventos/{id}` e `/reservas/{id}`
+com o cronômetro, e masthead que reage à sessão e ao papel.
 
-**Próximo passo: code review da Epic 2**, e depois a Epic 3 (descoberta e compra). O
+**Próximo passo: a techspec de 3.7+3.8+3.9**, depois o `bmad-code-review` da Epic 3 e o merge. O
 `sprint-status.yaml` é a fonte da verdade sobre o andamento — consulte-o antes de assumir o que
 está pronto.
 
@@ -229,9 +267,10 @@ quando a story chegar. O que **não** está pronto e é corte consciente está n
 backend/    # API
 frontend/   # React
 docs/       # documentação do projeto
+docs/techspec-*.md          # as specs da 3.7 em diante
 _bmad-output/
   planning-artifacts/       # PRD, arquitetura, epics
-  implementation-artifacts/ # stories
+  implementation-artifacts/ # stories 1.1 a 3.6, sprint-status, code reviews
 ```
 
 ## Pendências técnicas

@@ -52,10 +52,11 @@ instante só, e as quatro recusas já as pegam na memória. Um `except` genéric
 neste ponto só transformaria bug de verdade em `422` bonito.
 """
 
+from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
@@ -81,6 +82,92 @@ from app.services.evento import MAXIMO_POR_COMPRA
 # na Railway para um cenário de demonstração, e a expiração da Story 3.7 é
 # provada por teste, que é onde ela precisa ser verdade.
 PRAZO_DE_RESERVA_MINUTOS = 10
+
+
+def expirar_vencidas(sessao: Session, setor_ids: Collection[UUID]) -> None:
+    """Devolve ao estoque o que reservas vencidas ainda seguram nestes setores.
+
+    **A colheita preguiçosa do AD-4**, e a razão de não existir worker nem cron
+    neste projeto: quem colhe é quem precisa do estoque, no instante em que
+    precisa. A folga que isso deixa — uma reserva vencida continuar contando até
+    alguém pedir aquele setor — é inofensiva por construção, porque no momento em
+    que o estoque importa ele já está correto.
+
+    **Só os setores do pedido** (decisão do Igor), e é para este `where` que a
+    Story 3.5 indexou `item_reserva.setor_id`. Varrer o evento inteiro ou o banco
+    inteiro faria trabalho sobre itens que ninguém pediu.
+
+    **Roda na transação de quem chamou**, sem `commit` próprio: a convenção do
+    projeto é que o service de escrita abre e fecha a transação, e aqui quem abre
+    é o `criar()` (e, do commit 2 em diante, o pagamento). Se a reserva nova
+    terminar em `409`, esta colheita é desfeita junto e refeita na próxima
+    tentativa — desperdício sem consequência.
+
+    ⚠️ **A ordem das duas escritas é a garantia de não devolver duas vezes.**
+    Primeiro a transição condicionada ao estado anterior (AD-4); só quem a
+    *vence* (`rowcount == 1`) ganha o direito de devolver o estoque. Duas
+    conexões colhendo a mesma reserva no mesmo instante fazem exatamente uma
+    passar pelo `if` — invertida, a ordem devolveria o estoque duas vezes e
+    marcaria `EXPIRADA` uma só.
+
+    ⚠️ **Devolve todos os itens da reserva, não só os dos setores pedidos.** A
+    reserva expira inteira: deixar de lado os itens de outro setor a marcaria
+    `EXPIRADA` com estoque preso para sempre, e nada voltaria a colher aquilo —
+    a transição já teria acontecido.
+    """
+    if not setor_ids:
+        return
+
+    # `func.now()` e não o relógio do Python: `expira_em` é TIMESTAMPTZ em UTC
+    # (AD-11) justamente para esta comparação acontecer dentro do Postgres, sem
+    # conversão de fuso pelo caminho. É o que o modelo da 3.5 já anunciava.
+    ids_vencidas = sessao.scalars(
+        select(Reserva.id)
+        .join(ItemReserva, ItemReserva.reserva_id == Reserva.id)
+        .where(
+            ItemReserva.setor_id.in_(setor_ids),
+            Reserva.estado == EstadoReserva.PENDENTE.value,
+            Reserva.expira_em < func.now(),
+        )
+        # Uma reserva com dois itens nos setores pedidos apareceria duas vezes.
+        .distinct()
+    ).all()
+
+    for reserva_id in ids_vencidas:
+        transicao = sessao.execute(
+            update(Reserva)
+            .where(
+                Reserva.id == reserva_id,
+                # Condicionada ao estado anterior, sempre (AD-4). Zero linhas
+                # aqui não é erro: é "alguém chegou primeiro".
+                Reserva.estado == EstadoReserva.PENDENTE.value,
+            )
+            .values(estado=EstadoReserva.EXPIRADA.value)
+            .execution_options(synchronize_session=False)
+        )
+
+        if transicao.rowcount == 0:
+            continue
+
+        itens = sessao.scalars(
+            select(ItemReserva).where(ItemReserva.reserva_id == reserva_id)
+        ).all()
+
+        for item in itens:
+            sessao.execute(
+                update(Setor)
+                .where(
+                    Setor.id == item.setor_id,
+                    # ⚠️ Condicional também na devolução — o AD-3 vale para
+                    # **toda** escrita em estoque, não só para a que consome.
+                    # `vendidos - quantidade` calculado em Python parece seguro
+                    # porque "devolver nunca estoura", e é a mesma quebra com o
+                    # resultado certo em 99% dos casos.
+                    Setor.vendidos >= item.quantidade,
+                )
+                .values(vendidos=Setor.vendidos - item.quantidade)
+                .execution_options(synchronize_session=False)
+            )
 
 
 def criar(sessao: Session, cliente: Usuario, dados: ReservaEntrada) -> ReservaSaida:
@@ -174,6 +261,13 @@ def criar(sessao: Session, cliente: Usuario, dados: ReservaEntrada) -> ReservaSa
             "Algum dos setores escolhidos não existe neste show.",
             status_http=422,
         )
+
+    # A colheita do AD-4, **antes** dos `UPDATE` de estoque e **depois** de os
+    # setores estarem validados: colher com um `setor_id` que não é deste evento
+    # seria varrer o índice à toa. É este ponto que o AC2 da Story 3.7 descreve —
+    # "as vencidas são liberadas antes da tentativa e o estoque reflete a
+    # realidade".
+    expirar_vencidas(sessao, vistos)
 
     # ⚠️ **De cada setor lê-se `preco_centavos`, e mais nada.** `vendidos` e
     # `capacidade` não entram no Python — esta é a linha que a próxima pessoa vai

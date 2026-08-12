@@ -37,10 +37,12 @@
 # - O epic vira 'in-progress' automaticamente quando a primeira story dele é criada
 # - Stories podem correr em paralelo se houver capacidade
 # - Neste projeto: uma branch por epic, um commit por story, code review ao fim de cada epic
-# - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
+# - Da 3.7 em diante: techspec por grupo de stories em docs/, sem arquivo de story.
+#   Os READMEs deixam de ser escritos a cada commit e vão inteiros para a Epic 6 —
+#   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (story 3.6 implementada — review)
+last_updated: 2026-08-12 (3.7-3.9 passam a techspec agrupada — ver CLAUDE.md)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -167,6 +169,14 @@ development_status:
   # pelo `TestClient` — a fixture `cliente` amarra o app a uma sessão só, então o
   # teste precisa de duas `Session` em conexões distintas, com commit e limpeza.
   3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: review
+  # ⚠️ MUDANÇA DE FORMATO, 2026-08-12. Daqui em diante não existe mais arquivo de
+  # story: as três são especificadas juntas numa techspec em docs/, e o README
+  # deixa de ser escrito a cada commit (passa inteiro para a Epic 6). O motivo e
+  # as regras estão em CLAUDE.md, seção "Techspec no lugar de story".
+  # As três viram uma spec só porque os próprios ACs as costuram na mesma função
+  # `pagar_reserva`: a expiração da 3.7 dispara dentro da rota que a 3.8 cria, e a
+  # emissão da 3.9 acontece na mesma transação da transição para PAGA (AD-14).
+  # O commit continua um por story — a spec agrupa, o histórico não.
   3-7-reserva-abandonada-devolve-o-estoque: backlog
   3-8-pagar-com-aprovacao-e-com-recusa: backlog
   3-9-receber-ingressos-com-codigo-nao-forjavel: backlog
