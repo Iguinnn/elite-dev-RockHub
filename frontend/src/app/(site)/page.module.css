@@ -194,11 +194,17 @@
 }
 
 /* 16/10 como o DESIGN.md pede. `position: relative` para o selo e o degradê se
-   ancorarem nela; `overflow: hidden` para a imagem não vazar do quadro. */
+   ancorarem nela; `overflow: hidden` para a imagem não vazar do quadro.
+
+   O fundo em `--breu2` está aqui **sempre**, e não só no `.arteVazia`: ele é o
+   piso do quadro. Enquanto a imagem carrega, e se ela nunca carregar, o que se
+   vê é o mesmo bloco cinza do evento sem arte — nunca o breu da página com um
+   buraco no meio da grade. */
 .arte {
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
+  background: var(--breu2);
 }
 
 /* O degradê para o breu na base, que é o que assenta a arte na página em vez de
@@ -215,22 +221,47 @@
   background: linear-gradient(to top, var(--breu), transparent 65%);
 }
 
-/* Evento sem arte (`imagem_url` é anulável desde a Story 2.3): um bloco liso do
-   **mesmo tamanho**, para a grade não dançar conforme o evento tem ou não tem
-   foto. Mesma solução da miniatura do catálogo. O degradê sai junto — sobre um
-   bloco chapado ele seria uma sombra sem origem. */
-.arteVazia {
-  background: var(--breu2);
-}
-
+/* Evento sem arte (`imagem_url` é anulável desde a Story 2.3): o bloco liso do
+   **mesmo tamanho** que o `.arte` já pinta, para a grade não dançar conforme o
+   evento tem ou não tem foto. Mesma solução da miniatura do catálogo. Aqui só
+   sai o degradê — sobre um bloco chapado ele seria uma sombra sem origem. */
 .arteVazia::after {
   content: none;
 }
 
 .imagemDaArte {
+  position: relative;
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* ⚠️ **A arte que não carrega vira o mesmo bloco cinza, e isto é CSS, não
+   JavaScript.**
+
+   A URL vem da Ticketmaster e é servida direto do domínio deles: não é nossa, e
+   o dia em que eles removerem a imagem o `<img>` quebra e o navegador desenha o
+   ícone de imagem faltando no meio da capa — que foi exatamente o que apareceu
+   na conferência da Story 3.3.
+
+   O truque é que **pseudo-elemento em `<img>` só ganha caixa quando a imagem
+   falha**: enquanto ela carrega bem, o `<img>` é um elemento substituído e o
+   `::after` não renderiza. Ou seja, esta regra é invisível no caso feliz e cobre
+   o ícone quebrado no caso ruim, com a mesma cor do quadro vazio. Safari não
+   gera pseudo-elemento em imagem nenhuma — e lá o resultado é o mesmo por outro
+   caminho, porque ele não desenha placeholder para `alt` vazio e o `--breu2` do
+   `.arte` aparece sozinho.
+
+   **A alternativa era um `onError`**, e ela custava `"use client"` na capa —
+   ilha de cliente, hidratação e um `useState` na tela mais visitada do produto,
+   para tratar uma imagem que falha. Esta regra faz o mesmo com zero JavaScript,
+   e a raiz continua Server Component da primeira à última linha. */
+.imagemDaArte::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--breu2);
 }
 
 /* Vazado em `--brasa` como o `.selo` da fila, e sobre a arte. `background` é o

@@ -3,11 +3,19 @@
    RockHub                      ← serifada 44px, "Hub" itálico neon
    ────────────────────────────  ← fio simples
    INÍCIO  MEUS INGRESSOS  ...   ← mono versalete, ativo com fio neon embaixo
-   ════════════════════════════  ← fio duplo, fecha o bloco                  */
+   ────────────────────────────  ← fio simples, fecha o bloco                */
 
+/* ⚠️ **O fio de baixo era `3px double`, e virou simples** (decisão do Igor,
+   2026-08-12). O duplo é convenção de jornal impresso e está assim no
+   `DESIGN.md` — que **não** foi atualizado, porque é artefato de planejamento
+   congelado. Na tela ele não cumpria o que promete: 3px de `double` são dois
+   filetes de 1px colados, na mesma cor dos fios simples da página, e a leitura
+   que sobra é a de renderização defeituosa, não a de decisão tipográfica. Um
+   fio duplo que ninguém reconhece como duplo é só um fio errado. O que separa o
+   masthead do conteúdo passou a ser o espaço em volta dele. */
 .masthead {
   padding-top: 26px;
-  border-bottom: 3px double var(--fio);
+  border-bottom: 1px solid var(--fio);
 }
 
 .topo {

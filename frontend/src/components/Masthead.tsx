@@ -5,9 +5,15 @@ import estilos from "./Masthead.module.css";
 import NavLink from "./NavLink";
 
 /**
- * Cabeçalho de jornal: logotipo, fio simples, navegação, fio duplo fechando o
- * bloco. Os fios são estruturais — o simples separa itens de mesma natureza, o
- * duplo fecha o masthead e o separa do conteúdo.
+ * Cabeçalho de jornal: logotipo, fio, navegação, fio fechando o bloco. Os fios
+ * são estruturais, não decorativos — eles separam itens de natureza diferente.
+ *
+ * ⚠️ **O de baixo era `3px double` e virou simples** (decisão do Igor,
+ * 2026-08-12): o fio duplo é convenção de jornal impresso, e na tela os dois
+ * filetes de 1px colados leem como falha de renderização em vez de escolha
+ * tipográfica. O `DESIGN.md` continua descrevendo o duplo e **não** foi
+ * atualizado — é artefato de planejamento congelado. O motivo inteiro está no
+ * `Masthead.module.css`, ao lado da linha que mudou.
  *
  * Aqui não entra linha de contexto (data, contador de eventos, subtítulo):
  * foi testada no protótipo e removida por soar gerada (UX-DR10). Pela mesma

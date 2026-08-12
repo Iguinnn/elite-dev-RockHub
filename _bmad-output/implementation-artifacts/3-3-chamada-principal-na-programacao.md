@@ -844,7 +844,7 @@ sem fundo fica ilegível sobre arte clara; e a ficha é um `<dl>` com `<dt>`/`<d
 com `<b>` do protótipo — desenha igual e diz a quem usa leitor de tela que aquilo são pares
 rótulo/valor.
 
-**Duas mudanças pedidas pelo Igor depois de ver a tela pronta, e as duas estão implementadas.**
+**Três mudanças pedidas pelo Igor depois de ver a tela pronta, e as três estão implementadas.**
 
 1. **O preço voltou** — é a *Pergunta em aberto* nº 1, respondida com a capa montada, como estava
    previsto. `preco_minimo_centavos` voltou ao `EventoEmDestaque` (agora **nove** chaves, não oito
@@ -861,6 +861,24 @@ rótulo/valor.
    já traz o próprio fio logo abaixo de "Programação". Dois filetes quase paralelos, sem nada entre
    eles, leem como sobra de grade. O que separa a capa da lista agora é o intervalo, e quem fecha o
    bloco é o fio do título.
+
+3. **A arte quebrada foi consertada** — é a *Pergunta em aberto* nº 5, que ele mandou fechar depois
+   da conferência. Um dos eventos do banco de desenvolvimento apareceu com o ícone de imagem
+   faltando no meio da capa: a URL é da Ticketmaster, servida direto do domínio deles, e morreu.
+   ⚠️ **A story dizia que o conserto custaria `"use client"` na capa, e não custou.** O caminho
+   óbvio é um `onError`, que obriga a tela a virar ilha de cliente — hidratação e `useState` na tela
+   mais visitada do produto, para tratar uma imagem. Em vez dele, `.imagemDaArte::after` cobre o
+   quadro com o mesmo `--breu2` do estado vazio: **pseudo-elemento em `<img>` só ganha caixa quando
+   a imagem falha**, porque a imagem que carrega é um elemento substituído e não gera a caixa. A
+   regra é invisível no caso feliz, e a raiz continua Server Component da primeira à última linha —
+   o AC10 e o `npm run build` marcando `/` como `ƒ` continuam valendo. No Safari, que não gera
+   pseudo-elemento em imagem nenhuma, o resultado é o mesmo por outro caminho: ele não desenha
+   placeholder para `alt` vazio, e o `background` que o `.arte` agora carrega **sempre** aparece
+   sozinho. Esse fundo permanente é o outro meio do conserto, e serve de placeholder de carregamento
+   de brinde.
+   ⚠️ **A miniatura do catálogo (`FormularioPublicacao.tsx`) tem o mesmo defeito e ficou como
+   está**: é tela revisada da Epic 2, o Igor não pediu, e mexer nela seria escopo vazando de uma
+   story de leitura. Se valer a pena, é uma linha de CSS lá também.
 
 Os ACs 5 e 22 ficaram, por isso, **desatualizados em relação ao código** — e de propósito: o
 workflow só me deixa escrever no Dev Agent Record, no File List, no Change Log e no Status, e
@@ -915,6 +933,7 @@ foram rastreados é dele, no commit.
 
 | Data | Mudança |
 |---|---|
+| 2026-08-12 | **A arte quebrada, consertada por CSS** — *Pergunta em aberto* nº 5 fechada por decisão do Igor. Um evento do banco de desenvolvimento apareceu com o ícone de imagem faltando no meio da capa, porque a URL da Ticketmaster morreu. A story previa que o conserto custaria `"use client"` (um `onError`), e **não custou**: `.imagemDaArte::after` cobre o quadro com o mesmo `--breu2` do estado vazio, e pseudo-elemento em `<img>` só ganha caixa quando a imagem falha — invisível no caso feliz, sem uma linha de JavaScript, com a raiz continuando Server Component e `/` ainda `ƒ`. O `.arte` passou a carregar o fundo cinza **sempre**, e não só no `.arteVazia`: é o piso do quadro, e vira placeholder de carregamento de brinde. No Safari, que não gera pseudo-elemento em imagem, o resultado é o mesmo por outro caminho — sem placeholder para `alt` vazio, o fundo aparece sozinho. A miniatura do catálogo tem o mesmo defeito e ficou como está: tela revisada da Epic 2, e mexer nela seria escopo vazando |
 | 2026-08-12 | **Ajustes do Igor com a tela pronta.** O preço voltou à capa: `preco_minimo_centavos` de volta ao `EventoEmDestaque` (nove chaves, não as oito do AC5), ao service e ao tipo do frontend, com a regra da fila — menor preço entre os setores com ingresso, `null` quando não há nenhum. Na tela ele é linha própria **abaixo** da ficha, e não um quarto par dentro dela: os três de cima descrevem o show, e o preço é a única linha que fala de comprar. É a resposta da *Pergunta em aberto* nº 1, que estava escrita para ser decidida exatamente assim, depois da conferência visual — e o motivo é o destaque **sair** da fila, o que fazia dele o único show da raiz sem "a partir de". E o fio de 1px que fechava a capa embaixo (AC22) saiu: com o `.secTitulo` trazendo o próprio fio logo abaixo de "Programação", os dois ficavam quase paralelos e sem nada entre eles — sobra de grade, não separação. Suíte de 278 → **279**, com dois testes novos de preço; `tsc`, `lint` e `build` limpos, `/` ainda `ƒ`. Os ACs 5 e 22 ficaram desatualizados em relação ao código de propósito: o workflow não me deixa reescrevê-los, e reescrever apagaria o registro de que a decisão veio da tela pronta |
 | 2026-08-12 | Story 3.3 implementada. Rota pública `GET /eventos/destaque` com o schema `EventoEmDestaque` de oito chaves (`preco_minimo_centavos` fora, `imagem_url` e `setores` de nomes dentro), `obter_destaque()` com consulta própria e `LIMIT 1` no mesmo recorte da programação, e `null` com `200` para banco vazio. No frontend, `obterDestaque()` com `unstable_rethrow` na primeira linha do `catch`, `dataDaChamada()` nova no `formato.ts` (a `dataPorExtenso` intacta), e o `ChamadaPrincipal` dentro da própria raiz — arte em `<img>` com `alt=""`, ficha `CASA · CIDADE · SETORES` como `<dl>`, sem standfirst e sem botão. O `filtrando` subiu para antes do `Promise.all`, que é o que faz a capa não ser **buscada** com filtro ativo, e o destaque sai da fila por `id`. Quinze testes novos, entre eles o de varredura de palavras proibidas com lista própria (sem `setores` e sem `imagem_url`, que são chaves legítimas nesta rota) e o de desempate estável por `id`. Suíte de 263 → **278**; `tsc`, `lint` e `build` limpos, com `/` ainda `ƒ`. Duas leituras fixadas e registradas nas notas: o título `Programação` some junto com a lista **só quando há capa** (o AC19 exige os três estados de vazio da 3.2 intactos), e a linha `SETORES` some com lista vazia pela mesma regra já decidida para a `CIDADE` nula. Os seis caminhos visuais da T7 e a conferência de rastreamento no git ficaram para o Igor |
 | 2026-08-12 | Story 3.3 criada e contextualizada. Seis decisões do Igor incorporadas: **a arte chega por rota própria** (`GET /eventos/destaque`, com schema `EventoEmDestaque`) em vez de `imagem_url` entrar no `EventoNaProgramacao` — a fila continua sem carregar campo que ela não lê, e os nomes de setor da ficha não obrigam a lista a devolver setores; **o standfirst não existe**, porque o `Evento` não tem texto livre e uma frase montada com os mesmos dados do kicker e da ficha é o anti-padrão nº 5 do `DESIGN.md` (registrado só aqui, sem ir a README, por instrução dele); **a capa some com filtro ativo**, e nem é buscada; **o destaque sai da fila**, cortado por `id`; **a ficha é `CASA · CIDADE · SETORES`**, com os nomes dos setores em frase; e **o destaque esgotado continua na capa**, com selo e sem link, na mesma regra da fila da 3.1. Vinte e quatro ACs escritos sobre os quatro blocos do `epics.md`, entre eles o AC6, que é a armadilha menos óbvia desta story: `setores` e `imagem_url` viram chaves legítimas na resposta nova, e o teste de varredura de palavras proibidas da 3.1 não pode ser copiado sem tirar as duas. Nove suposições declaradas (sem botão "Ver setores", sem selo "Destaque da semana", todos os setores na ficha, `200` com `null` em vez de `204`, a capa não buscada com filtro, falha engolida, sem `preco_minimo_centavos`, degradê em `var(--token)` e nenhuma rotação de destaque) e cinco perguntas registradas para o Igor — a primeira delas sobre o preço, que sumiu da raiz para o show em capa |

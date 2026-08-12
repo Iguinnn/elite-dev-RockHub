@@ -441,7 +441,7 @@ O layout raiz é só `<html><body>`. A casca visível vem de dois grupos de rota
 
 | Grupo | O que mostra | O que mora nele |
 |---|---|---|
-| `(site)` | Masthead: logotipo, navegação, fio duplo | A raiz, e daqui em diante tudo que exige sessão ou é navegável |
+| `(site)` | Masthead: logotipo, navegação, fio | A raiz, e daqui em diante tudo que exige sessão ou é navegável |
 | `(entrada)` | Só o logotipo, centrado | `/login` e `/cadastro` |
 
 **Quem está tentando entrar não pode ver "Minha conta".** É um link que ele não consegue abrir. A
@@ -595,7 +595,7 @@ ou portaria o link **não existe no HTML**, nem escondido por CSS — a decisão
 qualquer coisa chegar ao navegador.
 
 **E o nome de quem entrou não aparece ali**, mesmo agora que o componente o conhece. O
-`DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio duplo, e nada mais —, e o
+`DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio, e nada mais —, e o
 UX-DR10 já tinha derrubado a linha de contexto pelo mesmo motivo. Os dados da pessoa são o conteúdo
 da `/conta`.
 
@@ -1165,6 +1165,17 @@ Chão de petróleo, **nunca `#000`**. Papel frio, **nunca `#FFF`**. E o neon é 
 precisa de destaque e não é erro nem sucesso, é neon. Não introduza um segundo acento decorativo,
 nem "só para esta tela".
 
+**O fio duplo do masthead virou simples em 2026-08-12**, e é a segunda vez que a tela desmente o
+`DESIGN.md`. Ele pedia `3px double` fechando o cabeçalho — convenção de jornal impresso, onde o fio
+duplo é largo e inconfundível. Na tela, `3px double` são dois filetes de 1px colados, na mesma cor
+dos fios simples do resto da página: eu olhei e li "está duplicado", não "é um fio duplo". Fio duplo
+que ninguém reconhece como duplo é só um fio errado, e a hierarquia que ele deveria criar já vem do
+espaço em volta do masthead. Considerei engrossá-lo para 4px e clareá-lo para `--fio2`, que faria a
+convenção aparecer de verdade — caiu porque um cabeçalho que se separa por peso de tinta contraria o
+resto da identidade, onde tudo se separa por espaço e por tipografia. ⚠️ O `DESIGN.md` continua
+descrevendo o duplo e **não foi atualizado**: ele é artefato de planejamento congelado, e registra o
+plano como ele foi feito. Quem quiser o porquê, encontra no `Masthead.module.css`, ao lado da linha.
+
 **Troquei a paleta em 2026-08-11**, depois da Epic 2: o âmbar `#F2A413` era quase o `amber-500` do
 Tailwind sobre preto quente, e essa combinação é a receita de todo tema escuro gerado — o
 `brainstorm-intent.md` chama isso de AI slop, e ele estava na minha própria tela. As duas tintas de
@@ -1441,7 +1452,15 @@ quebra calada no dia em que a Discovery servir de outro domínio. O `alt` é vaz
 decorativa: o nome do artista está escrito ao lado dela em serifada de 46px, e um `alt` repetido faria
 o leitor de tela anunciar o show duas vezes. Sem `imagem_url` — a coluna é anulável desde a 2.3 — o
 lugar fica com um bloco em `var(--breu2)` do mesmo tamanho, para a grade não dançar conforme o evento
-tem ou não tem foto. O kicker ganhou `dataDaChamada` no `formato.ts`, e ela **não** é a
+tem ou não tem foto. ⚠️ **E a arte que quebra cai no mesmo bloco cinza, por CSS.** Na conferência da
+3.3 um dos eventos apareceu com o ícone de imagem faltando no meio da capa — a URL é da Ticketmaster,
+servida direto do domínio deles, e some quando eles quiserem. O conserto é `.imagemDaArte::after`
+cobrindo o quadro com o cinza: pseudo-elemento em `<img>` **só ganha caixa quando a imagem falha**,
+então a regra é invisível no caso feliz. Descartei o `onError`, que é o caminho óbvio: ele obrigaria
+a capa a virar ilha `"use client"`, com hidratação e `useState`, na tela mais visitada do produto —
+para tratar uma imagem. No Safari, que não gera pseudo-elemento em imagem nenhuma, o resultado é o
+mesmo por outro caminho: ele não desenha placeholder para `alt` vazio, e o fundo do `.arte` aparece
+sozinho. O kicker ganhou `dataDaChamada` no `formato.ts`, e ela **não** é a
 `dataPorExtenso` com um parâmetro a mais: um booleano naquela função lhe daria duas saídas e obrigaria
 as quatro telas do organizador a declarar qual delas querem. Data formatada inline na tela é o defeito
 que o code review da Epic 2 achou, e o `FUSO` continua num lugar só.
@@ -1462,8 +1481,8 @@ npx tsc --noEmit   # sem erro
 npm run lint       # limpo
 ```
 
-mais a conferência no navegador: fundo escuro, fio duplo fechando o masthead e `Tab` desenhando o
-contorno âmbar em todo link.
+mais a conferência no navegador: fundo escuro, fio fechando o masthead e `Tab` desenhando o contorno
+neon em todo link.
 
 O preço disso é que **a reescrita de um formulário já entregue não tem rede de proteção** — foi
 exatamente o caso da Story 1.5, ao extrair `Campo` e `Botao` do login. Os 73 testes do backend não

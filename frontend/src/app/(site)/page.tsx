@@ -385,7 +385,14 @@ function ChamadaPrincipal({ evento }: { evento: EventoEmDestaque }) {
 
             `alt=""` porque a arte é **decorativa**: o nome do artista está
             escrito ao lado dela em serifada 46px, e um `alt` com o mesmo nome
-            faria o leitor de tela anunciar o show duas vezes. */}
+            faria o leitor de tela anunciar o show duas vezes.
+
+            ⚠️ **A imagem que não carrega não precisa de `onError` aqui.** A URL
+            é da Ticketmaster e pode morrer sem aviso; quem trata isso é o
+            `.imagemDaArte::after` do `page.module.css`, que cobre o ícone
+            quebrado com o mesmo cinza do quadro vazio. É CSS puro de propósito:
+            um `onError` obrigaria esta capa a virar ilha `"use client"`, com
+            hidratação e `useState`, na tela mais visitada do produto. */}
         {evento.imagem_url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={evento.imagem_url} alt="" className={estilos.imagemDaArte} />
