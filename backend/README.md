@@ -1234,8 +1234,49 @@ concluiria que a busca está quebrada. Ela **não** recebe parâmetro nenhum, de
 escolhas é o universo, não o resultado, e encolhê-la conforme se filtra faz o chip sumir debaixo do
 cursor de quem ia clicar. Declarei-a **antes** de qualquer rota com path param no `publico.py`, com
 comentário explicando: a Story 3.4 pendura `/eventos/{id}` no mesmo router, e com ela em cima o
-FastAPI tentaria ler `"cidades"` como UUID e devolveria `422` para um endereço que existe. A suíte
-foi de 231 para **263 testes**.
+FastAPI tentaria ler `"cidades"` como UUID e devolveria `422` para um endereço que existe.
+
+**`GET /eventos/destaque` é uma rota própria, e não dois campos a mais na lista** (Story 3.3). A
+chamada principal da raiz precisa de duas coisas que a fila não desenha: a arte do evento e os nomes
+dos setores. A alternativa era pôr `imagem_url` no `EventoNaProgramacao` e a tela usar `itens[0]`
+como capa — uma linha de schema e zero rota nova. Descartei porque **todo** item da programação
+passaria a carregar uma URL que só um deles usa, que é exatamente o que eu tinha recusado na 3.1
+("campo que nenhuma tela lê é campo que ninguém sabe se está certo"); e pior no caso dos setores,
+porque a ficha exigiria `setores` na lista, que é o campo que o UX-DR7 mantém fora dela. Dois
+contratos independentes custam uma classe; um contrato que serve às duas telas custa a disciplina de
+todas as próximas. O `EventoEmDestaque` devolve nove campos: os sete da fila mais `imagem_url` e
+`setores`. **O preço eu tinha deixado de fora e voltei atrás com a tela montada** — a ficha nasceu
+como `CASA · CIDADE · SETORES`, e ao ver a capa pronta percebi a consequência de o destaque **sair**
+da programação: ele passava a ser o único show da raiz sem "a partir de" em lugar nenhum. Ele voltou
+como **um campo derivado**, e não como a lista de setores com preço dentro — que é a diferença entre
+devolver um número e devolver o estoque que o produziu.
+
+**`setores` é `list[str]`, e não `list[SetorSaida]`.** A ficha quer três nomes — `Pista, VIP e
+Camarote` —, e o `SetorSaida` que já existe carrega `capacidade`, `vendidos` e `preco_centavos`:
+reusá-lo "porque já existe um schema de setor" seria o UX-DR7 caindo por reuso, com o estoque inteiro
+atravessando a rede para a tela desenhar três palavras. É a primeira vez que um schema deste projeto
+devolve uma **projeção** de um relacionamento, e o schema novo é a fronteira que impede o atalho.
+Nome de setor não é estoque; contagem é — e essa distinção tem uma consequência no teste que eu quase
+deixei passar: a varredura de palavras proibidas desta rota **não pode** ser a mesma de `GET
+/eventos`, porque ali `setores` e `imagem_url` são palavras proibidas e aqui são chaves legítimas.
+Tirei as duas da lista e escrevi o motivo dentro do teste, ou a próxima pessoa "conserta" apagando a
+asserção inteira.
+
+Banco sem show em cartaz responde **`200` com corpo `null`, nunca `404`** — a mesma decisão do `200
+[]` da lista, e `204` ficou fora por um motivo concreto do outro lado da rede: ele não tem corpo, e o
+`resposta.json()` da tela estouraria num `catch` que existe para falha, transformando "não há show em
+cartaz" em "não foi possível carregar". A consulta é própria, com `LIMIT 1`, em vez de
+`listar_programacao()[0]`: aquela monta três filtros e roda um laço de derivação de preço sobre a
+programação inteira para descartar tudo menos a primeira linha. O recorte é **idêntico** ao da lista
+(`publicado_em IS NOT NULL` e `data_hora >= agora`, com `Evento.id` de desempate), e o evento
+esgotado **continua sendo o destaque**, com selo e sem link: pular para o próximo com ingresso faria
+"o próximo show" deixar de ser verdade, e a capa esconderia justamente o show mais próximo. A rota
+não recebe parâmetro nenhum, e está declarada no mesmo bloco de path fixo da `/eventos/cidades` —
+agora com um aviso só cobrindo as duas. `preco_minimo_centavos` segue a mesma regra da fila: é o
+menor preço **entre os setores que ainda têm ingresso**, `null` quando não há nenhum, e há um teste
+com a Pista esgotada a R$ 120,00 ao lado do Camarote a R$ 420,00 provando que ele pula o esgotado —
+os setores, esses, continuam os dois na ficha. A suíte foi de 231 para 263 e agora para **279
+testes**.
 
 ## Convenções que nascem aqui
 

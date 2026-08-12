@@ -1,11 +1,17 @@
 import Link from "next/link";
 
 import Botao from "@/components/Botao";
-import { centavosParaReais, partesDaFilaPublica } from "@/lib/formato";
+import {
+  centavosParaReais,
+  dataDaChamada,
+  partesDaFilaPublica,
+} from "@/lib/formato";
 import {
   listarCidadesEmCartaz,
   listarProgramacao,
+  obterDestaque,
   PERIODOS,
+  type EventoEmDestaque,
   type EventoNaProgramacao,
   type PeriodoDaProgramacao,
 } from "@/lib/programacao";
@@ -85,19 +91,49 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
 
   const termoLimpo = termo.trim();
 
-  // **`Promise.all`, e não uma depois da outra.** A programação e as cidades
-  // não dependem uma da outra, e encadeá-las custaria uma ida à rede em série
-  // na tela mais visitada do produto.
+  // ⚠️ **Calculado antes das buscas, e não depois** (era depois até a Story
+  // 3.2). Ele só depende da URL, e agora é ele que decide se a capa é
+  // **buscada** — não só se ela é renderizada. Renderizar condicionalmente é a
+  // metade fácil; a outra é não pagar uma ida à rede por um resultado que a tela
+  // vai jogar fora, e mover esta linha é o que a torna possível.
+  const filtrando = Boolean(termoLimpo) || Boolean(cidade) || periodo !== "todos";
+
+  // **`Promise.all`, e não uma depois da outra.** As três não dependem umas das
+  // outras, e encadeá-las custaria idas à rede em série na tela mais visitada do
+  // produto.
   //
-  // Nenhuma das duas levanta: sem `error.tsx`, uma exceção aqui derrubaria a
+  // Nenhuma das três levanta: sem `error.tsx`, uma exceção aqui derrubaria a
   // aplicação inteira, não só esta seção.
-  const [resultado, cidades] = await Promise.all([
+  //
+  // ⚠️ **A terceira é a única condicional**, e é a decisão do Igor: com `?q=`,
+  // `?cidade=` ou `?periodo=` a tela vira lista pura, e a capa não é buscada. As
+  // alternativas descartadas foram a capa refletindo o resultado filtrado (com
+  // um resultado só, o mesmo show em cima e embaixo) e a capa fixa ignorando o
+  // filtro (um show de São Paulo acima de "nenhum show encontrado" numa busca
+  // por Rio).
+  const [resultado, cidades, destaque] = await Promise.all([
     listarProgramacao({ q: termoLimpo, cidade, periodo }),
     listarCidadesEmCartaz(),
+    filtrando ? null : obterDestaque(),
   ]);
 
   const itens = resultado.estado === "ok" ? resultado.itens : [];
-  const filtrando = Boolean(termoLimpo) || Boolean(cidade) || periodo !== "todos";
+
+  // ⚠️ **O corte é por `id`, e não `slice(1)`.** As duas rotas são consultas
+  // independentes, e "o primeiro item da lista é o destaque" é uma coincidência
+  // do `order_by` de hoje: o dia em que a ordenação da programação mudar, um
+  // `slice(1)` passaria a esconder o segundo show e a mostrar o primeiro duas
+  // vezes — sem erro nenhum, e sem ninguém perceber.
+  const itensDaFila = destaque
+    ? itens.filter((evento) => evento.id !== destaque.id)
+    : itens;
+
+  // ⚠️ **"Nenhum show em cartaz" embaixo de uma capa que mostra um show** seria
+  // a tela se contradizendo em duas linhas — e é o que acontece com **um** único
+  // evento no banco, porque ele vira a capa e a fila fica vazia depois do corte.
+  // Nesse caso somem o título e a lista inteira; com filtro ativo não há capa, e
+  // os três estados de vazio da Story 3.2 continuam exatamente como estavam.
+  const aFilaSobrouVazia = Boolean(destaque) && itensDaFila.length === 0;
 
   /**
    * O endereço de um chip de período: o termo e a cidade viajam junto.
@@ -222,9 +258,16 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
         ))}
       </div>
 
-      <div className={estilos.secTitulo}>
-        <h1>Programação</h1>
-      </div>
+      {/* A chamada principal: o bloco grande que faz a tela parecer jornal
+          (UX-DR4, `DESIGN.md#Components/chamada-principal`). **Uma só por
+          tela**, e ela é o próximo show — não uma curadoria. */}
+      {destaque && <ChamadaPrincipal evento={destaque} />}
+
+      {!aFilaSobrouVazia && (
+        <div className={estilos.secTitulo}>
+          <h1>Programação</h1>
+        </div>
+      )}
 
       {/* ⚠️ **Três frases diferentes, e elas não se misturam.** "Nenhum show em
           cartaz" é verdade sobre o produto — não há show marcado; "nenhum show
@@ -253,24 +296,192 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
         </div>
       )}
 
-      {resultado.estado === "ok" && itens.length === 0 && !filtrando && (
-        <div className={estilos.vazio}>
-          <p className="kicker">Em cartaz</p>
-          <p className={estilos.frase}>
-            Nenhum show em cartaz por enquanto. Assim que um evento for
-            publicado, ele aparece aqui.
-          </p>
-        </div>
-      )}
+      {/* ⚠️ O `!destaque` é o que impede a contradição do AC14. As duas rotas
+          usam o mesmo recorte, então hoje "há capa" implica "há ao menos um
+          item" e esta condição nunca difere — mas ela é uma linha, e o dia em
+          que as duas discordarem por meio segundo de diferença entre as
+          consultas, a tela não vai dizer que não há show em cima de um show. */}
+      {resultado.estado === "ok" &&
+        itens.length === 0 &&
+        !filtrando &&
+        !destaque && (
+          <div className={estilos.vazio}>
+            <p className="kicker">Em cartaz</p>
+            <p className={estilos.frase}>
+              Nenhum show em cartaz por enquanto. Assim que um evento for
+              publicado, ele aparece aqui.
+            </p>
+          </div>
+        )}
 
-      {itens.length > 0 && (
+      {itensDaFila.length > 0 && (
         <div className={estilos.lista}>
-          {itens.map((evento) => (
+          {itensDaFila.map((evento) => (
             <Fila key={evento.id} evento={evento} />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Nomes de setor como frase: `["Pista", "VIP", "Camarote"]` → `"Pista, VIP e
+ * Camarote"`.
+ *
+ * Vírgulas e um `e` antes do último, e não uma lista com marcador: a ficha é uma
+ * linha de texto ao lado de um rótulo, e uma `<ul>` de três itens ali
+ * desalinharia a única coisa que a ficha precisa fazer, que é ler como três
+ * pares. Duas linhas nesta tela, e não em `lib/formato.ts`: aquele módulo é de
+ * data e dinheiro, e esta é a única tela que junta nomes assim.
+ */
+function comoFrase(nomes: string[]): string {
+  if (nomes.length < 2) {
+    return nomes.join("");
+  }
+
+  return `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+}
+
+/**
+ * A chamada principal: arte à esquerda, kicker/manchete/ficha à direita.
+ *
+ * **É ela que faz a tela parecer jornal** (`DESIGN.md#Components/chamada-principal`)
+ * — sem ela a listagem vira só uma tabela. **Uma só por tela** (UX-DR4), e ela é
+ * *o próximo show*: não há carrossel, não há rotação, e não há selo "Destaque da
+ * semana" como no protótipo. Aquele rótulo é curadoria, e mentiria num show
+ * marcado para daqui a três meses.
+ *
+ * ⚠️ **Não existe standfirst** (decisão do Igor), que é a linha em itálico que o
+ * protótipo põe entre a manchete e a ficha. O `Evento` não tem campo de texto
+ * livre — nem coluna, nem entrada no formulário de publicação, nem nada que a
+ * Ticketmaster devolva —, e uma frase montada com os mesmos dados que o kicker e
+ * a ficha já mostram ("No Qualistage, no Rio de Janeiro, nesta sexta") é o
+ * anti-padrão nº 5 do `DESIGN.md`: a linha de contexto que soa gerada.
+ *
+ * ⚠️ **`<Link>` quando há ingresso, `<div>` quando esgotado** — o mesmo padrão
+ * da `Fila` logo abaixo, e nunca um link desativado por CSS: `pointer-events:
+ * none` tira o clique do mouse e deixa o elemento no Tab, ainda anunciado como
+ * link. E **não há botão "Ver setores"** como no protótipo: o bloco inteiro é o
+ * alvo, e dois alvos para o mesmo destino no mesmo bloco é uma escolha falsa.
+ *
+ * Componente **desta tela**, ao lado do `Chip` e da `Fila`, e não em
+ * `components/`: ele lê `estilos` deste módulo e não tem segundo consumidor —
+ * promovê-lo agora seria inventar uma API para um chamador só.
+ */
+function ChamadaPrincipal({ evento }: { evento: EventoEmDestaque }) {
+  const conteudo = (
+    <>
+      <div
+        className={`${estilos.arte} ${evento.imagem_url ? "" : estilos.arteVazia}`}
+      >
+        {/* ⚠️ **`<img>` comum, e não `next/image`.** Não existe
+            `images.remotePatterns` no `next.config.ts`, e o componente do Next
+            estoura **em tempo de execução** com host não declarado — em
+            produção, não em build. O host vem de uma API externa e não é nosso
+            para prometer: declarar `s1.ticketm.net` hoje é uma configuração que
+            quebra calada no dia em que a Discovery servir de outro domínio. O
+            precedente é a miniatura do catálogo, com o mesmo `eslint-disable`.
+
+            `alt=""` porque a arte é **decorativa**: o nome do artista está
+            escrito ao lado dela em serifada 46px, e um `alt` com o mesmo nome
+            faria o leitor de tela anunciar o show duas vezes. */}
+        {evento.imagem_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={evento.imagem_url} alt="" className={estilos.imagemDaArte} />
+        )}
+
+        {/* Sobre a arte, canto superior esquerdo — a anatomia do `.lead-selo`
+            do protótipo. A informação **não é dada só por cor** (UX-DR9): a
+            palavra está escrita, e o bloco não responde ao hover porque não é
+            link. */}
+        {evento.esgotado && (
+          <span className={estilos.seloDaArte}>Esgotado</span>
+        )}
+      </div>
+
+      <div className={estilos.textoDaChamada}>
+        {/* O dia da semana vem junto — `SEXTA, 15 DE AGOSTO DE 2026, 22H30`.
+            Numa capa de show, "sexta" é a informação que situa antes do número,
+            e é assim que o protótipo escreve. Não é a `dataPorExtenso`, que não
+            devolve dia da semana: o motivo de serem duas funções está no
+            `lib/formato.ts`. */}
+        <p className="kicker">{dataDaChamada(evento.data_hora)}</p>
+
+        {/* `<h2>` e não `<h1>`: o `<h1>` da tela é "Programação", e a capa é um
+            item dentro dela — dois `<h1>` deixariam o documento sem título
+            único. */}
+        <h2 className={estilos.manchete}>{evento.nome}</h2>
+
+        {/* `CASA · CIDADE · SETORES` (decisão do Igor), e **nenhuma contagem de
+            ingresso em lugar nenhum** (UX-DR7). `<dl>` porque é literalmente uma
+            lista de pares rótulo/valor — o `<div>` do protótipo desenha igual e
+            não diz isso a quem usa leitor de tela. */}
+        <dl className={estilos.ficha}>
+          <div>
+            <dt className={estilos.fichaRotulo}>Casa</dt>
+            <dd className={estilos.fichaValor}>{evento.local}</dd>
+          </div>
+
+          {/* A cidade é anulável desde a Story 2.3: a linha **some** inteira, em
+              vez de a ficha mostrar um rótulo sobre o vazio. */}
+          {evento.cidade && (
+            <div>
+              <dt className={estilos.fichaRotulo}>Cidade</dt>
+              <dd className={estilos.fichaValor}>{evento.cidade}</dd>
+            </div>
+          )}
+
+          {/* **Todos os setores, inclusive o esgotado**: a ficha diz o que o
+              show tem, não o que sobrou. A lista vazia só acontece com evento
+              sem setor nenhum (possível por `psql`), e aí a linha some pela
+              mesma regra da cidade. */}
+          {evento.setores.length > 0 && (
+            <div>
+              <dt className={estilos.fichaRotulo}>Setores</dt>
+              <dd className={estilos.fichaValor}>{comoFrase(evento.setores)}</dd>
+            </div>
+          )}
+        </dl>
+
+        {/* ⚠️ **O preço entrou depois de a tela ficar pronta** (decisão do Igor,
+            e a *Pergunta em aberto* nº 1 da story). Ele fica **abaixo** da
+            ficha, e não como um quarto par dentro dela: os três de cima
+            descrevem o show — onde, em que cidade, com que setores — e o preço é
+            a única linha que fala de comprar. Como o destaque **sai da fila**,
+            sem esta linha ele seria o único show da programação sem "a partir
+            de" em lugar nenhum da raiz.
+
+            O rótulo vem **antes** do valor, como na `Fila`: "a partir de" é
+            preposição, não legenda — lido depois do número ele vira nota de
+            rodapé sobre um preço já apresentado como se fosse o preço.
+
+            Estreitado pelo **preço** e não só por `esgotado`: os dois dizem a
+            mesma coisa (o backend garante que um implica o outro), mas só este
+            dá ao TypeScript a certeza de que não é `null` aqui dentro. Com
+            `esgotado` sozinho seria preciso um `?? 0`, e "R$ 0,00" é um preço
+            que existe — a capa anunciaria ingresso de graça se o contrato
+            mudasse. */}
+        {evento.preco_minimo_centavos !== null && (
+          <p className={estilos.precoDaChamada}>
+            <span>a partir de</span>
+            <b>R$ {centavosParaReais(evento.preco_minimo_centavos)}</b>
+          </p>
+        )}
+      </div>
+    </>
+  );
+
+  if (evento.esgotado) {
+    return <div className={estilos.chamada}>{conteudo}</div>;
+  }
+
+  // `/eventos/{id}` **só nasce na Story 3.4** — a mesma janela consciente que a
+  // `Fila` abriu na 3.1, registrada no `frontend/README.md`.
+  return (
+    <Link href={`/eventos/${evento.id}`} className={estilos.chamada}>
+      {conteudo}
+    </Link>
   );
 }
 

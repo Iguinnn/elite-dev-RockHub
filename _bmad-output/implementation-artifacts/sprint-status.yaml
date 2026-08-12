@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-11 (story 3.2 implementada, pronta para commit)
+last_updated: 2026-08-12 (story 3.3 implementada — suíte em 278 testes)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -115,7 +115,17 @@ development_status:
   # Railway recusar `CREATE EXTENSION`, o deploy inteiro falha, não só a busca —
   # confirmar no painel antes do merge da epic.
   3-2-buscar-e-filtrar-a-programacao: review
-  3-3-chamada-principal-na-programacao: backlog
+  # Seis decisões do Igor: a arte chega por **rota própria** (`GET /eventos/destaque`,
+  # com `EventoEmDestaque`) em vez de `imagem_url` entrar no `EventoNaProgramacao`
+  # — a fila continua sem carregar campo que não lê; **o standfirst não existe**,
+  # porque o `Evento` não tem texto livre e frase montada com os dados do kicker é o
+  # anti-padrão nº 5 do DESIGN.md (registrado só na story, sem ir a README, por
+  # instrução dele); a capa **some com filtro ativo**, e nem é buscada; o destaque
+  # **sai da fila**, cortado por `id`; a ficha é `CASA · CIDADE · SETORES`, com os
+  # nomes dos setores; e o destaque **esgotado continua na capa**, com selo e sem
+  # link. ⚠️ A armadilha da story é o teste de varredura de palavras proibidas da
+  # 3.1: `setores` e `imagem_url` viram chaves legítimas nesta resposta.
+  3-3-chamada-principal-na-programacao: review
   3-4-ver-o-evento-e-seus-setores: backlog
   3-5-modelo-de-reserva: backlog
   3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: backlog

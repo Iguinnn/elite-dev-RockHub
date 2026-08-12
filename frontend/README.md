@@ -1400,6 +1400,52 @@ um backend que está no ar. `listarCidadesEmCartaz` é a única função do `lib
 devolve `[]`, e é de propósito: sem os chips a tela continua inteira, e um resultado discriminado
 criaria um ramo que ela renderiza igual ao caso feliz.
 
+**A chamada principal é o bloco que faz a tela parecer jornal** (Story 3.3) — sem ela a listagem é só
+uma tabela. É arte à esquerda e kicker, manchete e ficha de três dados à direita, uma só por tela
+(UX-DR4), e o `ChamadaPrincipal` mora no próprio `page.tsx` ao lado do `Chip` e da `Fila`, pelo mesmo
+motivo que a barra de busca não foi para `components/`: ele lê o `estilos` deste módulo e não tem
+segundo consumidor. Duas ausências são decisão, não esquecimento. **Não há standfirst**, que é a linha
+em itálico que o protótipo põe entre a manchete e a ficha: o `Evento` não tem campo de texto livre —
+nem coluna, nem entrada no formulário de publicação, nem nada que a Ticketmaster devolva —, e uma
+frase montada com os mesmos dados que o kicker e a ficha já mostram é o anti-padrão nº 5 do
+`DESIGN.md`, a linha de contexto que soa gerada. E **não há botão "Ver setores"**: o bloco inteiro é o
+alvo, como a fila, e dois alvos para o mesmo destino no mesmo bloco é uma escolha falsa. O
+`<Link>`/`<div>` conforme `esgotado` é o mesmo padrão da fila, e pelo mesmo motivo. **O preço não
+estava na ficha e voltou depois de eu ver a tela montada**: ele fica numa linha própria **abaixo**
+dela, e não como um quarto par dentro — os três de cima descrevem o show (onde, em que cidade, com
+que setores) e o preço é a única linha que fala de comprar. Como o destaque sai da fila, sem essa
+linha ele seria o único show da raiz sem "a partir de" em lugar nenhum. Também tirei o fio de 1px que
+fechava o bloco embaixo: ele ficava solto entre a base da arte e o `.secTitulo`, que já traz o
+próprio fio logo abaixo de "Programação" — dois filetes quase paralelos, sem nada entre eles, leem
+como sobra de grade.
+
+**O destaque sai da fila, e o corte é por `id`.** Nenhum show aparece duas vezes na mesma tela, e eu
+tinha escrito `slice(1)` primeiro: funciona hoje por coincidência, porque as duas rotas são consultas
+independentes e "o primeiro item da lista é o destaque" é uma propriedade do `order_by` de agora — o
+dia em que a ordenação mudar, a tela passaria a esconder o segundo show e a mostrar o primeiro duas
+vezes, sem erro nenhum. Com **um** evento no banco a fila fica vazia depois do corte, e aí somem o
+título `Programação` e a lista inteira: "nenhum show em cartaz" embaixo de uma capa que mostra um show
+seria a tela se contradizendo em duas linhas. Com filtro ativo (`?q=`, `?cidade=` ou `?periodo=`) a
+capa não aparece, e — a parte que é fácil esquecer — ela nem é **buscada**: o `filtrando` subiu para
+antes do `Promise.all`, e a terceira promessa é `filtrando ? null : obterDestaque()`. Renderizar
+condicionalmente é a metade fácil; a outra é não pagar uma ida à rede por um resultado que a tela vai
+jogar fora. As alternativas eram a capa refletir o resultado filtrado — com um resultado só, o mesmo
+show em cima e embaixo — ou ela ignorar o filtro, mostrando um show de São Paulo acima de "nenhum show
+encontrado" numa busca por Rio.
+
+**A arte é um `<img>` comum, e não `next/image`**, com o mesmo `eslint-disable` da miniatura do
+catálogo. O motivo é concreto: não existe `images.remotePatterns` no `next.config.ts`, e o componente
+do Next estoura **em tempo de execução** com host não declarado — em produção, não em build. O host
+vem da Ticketmaster e não é meu para prometer; declarar `s1.ticketm.net` hoje é configuração que
+quebra calada no dia em que a Discovery servir de outro domínio. O `alt` é vazio porque a arte é
+decorativa: o nome do artista está escrito ao lado dela em serifada de 46px, e um `alt` repetido faria
+o leitor de tela anunciar o show duas vezes. Sem `imagem_url` — a coluna é anulável desde a 2.3 — o
+lugar fica com um bloco em `var(--breu2)` do mesmo tamanho, para a grade não dançar conforme o evento
+tem ou não tem foto. O kicker ganhou `dataDaChamada` no `formato.ts`, e ela **não** é a
+`dataPorExtenso` com um parâmetro a mais: um booleano naquela função lhe daria duas saídas e obrigaria
+as quatro telas do organizador a declarar qual delas querem. Data formatada inline na tela é o defeito
+que o code review da Epic 2 achou, e o `FUSO` continua num lugar só.
+
 ## Sobre não ter teste automatizado aqui
 
 **Não há teste no frontend, e isso é decisão, não esquecimento.** O desafio não exige teste, o prazo

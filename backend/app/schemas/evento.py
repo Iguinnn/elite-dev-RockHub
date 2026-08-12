@@ -308,6 +308,73 @@ class EventoNaProgramacao(BaseModel):
     esgotado: bool
 
 
+class EventoEmDestaque(BaseModel):
+    """O próximo show da programação, como a **chamada principal** o mostra
+    (Story 3.3).
+
+    **Por que ele existe em vez de dois campos no `EventoNaProgramacao`**
+    (decisão do Igor). A capa precisa de duas coisas que a fila não desenha: a
+    arte e os nomes dos setores. Acrescentá-las à lista custaria uma linha de
+    schema e faria **todo** item da programação carregar uma URL e uma lista que
+    só um deles usa — exatamente o que a Story 3.1 recusou ao deixar
+    `imagem_url` de fora ("campo que nenhuma tela lê é campo que ninguém sabe se
+    está certo"). Pior no caso dos setores: eles são o campo que o UX-DR7
+    mantém fora da listagem, e devolvê-los ali por causa da capa abriria a porta
+    pelo motivo errado. Dois contratos independentes custam uma classe; um
+    contrato que serve às duas telas custa a disciplina de todas as próximas.
+
+    **As três coisas que ele recusa, e por quê:**
+
+    - **`capacidade` e `vendidos`** — UX-DR7 e AD-13. `esgotado` nasce dos dois
+      e não deixa nenhum atravessar: é a diferença entre dizer "restam 3" e
+      dizer "esgotado". A ficha da capa não tem contagem em lugar nenhum
+    - **`publicado_em`, `origem_externa_id` e `organizador_id`** — assunto de
+      quem publica, não de quem está escolhendo um show
+
+    **`preco_minimo_centavos` entrou depois de a tela ficar pronta**, e a ordem
+    importa: a ficha nasceu como `CASA · CIDADE · SETORES`, sem preço, e o Igor
+    decidiu acrescentá-lo ao ver a capa montada — o show em destaque **sai da
+    fila** (Story 3.3), então ele era o único da programação sem "a partir de"
+    em lugar nenhum da raiz. Ele voltou como **um campo derivado**, e não como a
+    lista de setores com preço dentro: é a diferença entre devolver um número e
+    devolver o estoque que o produziu.
+
+    **Por que `setores` é `list[str]` e não `list[SetorSaida]`.** A ficha quer
+    três nomes — `Pista, VIP e Camarote` —, e `SetorSaida` carrega `capacidade`,
+    `vendidos` e `preco_centavos`. Reusá-lo "porque já existe um schema de
+    setor" seria o UX-DR7 caindo por reuso de schema, com o estoque inteiro
+    atravessando a rede para a tela desenhar três palavras. A economia de uma
+    classe não paga isso. É a primeira vez que um schema deste projeto devolve
+    uma **projeção** de um relacionamento, e é esta a fronteira que a segura.
+
+    **Sem `from_attributes`**, como o `EventoNaProgramacao` e pelo mesmo motivo:
+    `setores` (de nomes) e `esgotado` não são atributos do `Evento`, e declarar
+    a conversão prometeria uma leitura que não acontece. Quem os monta é o
+    service.
+    """
+
+    id: UUID
+    nome: str
+    data_hora: datetime
+    local: str
+    cidade: str | None
+    # Anulável desde a Story 2.3, e a chave **continua no corpo** quando é nula:
+    # a tela distingue "sem arte" (bloco do mesmo tamanho no lugar) de "campo
+    # que não veio". Nada de `exclude_none` aqui.
+    imagem_url: str | None
+    # **Só os nomes**, em ordem alfabética — a ordem já vem do
+    # `order_by="Setor.nome"` do `relationship` (Story 2.3), e não de um
+    # `sorted()` no service. Todos entram, inclusive o esgotado: a ficha diz o
+    # que o show **tem**, não o que sobrou.
+    setores: list[str]
+    # O menor preço **entre os setores que ainda têm ingresso**, como no
+    # `EventoNaProgramacao` e pelo mesmo motivo: se a Pista esgotou, a capa
+    # anuncia o preço do que dá para comprar. `None` quando não há nenhum — ou
+    # seja, sempre que `esgotado` for verdadeiro.
+    preco_minimo_centavos: int | None
+    esgotado: bool
+
+
 class EventoSaida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

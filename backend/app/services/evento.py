@@ -60,6 +60,7 @@ from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.evento import (
+    EventoEmDestaque,
     EventoEntrada,
     EventoNaProgramacao,
     EventoResumo,
@@ -467,6 +468,97 @@ def listar_programacao(
         )
 
     return programacao
+
+
+def obter_destaque(sessao: Session) -> EventoEmDestaque | None:
+    """O próximo show da programação — a chamada principal da raiz (Story 3.3).
+
+    **Mesmo recorte da `listar_programacao`**: publicado (`publicado_em IS NOT
+    NULL`) e ainda por acontecer (`data_hora >= agora`). Não é "parecido" — é o
+    mesmo, e por isso as duas condições estão escritas na mesma ordem: um
+    destaque que aparecesse fora do recorte da lista seria um show na capa que
+    não existe na programação logo abaixo.
+
+    **Por que uma consulta própria, e não `listar_programacao(sessao)[0]`.** A
+    de cima monta três filtros opcionais e roda um laço de derivação de preço
+    sobre a programação **inteira** para descartar tudo menos a primeira linha.
+    O `LIMIT 1` daqui é a diferença entre ler um evento e ler todos para jogar
+    quase todos fora — e essa distância cresce com o catálogo, na rota da tela
+    mais visitada do produto. A duplicação das duas condições é real e é o preço
+    consciente: extrair um helper `_em_cartaz()` economizaria duas linhas e
+    espalharia o recorte por um terceiro lugar, sem que nenhum dos dois
+    chamadores ficasse mais fácil de ler.
+
+    **Por que o esgotado continua sendo destaque** (decisão do Igor). Mesma
+    regra da fila da Story 3.1: show esgotado é informação, não ruído. A
+    alternativa — pular para o próximo com ingresso — desperdiçaria menos o
+    bloco grande da tela, e em troca faria "o próximo show" deixar de ser
+    verdade: a capa esconderia do visitante justamente o show mais próximo. Quem
+    trata o esgotado é a tela, com selo e sem link.
+
+    **`None` quando não há nada em cartaz**, e o router devolve isso como `200`
+    com corpo `null` — nunca `404`. O motivo está lá.
+    """
+    # Lido **uma vez**, como na `listar_programacao` e pelo mesmo motivo: duas
+    # leituras do relógio na mesma requisição podem discordar sobre o evento que
+    # começa agora. Aqui só há um corte de tempo, mas a disciplina é a mesma —
+    # e um `datetime` com fuso, nunca texto.
+    agora = datetime.now(timezone.utc)
+
+    evento = sessao.scalars(
+        select(Evento)
+        .where(
+            Evento.publicado_em.is_not(None),
+            Evento.data_hora >= agora,
+        )
+        # ⚠️ `Evento.id` como desempate, o **mesmo** da `listar_programacao`.
+        # Sem ele, dois shows no mesmo horário fariam a capa alternar entre um e
+        # outro a cada recarregar: com `LIMIT 1`, qual das duas linhas volta
+        # passa a ser escolha do planejador, não do código.
+        .order_by(Evento.data_hora, Evento.id)
+        .limit(1)
+        # Uma consulta a mais para os setores, e não uma por setor: sem ele, ler
+        # `evento.setores` duas linhas abaixo emitiria o `SELECT` preguiçoso no
+        # meio da montagem do schema.
+        .options(selectinload(Evento.setores))
+    ).first()
+
+    if evento is None:
+        return None
+
+    # ⚠️ **AD-13**: disponível é `setor.vendidos < setor.capacidade`, lido do
+    # próprio setor. É **proibido** derivar disponibilidade com `COUNT` sobre
+    # reserva ou ingresso, em qualquer camada — as duas tabelas nascem nas
+    # Stories 3.5 e 3.9, e é agora que o hábito se forma. Uma lista só serve aos
+    # dois campos derivados abaixo, como na `listar_programacao`.
+    precos = [
+        setor.preco_centavos
+        for setor in evento.setores
+        if setor.vendidos < setor.capacidade
+    ]
+
+    return EventoEmDestaque(
+        id=evento.id,
+        nome=evento.nome,
+        data_hora=evento.data_hora,
+        local=evento.local,
+        cidade=evento.cidade,
+        imagem_url=evento.imagem_url,
+        # **Todos os setores, inclusive o esgotado** (suposição declarada na
+        # story): a ficha diz o que o show tem, não o que sobrou. Filtrar por
+        # disponibilidade aqui faria a lista mudar sozinha conforme as vendas,
+        # sem nenhuma pista do porquê. A ordem alfabética já vem do
+        # `order_by="Setor.nome"` do `relationship` — não há `sorted()` aqui, e
+        # não deve haver: duas fontes para a mesma ordem é uma chance de elas
+        # discordarem.
+        setores=[setor.nome for setor in evento.setores],
+        # ⚠️ `min()` sobre sequência vazia levanta `ValueError`, e dois casos
+        # caem aqui: o evento com todos os setores esgotados e o evento sem setor
+        # nenhum (possível por `psql`, e existe no banco de desenvolvimento). O
+        # `if` trata os dois antes, como na `listar_programacao`.
+        preco_minimo_centavos=min(precos) if precos else None,
+        esgotado=not precos,
+    )
 
 
 def listar_cidades_em_cartaz(sessao: Session) -> list[str]:

@@ -21,18 +21,28 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
-from app.schemas.evento import EventoNaProgramacao, PeriodoDaProgramacao
+from app.schemas.evento import (
+    EventoEmDestaque,
+    EventoNaProgramacao,
+    PeriodoDaProgramacao,
+)
 from app.services import evento as servico_de_evento
 
 router = APIRouter(tags=["público"])
 
 
-# ⚠️ **Esta rota precisa continuar declarada antes de qualquer `/eventos/{id}`.**
-# A Story 3.4 pendura o detalhe do evento neste mesmo router, e o FastAPI casa
-# as rotas na ordem em que elas foram registradas: com `/eventos/{id}` em cima,
-# uma chamada a `/eventos/cidades` tentaria ler `"cidades"` como UUID e
-# devolveria `422` — um erro de validação para um endereço que existe, que é a
-# pior pista possível para quem for procurar o defeito.
+# ⚠️ **As duas rotas de path fixo abaixo — `/eventos/cidades` e
+# `/eventos/destaque` — precisam continuar declaradas antes de qualquer
+# `/eventos/{id}`.** A Story 3.4 pendura o detalhe do evento neste mesmo router,
+# e o FastAPI casa as rotas na ordem em que elas foram registradas: com
+# `/eventos/{id}` em cima, uma chamada a `/eventos/cidades` tentaria ler
+# `"cidades"` como UUID e devolveria `422` — um erro de validação para um
+# endereço que existe, que é a pior pista possível para quem for procurar o
+# defeito.
+#
+# O aviso é **um só para as duas**, e não um por rota: elas formam um bloco, e
+# repetir a explicação faria a terceira parecer uma exceção quando ela for a
+# regra. Quem acrescentar a próxima rota de path fixo acrescenta-a aqui dentro.
 @router.get("/eventos/cidades", response_model=list[str])
 def listar_cidades_em_cartaz(
     sessao: Session = Depends(obter_sessao),
@@ -49,6 +59,41 @@ def listar_cidades_em_cartaz(
     do cursor de quem ia clicar.
     """
     return servico_de_evento.listar_cidades_em_cartaz(sessao)
+
+
+@router.get("/eventos/destaque", response_model=EventoEmDestaque | None)
+def obter_destaque(
+    sessao: Session = Depends(obter_sessao),
+) -> EventoEmDestaque | None:
+    """O próximo show da programação — a chamada principal da raiz (Story 3.3).
+
+    **Pública pelo mesmo critério das outras duas**: nenhuma dependência de
+    sessão, nenhum `Depends(exigir_papel(...))`. Ela desenha o bloco grande da
+    raiz, que é a tela de quem ainda não tem conta.
+
+    **Sem parâmetro nenhum** — nem `q`, nem `cidade`, nem `periodo`, ao
+    contrário da `listar_programacao` logo abaixo. A capa é *o próximo show*,
+    não o resultado de uma busca: com filtro ativo a tela não a renderiza e nem
+    sequer a chama (decisão do Igor). Uma rota que aceitasse os mesmos filtros
+    convidaria a "capa que reflete o resultado filtrado", que é a alternativa
+    descartada — com um resultado só, a tela mostraria o mesmo evento em cima e
+    embaixo.
+
+    **Corpo `null` com `200` quando não há show em cartaz — nunca `404`.** É a
+    mesma decisão do `200 []` da programação: "não há nada marcado" é uma
+    resposta sobre o produto, não um endereço que não existe. E **`204` está
+    fora** por um motivo concreto do outro lado da rede: ele não tem corpo, e o
+    `resposta.json()` da tela estouraria num `catch` que existe para falha —
+    "não há show em cartaz" viraria "não foi possível carregar", que é a única
+    das duas frases que manda a pessoa fazer a coisa errada.
+
+    **O que o corpo não carrega**: `capacidade`, `vendidos`, `preco_centavos` —
+    UX-DR7, garantido pelo `response_model` e não pela tela. `setores` vem como
+    **lista de nomes**, que é o que a ficha desenha, e `preco_minimo_centavos` é
+    derivado dos setores com ingresso sem revelar nenhum dos dois números; o
+    motivo inteiro está no docstring de `EventoEmDestaque`.
+    """
+    return servico_de_evento.obter_destaque(sessao)
 
 
 @router.get("/eventos", response_model=list[EventoNaProgramacao])

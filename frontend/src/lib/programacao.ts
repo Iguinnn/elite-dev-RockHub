@@ -25,6 +25,34 @@ export type EventoNaProgramacao = {
 };
 
 /**
+ * Espelha `app/schemas/evento.py::EventoEmDestaque` — o próximo show, como a
+ * **chamada principal** da raiz o mostra (Story 3.3).
+ *
+ * **Não é o `EventoNaProgramacao` com dois campos a mais.** São dois contratos
+ * independentes, e é isso que mantém a fila enxuta: `imagem_url` e `setores`
+ * existem aqui porque a capa os desenha, e ela mesma decide o que mostrar deles.
+ * O motivo inteiro está no docstring do schema, do lado de lá.
+ *
+ * `setores` é uma lista de **nomes**, e nunca de objetos: nome de setor não é
+ * estoque, contagem é. Nenhum campo daqui carrega `capacidade` ou `vendidos`
+ * (UX-DR7) — e a garantia é o `response_model` do backend, não este tipo.
+ */
+export type EventoEmDestaque = {
+  id: string;
+  nome: string;
+  data_hora: string;
+  local: string;
+  cidade: string | null;
+  /** `null` quando o evento não tem arte — a coluna é anulável desde a 2.3. */
+  imagem_url: string | null;
+  /** Só os nomes, em ordem alfabética. Todos, inclusive os esgotados. */
+  setores: string[];
+  /** `null` quando não há setor com ingresso — o evento está esgotado. */
+  preco_minimo_centavos: number | null;
+  esgotado: boolean;
+};
+
+/**
  * **Dois estados, e não três como no `lib/eventos.ts`.** Não há `404` nem
  * `401` possíveis nesta rota: ela responde `200 []` para banco vazio e não
  * conhece sessão nenhuma. Um terceiro estado aqui seria um ramo que nenhuma
@@ -182,5 +210,57 @@ export async function listarCidadesEmCartaz(): Promise<string[]> {
 
     console.error(`[RockHub] Cidades indisponíveis em ${API_URL}:`, erro);
     return [];
+  }
+}
+
+/**
+ * O próximo show da programação — o que a chamada principal desenha (Story 3.3).
+ *
+ * **Devolve `null` e engole a falha**, no mesmo argumento da
+ * `listarCidadesEmCartaz`: sem a capa a tela continua inteira, a programação
+ * continua listada e a busca continua funcionando. Não há nada diferente para
+ * ela fazer, e um `{ estado: "indisponivel" }` aqui criaria um ramo que a tela
+ * renderiza **exatamente igual** ao caso feliz — um ramo morto que alguém teria
+ * que manter. A capa não ganha frase de erro nem espaço reservado: ela
+ * simplesmente não aparece.
+ *
+ * ⚠️ **`null` também é a resposta certa do backend, e isso não é falha.** Banco
+ * sem show em cartaz responde `200` com corpo `null` (nunca `404`), e
+ * `resposta.json()` devolve `null` legitimamente. Não pode haver nenhum
+ * `if (!dados) return { estado: "indisponivel" }` aqui: ele transformaria "não
+ * há show em cartaz" em "não foi possível carregar" — a mesma classe de mentira
+ * que a normalização do período evitou na Story 3.2. O tipo de retorno já cobre
+ * os dois casos com o mesmo valor porque a tela faz a mesma coisa nos dois.
+ *
+ * **Sem parâmetro nenhum**: a rota não os declara, e a decisão é essa — a capa é
+ * *o próximo show*, não o resultado da busca. Com filtro ativo a tela nem chama
+ * esta função (`page.tsx`), para não pagar uma ida à rede por um resultado que
+ * ela vai jogar fora.
+ *
+ * Sem `cabecalhoDeSessao()` e sem `headers`, como as duas funções acima e pelo
+ * motivo escrito na primeira delas.
+ */
+export async function obterDestaque(): Promise<EventoEmDestaque | null> {
+  try {
+    const resposta = await fetch(`${API_URL}/eventos/destaque`, {
+      cache: "no-store",
+    });
+
+    if (!resposta.ok) {
+      return null;
+    }
+
+    return (await resposta.json()) as EventoEmDestaque | null;
+  } catch (erro) {
+    // ⚠️ **Primeira linha do `catch`, igual às duas funções acima.** O risco é
+    // idêntico e é o mesmo `cache: "no-store"`: ele interrompe a renderização
+    // estática **lançando** `DYNAMIC_SERVER_USAGE`, e um `catch` que o engole
+    // faria a raiz correr o risco de nascer estática — aqui, com a capa
+    // congelada no build ou ausente para sempre. O comentário longo está na
+    // `listarProgramacao`; esta função tem o mesmo motivo e nenhuma diferença.
+    unstable_rethrow(erro);
+
+    console.error(`[RockHub] Destaque indisponível em ${API_URL}:`, erro);
+    return null;
   }
 }

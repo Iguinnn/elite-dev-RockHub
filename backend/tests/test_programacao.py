@@ -62,6 +62,7 @@ def _evento_gravado(
     publicado: bool = True,
     local: str = "Espaço Unimed",
     cidade: str | None = "São Paulo",
+    imagem_url: str | None = None,
     setores: list[tuple[str, int, int, int]] | None = None,
 ) -> Evento:
     """Um evento com setores, gravado direto pelo ORM.
@@ -94,6 +95,12 @@ def _evento_gravado(
     argumento, e o helper o repassa cru: não existe `cidade or "São Paulo"`
     nenhum abaixo, justamente para o teste do filtro poder gravar o evento sem
     cidade que ele precisa.
+
+    `imagem_url` ganhou parâmetro na Story 3.3, com `None` como default — que é
+    também o valor que a coluna tinha antes de ela ser escolhível. Nenhum teste
+    da 3.1 nem da 3.2 precisou mudar por causa disso: a arte não atravessa o
+    contrato da programação, e só a rota de destaque a lê. É o mesmo `None` de
+    domínio da `cidade`, e ele é repassado cru pelo mesmo motivo.
     """
     # `is None`, e não `setores or [...]`: lista vazia é falsy, e o atalho daria
     # um setor de brinde ao teste que existe para provar que evento sem setor
@@ -107,6 +114,7 @@ def _evento_gravado(
         data_hora=data_hora or _daqui_a(30),
         local=local,
         cidade=cidade,
+        imagem_url=imagem_url,
         origem_externa_id="G5vYZ9a1kd",
         # `NULL` é rascunho (Story 2.3). O default é "publicado" porque o
         # rascunho é o caso excepcional — só o AC2 o pede.
@@ -1068,3 +1076,447 @@ def test_o_openapi_declara_a_rota_de_cidades_como_lista_de_texto(
     assert corpo["items"]["type"] == "string"
     assert "security" not in rota
     assert rota.get("parameters", []) == []
+
+
+# =========================================================================== #
+# Story 3.3 — a chamada principal na programação
+#
+# `GET /eventos/destaque`: o próximo show da programação, com a arte e os nomes
+# dos setores. Tudo daqui para baixo é da 3.3, e **nenhum teste acima precisou
+# mudar** — a rota é nova, `GET /eventos` está intacta e o helper só ganhou um
+# parâmetro com default. É o AC9 desta story, e ele é verificável relendo o
+# diff: se algo acima mudou, escopo vazou.
+# =========================================================================== #
+
+# As nove chaves do `EventoEmDestaque`, e nenhuma a mais (AC5).
+#
+# ⚠️ Ele é **maior** que o `CHAVES_DO_CONTRATO` da programação, e isso não é
+# afrouxamento: `imagem_url` e `setores` (nomes) entram porque a capa os desenha,
+# e os dois contratos são independentes de propósito. O AC5 falava em **oito**
+# chaves — `preco_minimo_centavos` entrou depois, por decisão do Igor tomada com
+# a tela pronta, e o motivo está no docstring do schema.
+CHAVES_DO_DESTAQUE = {
+    "id",
+    "nome",
+    "data_hora",
+    "local",
+    "cidade",
+    "imagem_url",
+    "setores",
+    "preco_minimo_centavos",
+    "esgotado",
+}
+
+
+# --------------------------------------------------------------------------- #
+# AC1 — pública por assinatura, e sem parâmetro nenhum
+# --------------------------------------------------------------------------- #
+
+
+def test_o_destaque_responde_sem_nenhum_cookie_de_sessao(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A terceira rota pública do projeto, e o mesmo cuidado das duas primeiras."""
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    # ⚠️ O `TestClient` guarda cookie entre chamadas — sem isto o teste passaria
+    # por acidente numa suíte onde outro já tivesse feito login.
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos/destaque")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["nome"] == "Marina Sena"
+
+
+def test_logado_como_cliente_o_destaque_e_identico_ao_anonimo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A identidade de quem chama não influencia a capa.
+
+    Os corpos **inteiros**, e não só o nome: a garantia é que nenhum campo a
+    mais aparece para quem está logado.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Djavan")
+    cliente.cookies.clear()
+    anonimo = cliente.get("/eventos/destaque")
+
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "cliente@exemplo.com")
+    entrada = cliente.post(
+        "/auth/login", json={"email": comprador.email, "senha": "rockhub"}
+    )
+    assert entrada.status_code == 200
+
+    logado = cliente.get("/eventos/destaque")
+
+    assert logado.status_code == 200
+    assert logado.json() == anonimo.json()
+
+
+def test_o_destaque_e_o_de_menor_data_hora_e_nao_o_primeiro_inserido(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O mais distante é gravado **primeiro**, de propósito.
+
+    Sem o `order_by`, um `LIMIT 1` devolve o que o Postgres achar mais barato —
+    e, num banco de teste com duas linhas, isso costuma ser a ordem de inserção.
+    O teste passaria por acidente com os eventos gravados na ordem natural.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Depois", data_hora=_daqui_a(40))
+    _evento_gravado(sessao, organizador, nome="Antes", data_hora=_daqui_a(5))
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos/destaque").json()["nome"] == "Antes"
+
+
+def test_empate_de_data_hora_desempata_por_id_de_forma_estavel(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Dois shows no mesmo horário não podem trocar de lugar entre requisições.
+
+    ⚠️ Sem `Evento.id` no `order_by`, o `LIMIT 1` sobre um empate é uma escolha
+    do planejador — e a capa passaria a alternar entre dois shows a cada
+    recarregar, sem que nada tivesse mudado no banco. Duas chamadas seguidas é
+    o mínimo que expõe isso; o `min()` do lado direito é quem diz *qual* das
+    duas respostas é a certa.
+    """
+    organizador = _organizador(fabricar_usuario)
+    instante = _daqui_a(9)
+    primeiro = _evento_gravado(sessao, organizador, nome="A", data_hora=instante)
+    segundo = _evento_gravado(sessao, organizador, nome="B", data_hora=instante)
+    cliente.cookies.clear()
+
+    uma = cliente.get("/eventos/destaque").json()
+    outra = cliente.get("/eventos/destaque").json()
+
+    assert uma == outra
+    # `UUID` se compara pelos 16 bytes, que é exatamente o critério do `uuid` do
+    # Postgres — as duas pontas concordam sobre qual dos dois é o menor.
+    assert uma["id"] == str(min(primeiro.id, segundo.id))
+
+
+# --------------------------------------------------------------------------- #
+# AC4 — o mesmo recorte da programação: rascunho e passado ficam fora
+# --------------------------------------------------------------------------- #
+
+
+def test_rascunho_nao_vira_destaque_mesmo_sendo_o_mais_proximo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O recorte é **idêntico** ao da `listar_programacao`, e não um parecido.
+
+    O rascunho é o mais próximo de propósito: uma consulta que esquecesse a
+    condição de `publicado_em` devolveria justamente ele.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(
+        sessao, organizador, nome="Rascunho", data_hora=_daqui_a(1), publicado=False
+    )
+    _evento_gravado(sessao, organizador, nome="Publicado", data_hora=_daqui_a(30))
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos/destaque").json()["nome"] == "Publicado"
+
+
+def test_evento_passado_nao_vira_destaque_mesmo_sendo_o_mais_proximo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O gêmeo do teste acima, para a outra condição do recorte.
+
+    ⚠️ O evento passado é o de **menor** `data_hora` de todos — sem o
+    `data_hora >= agora`, ele seria o destaque, e a capa do produto abriria com
+    um show que já aconteceu.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Já aconteceu", data_hora=_daqui_a(-10))
+    _evento_gravado(sessao, organizador, nome="Vai acontecer", data_hora=_daqui_a(10))
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos/destaque").json()["nome"] == "Vai acontecer"
+
+
+# --------------------------------------------------------------------------- #
+# AC3 — banco vazio responde `200` com corpo `null`
+# --------------------------------------------------------------------------- #
+
+
+def test_banco_sem_evento_publicado_e_futuro_responde_destaque_nulo(
+    cliente: TestClient,
+) -> None:
+    """`200` com corpo `null` — **nunca `404`**, e nunca `204`.
+
+    Mesma decisão do `200 []` da programação: "não há show em cartaz" é uma
+    resposta sobre o produto, não um endereço que não existe. E `204` está fora
+    porque ele **não tem corpo**: o `resposta.json()` da tela estouraria num
+    `catch` que existe para falha de rede, e o "não há show" viraria "não foi
+    possível carregar".
+    """
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos/destaque")
+
+    assert resposta.status_code == 200
+    assert resposta.json() is None
+
+
+# --------------------------------------------------------------------------- #
+# AC5, AC6 — o contrato da capa, e o estoque que continua sem atravessar
+# --------------------------------------------------------------------------- #
+
+
+def test_o_destaque_tem_exatamente_as_nove_chaves_do_contrato(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Igualdade de conjunto: campo a mais reprova tanto quanto a menos."""
+    _evento_gravado(sessao, _organizador(fabricar_usuario))
+    cliente.cookies.clear()
+
+    destaque = cliente.get("/eventos/destaque").json()
+
+    assert set(destaque) == CHAVES_DO_DESTAQUE
+
+
+def test_nenhuma_palavra_de_estoque_aparece_no_texto_do_destaque(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A varredura do texto inteiro, **sem `setores` e sem `imagem_url`**.
+
+    ⚠️ Esta lista **não é** a do teste gêmeo de `GET /eventos`, e a diferença é
+    a armadilha desta story. Ali `setores` e `imagem_url` são palavras
+    proibidas; aqui as duas são **chaves legítimas** — a ficha mostra os nomes
+    dos setores, e a capa mostra a arte. Nome de setor não é estoque;
+    **contagem** é. Quem "consertar" este teste copiando a lista de lá vai vê-lo
+    falhar, e apagar a asserção inteira jogaria fora a proteção do UX-DR7 numa
+    rota que devolve um relacionamento — que é exatamente onde ela mais importa.
+
+    O que continua proibido é o que conta ingresso (`capacidade`, `vendidos`,
+    `preco_centavos`) e o que é assunto de quem publica (`publicado_em`,
+    `origem_externa_id`, `organizador_id`).
+    """
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[("Pista", 800, 137, 12000)],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get("/eventos/destaque").text
+
+    for palavra in (
+        "capacidade",
+        "vendidos",
+        "preco_centavos",
+        "publicado_em",
+        "origem_externa_id",
+        "organizador_id",
+    ):
+        assert palavra not in corpo
+
+
+# --------------------------------------------------------------------------- #
+# AC7, AC8 — os setores como nomes, e o esgotado derivado de `setor.vendidos`
+# --------------------------------------------------------------------------- #
+
+
+def test_os_setores_do_destaque_vem_em_ordem_alfabetica_so_com_nomes(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`list[str]`, e não `list[SetorSaida]` — e o esgotado entra junto.
+
+    Gravados fora de ordem: quem ordena é o `order_by="Setor.nome"` do
+    `relationship` (Story 2.3), não a ordem de inserção.
+
+    ⚠️ A **Pista está esgotada** e continua na ficha: ela diz o que o show
+    **tem**, não o que sobrou. Filtrar por disponibilidade aqui faria a lista
+    mudar sozinha conforme as vendas, sem nenhuma pista do porquê.
+    """
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[
+            ("VIP", 100, 0, 30000),
+            ("Pista", 800, 800, 12000),
+            ("Camarote", 120, 0, 42000),
+        ],
+    )
+    cliente.cookies.clear()
+
+    destaque = cliente.get("/eventos/destaque").json()
+
+    assert destaque["setores"] == ["Camarote", "Pista", "VIP"]
+    assert destaque["esgotado"] is False
+
+
+def test_o_preco_minimo_da_capa_pula_o_setor_esgotado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Pista a R$ 120,00 esgotada, Camarote a R$ 420,00 com ingresso → 42000.
+
+    O gêmeo do teste da fila (Story 3.1), agora na capa. A regra é a mesma e o
+    motivo também: anunciar 12000 aqui seria a única forma de a capa mentir com
+    número — o visitante clicaria esperando R$ 120,00 e encontraria R$ 420,00.
+
+    ⚠️ Os setores **continuam os dois na ficha**, inclusive o esgotado: ela diz o
+    que o show tem. É só o preço que pula.
+    """
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[("Pista", 800, 800, 12000), ("Camarote", 120, 0, 42000)],
+    )
+    cliente.cookies.clear()
+
+    destaque = cliente.get("/eventos/destaque").json()
+
+    assert destaque["preco_minimo_centavos"] == 42000
+    assert destaque["setores"] == ["Camarote", "Pista"]
+    assert destaque["esgotado"] is False
+
+
+def test_destaque_com_todos_os_setores_esgotados_continua_sendo_o_destaque(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Decisão do Igor: show esgotado é informação, não ruído.
+
+    A alternativa — pular para o próximo com ingresso — faria "o próximo show"
+    deixar de ser verdade, e a capa esconderia justamente o show mais próximo.
+    O evento esgotado tem `data_hora` **menor** que o disponível aqui, e é ele
+    que precisa voltar.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(
+        sessao,
+        organizador,
+        nome="Esgotado",
+        data_hora=_daqui_a(5),
+        setores=[("Pista", 800, 800, 12000), ("Camarote", 120, 120, 42000)],
+    )
+    _evento_gravado(sessao, organizador, nome="Com ingresso", data_hora=_daqui_a(20))
+    cliente.cookies.clear()
+
+    destaque = cliente.get("/eventos/destaque").json()
+
+    assert destaque["nome"] == "Esgotado"
+    assert destaque["esgotado"] is True
+    # `min()` sobre lista vazia levantaria `ValueError` — e viraria `500` na raiz
+    # do produto. A capa não anuncia preço nenhum quando não há o que comprar.
+    assert destaque["preco_minimo_centavos"] is None
+
+
+def test_destaque_sem_setor_nenhum_nao_quebra_a_rota(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Impossível pela rota de publicação, possível por `psql`.
+
+    E existe no banco de desenvolvimento deste projeto — que é justamente onde
+    a capa vai ser conferida a olho.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), setores=[])
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos/destaque")
+
+    assert resposta.status_code == 200
+    destaque = resposta.json()
+    assert destaque["setores"] == []
+    assert destaque["esgotado"] is True
+    assert destaque["preco_minimo_centavos"] is None
+
+
+# --------------------------------------------------------------------------- #
+# AC5, AC17 — a arte, que é anulável desde a Story 2.3
+# --------------------------------------------------------------------------- #
+
+
+def test_a_arte_do_destaque_atravessa_o_contrato(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A primeira vez que `imagem_url` sai para o lado público.
+
+    Ela é gravada desde a Story 2.4, copiada da Ticketmaster no ato da
+    publicação, e ficou fora do contrato da programação apontando para esta
+    story.
+    """
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        imagem_url="https://s1.ticketm.net/dam/a/exemplo.jpg",
+    )
+    cliente.cookies.clear()
+
+    destaque = cliente.get("/eventos/destaque").json()
+
+    assert destaque["imagem_url"] == "https://s1.ticketm.net/dam/a/exemplo.jpg"
+
+
+def test_imagem_url_nula_volta_como_null_no_destaque(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A coluna é anulável, e a tela põe um bloco do mesmo tamanho no lugar.
+
+    O que **não** pode acontecer é a chave sumir do corpo: a tela distingue
+    "sem arte" de "campo que não veio", e um `exclude_none` no schema faria as
+    duas coisas parecerem a mesma.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), imagem_url=None)
+    cliente.cookies.clear()
+
+    destaque = cliente.get("/eventos/destaque").json()
+
+    assert destaque["imagem_url"] is None
+    assert "imagem_url" in destaque
+
+
+# --------------------------------------------------------------------------- #
+# AC1, AC2 — o contrato declarado, e a rota sem parâmetro nenhum
+# --------------------------------------------------------------------------- #
+
+
+def test_o_openapi_declara_o_destaque_sem_parametro_nenhum(
+    cliente: TestClient,
+) -> None:
+    """Nem `query`, nem sessão — a rota não recebe nada.
+
+    ⚠️ `parameters == []` é a asserção certa **aqui**, ao contrário do que
+    aconteceu com `GET /eventos` na Story 3.2: aquela rota ganhou filtros e a
+    frase deixou de caber. Esta não tem filtro por decisão — a capa é o próximo
+    show, não o resultado de uma busca —, e se um `?q=` aparecer aqui um dia,
+    esta linha é quem vai perguntar por quê.
+    """
+    esquema = cliente.get("/openapi.json").json()
+
+    rota = esquema["paths"]["/eventos/destaque"]["get"]
+
+    assert "security" not in rota
+    assert rota.get("parameters", []) == []
+
+    propriedades = esquema["components"]["schemas"]["EventoEmDestaque"]["properties"]
+    assert set(propriedades) == CHAVES_DO_DESTAQUE

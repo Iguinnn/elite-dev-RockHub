@@ -152,6 +152,166 @@
   color: var(--breu);
 }
 
+/* ---- a chamada principal (Story 3.3) ------------------------------------ */
+
+/* O bloco grande do topo: arte à esquerda, texto à direita
+   (DESIGN.md#Components/chamada-principal). É ele que faz a tela parecer
+   jornal — sem ele a listagem vira só uma tabela.
+
+   **Sem card, sem sombra, sem raio** (UX-DR3): o que fecha o bloco é o fio de
+   1px embaixo, o mesmo de toda seção desta tela.
+
+   ⚠️ O recuo lateral de 12px é o **mesmo** de `.barraBusca`, `.grupos`,
+   `.secTitulo`, `.fila`, `.aviso` e `.vazio` — os sete andam juntos, e é isso
+   que mantém os fios correndo de ponta a ponta na medida do masthead.
+
+   `color: inherit` e `text-decoration: none` porque o bloco inteiro é um `<a>`
+   quando há ingresso (padrão `fila-listagem`, o mesmo da `.fila`): o elemento é
+   um link, a aparência é de capa de jornal.
+
+   ⚠️ **Sem fio embaixo**, ao contrário de toda outra seção desta tela. Ele
+   estava lá — é o que a story pedia —, e na tela montada ficava solto: um
+   filete a meia altura entre a base da arte e o `.secTitulo`, que já traz o
+   próprio fio logo abaixo de "Programação". Dois fios quase paralelos, sem nada
+   entre eles, leem como sobra de grade e não como separação. O que separa a capa
+   da lista aqui é o intervalo, e o fio do título é quem fecha o bloco. */
+.chamada {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 34px;
+  padding: 26px 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* O realce é na **manchete**, e não na caixa inteira como na `.fila`: pintar o
+   fundo de um bloco desta altura faria a tela piscar inteira a cada passagem do
+   cursor. Quando o show está esgotado o elemento é um `<div>` e não há hover
+   nenhum — a ausência de resposta é a informação (EXPERIENCE.md#fila-listagem),
+   e ela vem de graça por o elemento não ser um link. */
+.chamada:hover .manchete {
+  color: var(--neon);
+}
+
+/* 16/10 como o DESIGN.md pede. `position: relative` para o selo e o degradê se
+   ancorarem nela; `overflow: hidden` para a imagem não vazar do quadro. */
+.arte {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+
+/* O degradê para o breu na base, que é o que assenta a arte na página em vez de
+   ela flutuar como uma foto colada.
+
+   ⚠️ Escrito com `var(--breu)` e `transparent`, e **não** com os
+   `rgba(14,13,12,…)` do protótipo: aqueles são o breu **antigo**, de antes da
+   troca de paleta (commit `e5ecf30`), e copiá-los pintaria o degradê com a cor
+   errada além de violar a regra de só `var(--token)` neste arquivo. */
+.arte::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, var(--breu), transparent 65%);
+}
+
+/* Evento sem arte (`imagem_url` é anulável desde a Story 2.3): um bloco liso do
+   **mesmo tamanho**, para a grade não dançar conforme o evento tem ou não tem
+   foto. Mesma solução da miniatura do catálogo. O degradê sai junto — sobre um
+   bloco chapado ele seria uma sombra sem origem. */
+.arteVazia {
+  background: var(--breu2);
+}
+
+.arteVazia::after {
+  content: none;
+}
+
+.imagemDaArte {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Vazado em `--brasa` como o `.selo` da fila, e sobre a arte. `background` é o
+   breu e não `transparent`: o selo cai em cima de uma foto qualquer, e um
+   contorno sem fundo ficaria ilegível justamente nas artes claras — que são a
+   maioria. `z-index` porque ele precisa ficar acima do degradê. */
+.seloDaArte {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  left: 0;
+  padding: 6px 13px;
+  border: 1px solid var(--brasa);
+  background: var(--breu);
+  color: var(--brasa);
+  font: 700 10px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Centrado verticalmente contra a arte: com a coluna alinhada ao topo, a ficha
+   ficava boiando no meio de um vazio alto sempre que a manchete cabia em uma
+   linha só. */
+.textoDaChamada {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Serifada 46px, `-0.03em` (DESIGN.md#Typography). É a maior tipografia do
+   produto, e é ela que diz qual é o próximo show antes de qualquer leitura. */
+.manchete {
+  margin: 9px 0 16px;
+  font: 400 46px/1.02 var(--serif);
+  letter-spacing: -0.03em;
+}
+
+/* Rótulo em mono versalete, valor em serifada — a anatomia do `.lead-meta` do
+   protótipo, com um fio separando cada par do seguinte em vez de as três colunas
+   correrem lado a lado. Em linha porque são três dados curtos. */
+.ficha {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  padding-top: 15px;
+  border-top: 1px solid var(--fio);
+}
+
+.fichaRotulo {
+  font: 11px/1.7 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.fichaValor {
+  font: 400 17px/1.3 var(--serif);
+  color: var(--cal);
+}
+
+/* Abaixo da ficha, e não dentro dela: os três pares de cima descrevem o show, e
+   esta é a única linha que fala de comprar. Mesma anatomia do preço da fila —
+   rótulo em mono versalete acima, valor em serifada —, só que maior, porque na
+   capa ele é a última informação antes do clique. */
+.precoDaChamada {
+  margin-top: 18px;
+}
+
+.precoDaChamada span {
+  display: block;
+  margin-bottom: 6px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.precoDaChamada b {
+  font: 400 24px/1 var(--serif);
+}
+
 /* Mesma anatomia do título de seção de "Meus eventos": fio embaixo, serifada
    grande. Sem kicker de contexto ao lado — o protótipo escreve "Agosto de
    2026", que passa a mentir assim que a lista atravessa dois meses.
@@ -368,6 +528,38 @@
      primeira delas. */
   .grupos {
     gap: 8px;
+  }
+
+  /* **Uma coluna, arte acima** (UX-DR6). A arte vem primeiro porque é ela que
+     identifica o show num relance — invertê-la para "texto acima" empurraria a
+     foto para o meio da rolagem, onde ela deixa de ser capa. */
+  .chamada {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 22px 12px;
+  }
+
+  /* Menor, mas ainda a maior da tela: aos 46px de largura cheia, um nome de
+     artista longo quebrava em três linhas e empurrava a ficha para baixo da
+     dobra. */
+  .manchete {
+    margin: 8px 0 14px;
+    font-size: 34px;
+  }
+
+  /* A ficha **quebra em linha** sem cortar nenhum valor — o `flex-wrap` já está
+     no bloco de cima, e aqui o que muda é o intervalo entre os pares: com 28px
+     em duas linhas, os três dados pareciam soltos em vez de agrupados. */
+  .ficha {
+    gap: 8px 22px;
+  }
+
+  .precoDaChamada {
+    margin-top: 14px;
+  }
+
+  .precoDaChamada b {
+    font-size: 21px;
   }
 
   /* 76px e não 68px: a coluna passou a carregar `AGO 2026`, que é a linha mais

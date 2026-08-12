@@ -154,6 +154,42 @@ export function partesDaFilaPublica(iso: string): {
   };
 }
 
+/**
+ * ISO-8601 → o kicker da **chamada principal**, com o dia da semana junto:
+ * `"sexta, 15 de agosto de 2026, 22h30"` (Story 3.3). A tela o põe em versalete.
+ *
+ * **Não é a `dataPorExtenso` com um parâmetro a mais**, e a diferença é o dia da
+ * semana. Um `comDiaDaSemana?: boolean` naquela função lhe daria **duas** saídas
+ * e obrigaria as quatro telas do organizador que já a chamam a declarar qual
+ * delas querem — para uma escolha que só esta tela faz. Duas funções nomeadas
+ * dizem o que devolvem; uma função com bandeira exige ler a implementação.
+ * `dataPorExtenso` fica exatamente como está.
+ *
+ * **Por que "sexta" e não "sexta-feira"**: o `Intl` do pt-BR devolve a forma
+ * longa com o sufixo, e numa capa de show o sufixo é ruído — o protótipo escreve
+ * `Sexta, 14 de agosto`. O corte é no hífen, e ele é seguro para os sete dias:
+ * sábado e domingo não têm sufixo nenhum e atravessam inteiros.
+ *
+ * ⚠️ **Mora aqui, e não inline na tela**, pelo motivo de sempre: o `FUSO` fixo é
+ * deste módulo, e as formatações inline foram exatamente as que passaram
+ * despercebidas quando o `timeZone` entrou (code review da Epic 2) — a mesma
+ * publicação apareceu com duas datas diferentes.
+ */
+export function dataDaChamada(iso: string): string {
+  const instante = new Date(iso);
+  const parte = (opcoes: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("pt-BR", { ...opcoes, timeZone: FUSO }).format(instante);
+
+  // O `.replace(".", "")` acompanha o corte no hífen pelo mesmo motivo das
+  // outras duas funções daqui: em versalete o ponto vira sujeira. A forma longa
+  // do pt-BR não o traz hoje, e a linha custa nada se um dia trouxer.
+  const diaDaSemana = parte({ weekday: "long" }).split("-")[0].replace(".", "");
+  const dia = parte({ day: "numeric", month: "long", year: "numeric" });
+  const hora = parte({ hour: "2-digit", minute: "2-digit" }).replace(":", "h");
+
+  return `${diaDaSemana}, ${dia}, ${hora}`;
+}
+
 /** ISO-8601 → `"Publicado em 11 de agosto, 17h22"`. Sem o ano: é recente. */
 export function momentoDaPublicacao(iso: string): string {
   const instante = new Date(iso);
