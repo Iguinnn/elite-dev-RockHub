@@ -50,16 +50,21 @@ trava nada, então uma conta apagada entre ele e o `COMMIT` daria
 apagar usuário; quem escrever essa rota precisa voltar aqui.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
-from app.schemas.evento import EventoEntrada, EventoNaProgramacao, EventoResumo
+from app.schemas.evento import (
+    EventoEntrada,
+    EventoNaProgramacao,
+    EventoResumo,
+    PeriodoDaProgramacao,
+)
 
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
@@ -282,10 +287,46 @@ def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoR
     ]
 
 
-def listar_programacao(sessao: Session) -> list[EventoNaProgramacao]:
+def _escapar_curingas(termo: str) -> str:
+    r"""Neutraliza `%`, `_` e `\` antes de o termo virar padrão de `LIKE`.
+
+    ⚠️ **A armadilha mais silenciosa desta rota.** `%` e `_` são curingas do
+    `LIKE`, e o termo vem digitado por gente: sem isto, `?q=%` devolve a
+    programação inteira e `?q=_` devolve quase tudo — os dois com `200` e com
+    cara de resultado. Ninguém descobre pela tela, porque a tela funciona.
+
+    **A contrabarra é escapada primeiro**, e a ordem não é estética: fazendo
+    `%` antes, a contrabarra que acabou de ser inserida como escape seria
+    escapada de novo no passo seguinte, e o padrão sairia com `\\%` — que casa
+    uma contrabarra literal seguida de qualquer coisa, não um `%` literal.
+
+    Quem informa ao Postgres que a contrabarra é o caractere de escape é o
+    `escape="\\"` declarado no `ilike` de quem chama. Sem ele o padrão continua
+    errado, só que de outro jeito.
+    """
+    return termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def listar_programacao(
+    sessao: Session,
+    termo: str = "",
+    cidade: str = "",
+    periodo: PeriodoDaProgramacao = PeriodoDaProgramacao.TODOS,
+) -> list[EventoNaProgramacao]:
     """A programação pública: o que está publicado e ainda vai acontecer.
 
-    **Três decisões moram nesta função.**
+    **Quatro decisões moram nesta função.**
+
+    *Por que a peneira é do banco, e não da tela* (decisão do Igor, Story 3.2).
+    Os três filtros entram no `where` do Postgres, e o estado deles mora na URL
+    (`?q=&cidade=&periodo=`). A alternativa — devolver a lista inteira e
+    filtrá-la em JavaScript — daria uma busca instantânea ao digitar, e custaria
+    três coisas: a raiz viraria uma ilha `"use client"` (hoje ela não tem uma
+    linha), o filtro não sobreviveria a recarregar nem a compartilhar o link, e
+    a programação inteira atravessaria a rede a cada visita. Filtrar em Python
+    **aqui dentro** teria o mesmo defeito por outra porta: traria a tabela
+    inteira para a memória e desfaria o motivo de a condição existir. Se uma
+    condição não couber no `where`, ela está errada.
 
     *Por que só publicado.* `publicado_em IS NULL` é rascunho (Story 2.3), e o
     comentário do modelo diz, com todas as letras, que esse estado existe para
@@ -310,22 +351,80 @@ def listar_programacao(sessao: Session) -> list[EventoNaProgramacao]:
     `response_model`, não na tela. Os dois campos derivados daqui existem
     justamente para dizer o que interessa sem revelar número nenhum.
     """
-    # Lido **uma vez**, antes da consulta. Duas leituras do relógio na mesma
-    # requisição podem discordar sobre o evento que começa agora — é a mesma
-    # disciplina que o `cache()` da tela de "Meus eventos" impôs no frontend.
-    # Um `datetime` com fuso, nunca texto: comparar strings ISO funciona por
-    # acidente enquanto todo offset for `Z`.
+    # Lido **uma vez**, antes da consulta, e ele serve aos **dois** cortes de
+    # tempo: o de eventos passados e o teto do `?periodo=`. Duas leituras do
+    # relógio na mesma requisição podem discordar sobre o evento que começa
+    # agora — é a mesma disciplina que o `cache()` da tela de "Meus eventos"
+    # impôs no frontend. Um `datetime` com fuso, nunca texto: comparar strings
+    # ISO funciona por acidente enquanto todo offset for `Z`.
     agora = datetime.now(timezone.utc)
+
+    # As condições se acumulam numa lista e entram num `where` só. As duas da
+    # Story 3.1 vêm primeiro, e **não têm exceção**: rascunho e evento passado
+    # continuam fora mesmo quando o termo casa perfeitamente com o nome deles.
+    # Um filtro novo nunca abre porta num corte antigo.
+    condicoes: list[ColumnElement[bool]] = [
+        Evento.publicado_em.is_not(None),
+        Evento.data_hora >= agora,
+    ]
+
+    # `.strip()` antes de qualquer coisa: `?q=` vazio e `?q=%20%20` são a mesma
+    # intenção — "não filtrei" —, e `?q=%20marina%20` é uma busca por "marina".
+    termo_limpo = termo.strip()
+    if termo_limpo:
+        # ⚠️ **`unaccent` do Postgres, e não normalização em Python** (decisão
+        # do Igor): `sao paulo` precisa achar `São Paulo` porque é assim que as
+        # pessoas digitam no celular. A extensão é habilitada pela migração
+        # `06c1ad5ac276`, e sem ela esta linha estoura com `function
+        # unaccent(text) does not exist` — não é a busca que falha, é a raiz do
+        # produto que vira `500`.
+        #
+        # Nos **dois lados** da comparação: sem `unaccent` no padrão, quem
+        # digitasse `SÃO` não acharia um evento gravado sem acento.
+        padrao = func.unaccent(f"%{_escapar_curingas(termo_limpo)}%")
+        condicoes.append(
+            or_(
+                *(
+                    # `escape="\\"` é o que faz o escape do helper valer: sem
+                    # ele o Postgres lê a contrabarra como caractere comum.
+                    func.unaccent(coluna).ilike(padrao, escape="\\")
+                    # ⚠️ `Evento.cidade` é anulável (Story 2.3), e isso está
+                    # certo assim: `unaccent(NULL) ILIKE …` é `NULL`, e
+                    # `TRUE OR NULL` é `TRUE` — o evento sem cidade continua
+                    # achável pelo nome e pelo local. Não "conserte" com
+                    # `coalesce`: não há nada quebrado.
+                    for coluna in (Evento.nome, Evento.local, Evento.cidade)
+                )
+            )
+        )
+
+    # **Igualdade exata, e não `ilike`** (decisão do Igor): o valor vem dos
+    # nossos próprios chips, que vêm de `listar_cidades_em_cartaz` — ou seja, do
+    # banco. Este parâmetro não é campo de digitação, e tratá-lo como se fosse
+    # daria a `?cidade=sao` um resultado que nenhum chip produz. Quem quer
+    # digitar tem o `?q=`, que casa cidade também.
+    if cidade.strip():
+        condicoes.append(Evento.cidade == cidade.strip())
+
+    # Janelas **corridas** a partir de agora, não semana e mês do calendário —
+    # o motivo inteiro está no docstring do `PeriodoDaProgramacao`. `TODOS` não
+    # acrescenta condição nenhuma: "sem filtro" é a ausência de um `where`, não
+    # um teto infinito escrito em SQL.
+    if periodo == PeriodoDaProgramacao.SEMANA:
+        condicoes.append(Evento.data_hora < agora + timedelta(days=7))
+    elif periodo == PeriodoDaProgramacao.MES:
+        condicoes.append(Evento.data_hora < agora + timedelta(days=30))
 
     eventos = sessao.scalars(
         select(Evento)
-        .where(Evento.publicado_em.is_not(None), Evento.data_hora >= agora)
+        .where(*condicoes)
         # `Evento.id` como desempate, pelo mesmo motivo escrito na
         # `listar_do_organizador`: sem critério total, dois shows no mesmo
         # horário trocam de lugar entre requisições.
         .order_by(Evento.data_hora, Evento.id)
         # Sem ele, ler `evento.setores` no laço abaixo emite uma consulta por
         # evento. É a raiz do produto: a tela mais visitada que existe aqui.
+        # ⚠️ Filtrar não pode reintroduzir o N+1 que a Story 3.1 fechou.
         .options(selectinload(Evento.setores))
     )
 
@@ -368,6 +467,46 @@ def listar_programacao(sessao: Session) -> list[EventoNaProgramacao]:
         )
 
     return programacao
+
+
+def listar_cidades_em_cartaz(sessao: Session) -> list[str]:
+    """As cidades que têm show na programação — o universo dos chips `ONDE`.
+
+    **Mesmo recorte da `listar_programacao`**: publicado e ainda por acontecer.
+    Chip que oferece uma cidade sem show em cartaz é um filtro que só sabe
+    devolver lista vazia — e quem clicou concluiria que a busca está quebrada,
+    não que a cidade não tem nada marcado. Ela vem do banco pelo mesmo motivo:
+    uma lista fixa no código (`São Paulo`, `Rio`, como no protótipo) é barata e
+    mente no dia em que houver um show em Belo Horizonte.
+
+    ⚠️ **Ela não recebe o termo nem a cidade escolhida, de propósito** — e não é
+    esquecimento. A lista de escolhas é o **universo**, não o resultado:
+    encolhê-la conforme a pessoa filtra faz o chip sumir debaixo do cursor de
+    quem ia clicar, e tira o caminho de volta de quem filtrou errado. É o mesmo
+    raciocínio que mantém a barra de busca na tela quando a busca não achou
+    nada.
+
+    `NULL` fica fora: a cidade é anulável desde a Story 2.3, e um chip em branco
+    não é uma escolha. O evento sem cidade continua na programação — ele só não
+    gera chip nem aparece em filtro de cidade nenhum.
+    """
+    agora = datetime.now(timezone.utc)
+
+    return list(
+        sessao.scalars(
+            select(Evento.cidade)
+            .where(
+                Evento.publicado_em.is_not(None),
+                Evento.data_hora >= agora,
+                Evento.cidade.is_not(None),
+            )
+            .distinct()
+            # Alfabética, e não por quantidade de shows: a ordem precisa ser
+            # estável entre visitas para o chip não trocar de lugar debaixo do
+            # cursor a cada evento publicado.
+            .order_by(Evento.cidade)
+        )
+    )
 
 
 def obter_do_organizador(

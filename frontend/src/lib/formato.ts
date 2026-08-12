@@ -100,17 +100,27 @@ export function partesDaData(iso: string): { dia: string; mes: string; ano: stri
 }
 
 /**
- * ISO-8601 → as três partes da data como a **fila da programação pública** as
- * mostra: `{ diaDaSemana: "sex", dia: "15", hora: "22h30" }`.
+ * ISO-8601 → as quatro partes da data como a **fila da programação pública** as
+ * mostra: `{ diaDaSemana: "sex", dia: "15", mesEAno: "ago 2026", hora: "22h30" }`.
  *
  * **Não é a `partesDaData` com outro nome.** As duas filas deste produto são
  * primas, não gêmeas: a do organizador é um inventário e mostra `15 ago 2026`
- * inteiro em mono, porque ele precisa saber o ano de um show de 2001; a
- * pública mostra só o que ainda vai acontecer, então o ano é sempre o mesmo
- * ou o próximo, e o que interessa é o dia da semana e a hora — é sexta que
- * decide se dá para ir. A tipografia segue essa divisão
- * (`DESIGN.md#Typography`): dia da semana e hora em mono versalete, o dia em
- * serifada grande.
+ * em três blocos de mono, todos do mesmo tamanho; a pública é uma linha de
+ * jornal, e a tipografia separa o que decide de o que situa
+ * (`DESIGN.md#Typography`) — o dia em serifada grande, e dia da semana, mês,
+ * ano e hora em mono versalete ao redor dele.
+ *
+ * ⚠️ **`mesEAno` entrou depois, e a ausência dele era um defeito.** A Story 3.1
+ * devolvia só `diaDaSemana`, `dia` e `hora`, argumentando que a programação
+ * pública "só mostra o que ainda vai acontecer, então o ano é sempre o mesmo ou
+ * o próximo". Isso está errado por dois motivos que a primeira tela com quatro
+ * eventos reais mostrou: sem o mês, `14`, `12` e `23` não dizem qual vem antes,
+ * e a coluna que deveria ser a âncora de leitura da lista vira decoração; e
+ * "sempre o mesmo ou o próximo" ainda são **dois** anos diferentes — havia um
+ * show em setembro de 2026 e outro em setembro de 2027 na mesma tela, idênticos.
+ * O ano vem sempre, e não só quando difere do atual: uma regra que muda com o
+ * relógio produziria duas formas para a mesma coluna, e ninguém saberia qual
+ * está certa ao olhar uma captura de tela.
  *
  * **Mora aqui, e não na tela, para o `FUSO` continuar existindo num lugar só.**
  * As três formatações inline da fila de "Meus eventos" foram exatamente as que
@@ -121,6 +131,7 @@ export function partesDaData(iso: string): { dia: string; mes: string; ano: stri
 export function partesDaFilaPublica(iso: string): {
   diaDaSemana: string;
   dia: string;
+  mesEAno: string;
   hora: string;
 } {
   const instante = new Date(iso);
@@ -132,6 +143,13 @@ export function partesDaFilaPublica(iso: string): {
     // `partesDaData`. Em versalete o ponto vira sujeira.
     diaDaSemana: parte({ weekday: "short" }).replace(".", ""),
     dia: parte({ day: "2-digit" }),
+    // Uma string só, e não `mes` e `ano` separados como na `partesDaData`: lá
+    // os três blocos têm tipografia própria, aqui os dois ocupam a mesma linha
+    // e nunca aparecem um sem o outro. Devolvê-los partidos daria à tela uma
+    // escolha que ela não tem.
+    mesEAno: `${parte({ month: "short" }).replace(".", "")} ${parte({
+      year: "numeric",
+    })}`,
     hora: parte({ hour: "2-digit", minute: "2-digit" }).replace(":", "h"),
   };
 }

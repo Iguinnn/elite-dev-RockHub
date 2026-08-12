@@ -97,9 +97,19 @@ Do par `DESIGN.md` + `EXPERIENCE.md` (direção **"jornal noturno"**), com prot�
 `mockups/proto-jornal-noturno.html`. Medidas e microcopy são provisórios; o que está listado aqui
 é o que **não** muda sem decisão do Igor.
 
-- **UX-DR1:** Sistema de tokens da identidade: `breu #0E0D0C`, `breu2 #151311`, `cal #EDE8DC`,
-  `fumaca #8F877A`, `ambar #F2A413`, `brasa #D93B2B`, `verde #3FA96B`, `fio #2A2622`.
-  Âmbar é o **acento único** — nenhum segundo acento decorativo
+- **UX-DR1:** Sistema de tokens da identidade: `breu #0b1618`, `breu2 #112124`, `cal #e4ebea`,
+  `fumaca #7e9295`, `neon #ff4f9a`, `brasa #e4574a`, `verde #9be04a`, `fio #1e3134`, `fio2 #2b4247`.
+  O neon é o **acento único** — nenhum segundo acento decorativo.
+  ⚠️ **Paleta trocada em 2026-08-11**, depois da Epic 2 e antes da Story 3.2. Era preto neutro com
+  acento **âmbar** (`ambar #F2A413`, `breu #0E0D0C`); virou chão de petróleo com neon rosa, e o
+  token do acento passou a se chamar `--neon` — nomeado por **material**, como os outros oito, e
+  não por função. Dois valores mudaram por contraste medido,
+  não por gosto: o vermelho antigo dava 4,04:1 sobre o fundo novo, abaixo do piso de 4,5:1 que
+  o UX-DR9 exige da cor de toda mensagem de erro; e o verde-mata era vizinho de matiz do próprio
+  fundo azul-esverdeado, o que apagava a distância de luminância entre `VALIDO` e `INVALIDO` —
+  justamente a que a portaria lê a três metros, no escuro, com pressa. Os valores vivos estão em
+  `frontend/src/app/globals.css`, que é a única fonte; onde o `DESIGN.md` ainda escrever "âmbar",
+  leia "neon"
 - **UX-DR2:** Pareamento tipográfico obrigatório: serifada (Georgia) para nome próprio, título e
   valor; monoespaçada em versalete com letterspacing largo para etiqueta, código, hora e estado.
   Nenhuma fonte externa
@@ -109,7 +119,7 @@ Do par `DESIGN.md` + `EXPERIENCE.md` (direção **"jornal noturno"**), com prot�
   manchete serifada, standfirst em itálico e ficha de três dados
 - **UX-DR5:** Os quatro vereditos da portaria em **três canais simultâneos** — cor, palavra e
   símbolo: `VALIDO` verde ✓, `INVALIDO` brasa ✕, `JA_UTILIZADO` cinza ↺ (neutro de propósito, não
-  é fraude), `EVENTO_ERRADO` âmbar ⤫
+  é fraude), `EVENTO_ERRADO` neon ⤫
 - **UX-DR6:** Ergonomias distintas por papel. Cliente e organizador desktop-first; **portaria é a
   única superfície mobile-first**, coluna única, alvo mínimo de 44px, tipografia legível a três
   metros
@@ -118,7 +128,7 @@ Do par `DESIGN.md` + `EXPERIENCE.md` (direção **"jornal noturno"**), com prot�
 - **UX-DR8:** Voz jornalística: específica, curta, sem entusiasmo comercial, sem exclamação. Erro
   diz o que aconteceu **e** o que fazer agora
 - **UX-DR9:** Piso de acessibilidade: contraste AA em tudo, nenhuma informação transmitida só por
-  cor, foco visível em âmbar (nunca `outline:none`), `<label>` em todo campo, resultado da
+  cor, foco visível em neon (nunca `outline:none`), `<label>` em todo campo, resultado da
   validação anunciado por `aria-live="assertive"`, QR sempre acompanhado do código em texto
 - **UX-DR10:** Os cinco anti-padrões proibidos (NFR7): marquee/faixa que varre a tela; grade de 6–8
   cards de seção; par título-gigante-com-textinho; fileira horizontal de cards com paleta
@@ -253,7 +263,7 @@ para que toda tela construída depois já nasça no sistema visual certo.
 **Given** um projeto Next.js 16 com App Router
 **When** eu abro a raiz
 **Then** vejo o masthead com o logotipo em serifada sobre fio duplo
-**And** o fundo é `#0E0D0C` e o texto `#EDE8DC`
+**And** o fundo é `#0b1618` e o texto `#e4ebea`
 
 **Given** os tokens de `DESIGN.md`
 **When** eu inspeciono o CSS
@@ -327,7 +337,7 @@ para poder comprar ingressos.
 
 **Given** o formulário de cadastro
 **When** eu o navego por teclado
-**Then** todo campo tem `<label>` associado e o foco é visível em âmbar — UX-DR9
+**Then** todo campo tem `<label>` associado e o foco é visível em neon — UX-DR9
 
 **Given** o cadastro
 **When** eu procuro como escolher o papel da conta
@@ -644,7 +654,7 @@ para chegar rápido ao show que me interessa.
 
 **Given** um filtro de cidade ou período
 **When** eu o aciono
-**Then** a listagem reduz e o filtro ativo fica marcado em âmbar
+**Then** a listagem reduz e o filtro ativo fica marcado em neon
 
 **Given** uma busca sem resultado
 **When** ela termina
@@ -1041,7 +1051,7 @@ Refina a exibição simples entregue na Story 5.3.
 **Given** cada um dos quatro resultados
 **When** ele aparece
 **Then** usa cor, palavra e símbolo ao mesmo tempo — UX-DR5
-**And** `VALIDO` é verde ✓, `INVALIDO` é brasa ✕, `JA_UTILIZADO` é cinza ↺, `EVENTO_ERRADO` é âmbar ⤫
+**And** `VALIDO` é verde ✓, `INVALIDO` é brasa ✕, `JA_UTILIZADO` é cinza ↺, `EVENTO_ERRADO` é neon ⤫
 
 **Given** um resultado na tela
 **When** eu espero

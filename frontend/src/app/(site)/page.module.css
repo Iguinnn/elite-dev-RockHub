@@ -16,7 +16,140 @@
    `var(--token)`. */
 
 .pagina {
-  padding: 40px 0 96px;
+  padding: 0 0 96px;
+}
+
+/* ---- a barra de busca e os chips (Story 3.2) ---------------------------- */
+
+/* Ela abre a tela: logo abaixo do masthead e **acima** do título
+   "Programação", que é o lugar que o protótipo lhe dá
+   (proto-jornal-noturno.html:276-282). Fio de 1px embaixo, e nada mais —
+   sem card, sem sombra, sem raio (UX-DR3).
+
+   ⚠️ O recuo lateral de 12px é o mesmo de `.secTitulo`, `.fila`, `.aviso` e
+   `.vazio`. Os cinco andam juntos: é isso que alinha o texto entre si e mantém
+   os fios correndo de ponta a ponta da coluna, na mesma medida do masthead. */
+.barraBusca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Serifada sobre fundo transparente: o campo é parte da página, não uma caixa
+   pousada nela. `border: 0` porque o fio da barra inteira já o fecha embaixo —
+   dois fios empilhados desenhariam uma moldura, que é justamente o que a
+   identidade não tem. O contorno de foco do `globals.css` continua valendo, e
+   ninguém o desliga. */
+.campoBusca {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 0;
+  border: 0;
+  background: transparent;
+  color: var(--cal);
+  font: 19px/1 var(--serif);
+}
+
+.campoBusca::placeholder {
+  color: var(--fumaca);
+}
+
+/* A cidade mora dentro do form, ao lado do campo: escolher e apertar `Buscar`
+   manda os dois juntos, sem uma linha de JavaScript. Mono versalete e vazado,
+   na mesma anatomia do chip — o que muda é o elemento, porque o conjunto de
+   cidades é aberto e o de períodos é fechado.
+
+   `background` explícito e não `transparent`: a lista de opções é desenhada
+   pelo sistema, e sem uma cor de fundo declarada o texto claro cai sobre o
+   branco padrão do menu em parte dos navegadores. A seta nativa fica — ela é a
+   affordance de que ali há uma lista, e desenhá-la à mão custaria um ícone
+   novo para dizer o que o `<select>` já diz. */
+.seletorCidade {
+  flex-shrink: 0;
+  max-width: 190px;
+  padding: 8px 10px;
+  border: 1px solid var(--fio2);
+  background: var(--breu);
+  color: var(--cal);
+  font: 600 10px/1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.seletorCidade:hover {
+  border-color: var(--neon);
+}
+
+/* ⚠️ O `Botao` é `width: 100%` (Story 1.4). Sem esta largura fixa e sem o
+   `flex-shrink: 0`, ele resolve o `100%` contra a barra inteira e o campo
+   colapsa a zero — o mesmo invólucro que a busca do catálogo usa. */
+.botaoBusca {
+  flex-shrink: 0;
+  width: 150px;
+}
+
+/* Rótulo que existe no HTML e não na tela (UX-DR9). Não é `display: none` nem
+   `visibility: hidden`: os dois tiram o elemento da árvore de acessibilidade,
+   e o leitor de tela deixaria de anunciá-lo — que é exatamente o motivo de ele
+   existir. */
+.rotuloOculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Uma fileira só, aberta pelo kicker `QUANDO`. Ela chegou a ter dois grupos —
+   período e cidade — e a cidade saiu daqui para dentro do form: com duas
+   cidades os chips pareciam um filtro que não filtra, e com quinze seriam três
+   linhas empurrando a programação para baixo da dobra. Sobra o que é conjunto
+   fechado, que é onde o chip é o elemento certo. */
+.grupos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* O kicker respira antes do primeiro chip, sem virar um `gap` maior entre todos
+   eles. Pelo `span:first-child` e não por `.kicker`: aquela classe é global do
+   `globals.css`, e dentro de um CSS Module o nome seria hasheado e nunca
+   casaria com ela. */
+.grupos > span:first-child {
+  margin-right: 10px;
+}
+
+/* Mono versalete, vazado, raio zero — a anatomia de `.filtros button` do
+   protótipo, na tinta nova. */
+.chip {
+  padding: 7px 12px;
+  border: 1px solid var(--fio2);
+  color: var(--fumaca);
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.chip:hover {
+  border-color: var(--neon);
+  color: var(--cal);
+}
+
+/* ⚠️ O ativo é **preenchido**, e os vazados continuam vazados: a diferença é
+   de forma, não só de matiz (UX-DR9). O `aria-current` do TSX diz a mesma
+   coisa a quem não vê nenhuma das duas. */
+.chipAtivo,
+.chipAtivo:hover {
+  border-color: var(--neon);
+  background: var(--neon);
+  color: var(--breu);
 }
 
 /* Mesma anatomia do título de seção de "Meus eventos": fio embaixo, serifada
@@ -29,7 +162,11 @@
    compartilha a mesma medida, e é isso que faz os filetes correrem de ponta a
    ponta da página. Recuar com margem negativa daria o mesmo respiro no realce e
    estouraria os fios para fora dessa medida. */
+/* O respiro que era `padding-top` da `.pagina` mora aqui desde a Story 3.2: a
+   barra de busca passou a abrir a tela, colada no masthead como o protótipo a
+   desenha, e o intervalo de que o título precisa é entre ele e os chips. */
 .secTitulo {
+  margin-top: 34px;
   padding: 0 12px 11px;
   border-bottom: 1px solid var(--fio);
 }
@@ -56,6 +193,20 @@
   max-width: 46ch;
   margin-top: 12px;
   font: 19px/1.5 var(--serif);
+}
+
+/* Um link de texto, e não um botão: "Ver toda a programação" é uma saída, não a
+   ação principal da tela — o estado vazio não ganha botão grande (UX-DR8). O
+   sublinhado é o que o faz parecer link num parágrafo, já que o `globals.css`
+   tira a decoração de todo `<a>` do projeto. */
+.linkDeTexto {
+  border-bottom: 1px solid var(--fio2);
+  color: var(--cal);
+}
+
+.linkDeTexto:hover {
+  border-bottom-color: var(--neon);
+  color: var(--neon);
 }
 
 /* ---- a fila de quatro colunas ------------------------------------------- */
@@ -100,6 +251,7 @@
 }
 
 .diaDaSemana,
+.mesEAno,
 .hora {
   font: 11px/1.5 var(--mono);
   letter-spacing: 0.09em;
@@ -112,6 +264,14 @@
   font: 400 30px/0.95 var(--serif);
   letter-spacing: -0.03em;
   color: var(--cal);
+}
+
+/* Entre o dia e a hora, e não acima do dia da semana: as três linhas de mono
+   situam o número em serifada que está no meio delas — "sexta", "14", "de
+   agosto de 2026", "às 21h". Entreletra um passo menor que a das irmãs porque
+   é a linha mais longa da coluna, e ela precisa caber nos 96px sem quebrar. */
+.mesEAno {
+  letter-spacing: 0.06em;
 }
 
 .nome {
@@ -177,8 +337,43 @@
    leitura da lista —, e nome, local e preço descem para um bloco só na
    segunda. Os fios continuam de ponta a ponta, e nada rola na horizontal. */
 @media (max-width: 900px) {
+  /* O campo e o botão **continuam na mesma linha** — separá-los empurraria a
+     lista para baixo da dobra numa tela onde ela já é curta. O que encolhe é o
+     tipo do campo; o `min-width: 0` do `.campoBusca` é o que permite ao flex
+     apertá-lo em vez de estourar a lateral. */
+  .barraBusca {
+    gap: 8px;
+  }
+
+  .campoBusca {
+    padding: 12px 0;
+    font-size: 17px;
+  }
+
+  /* Quem encolhe são o botão e o seletor, não o campo: o que a pessoa precisa
+     ver enquanto digita é o que ela digitou. Os três continuam na mesma linha —
+     empilhá-los empurraria a lista para baixo da dobra numa tela onde ela já é
+     curta. */
+  .botaoBusca {
+    width: 104px;
+  }
+
+  .seletorCidade {
+    max-width: 116px;
+    padding: 8px 6px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Os chips quebram em linha em vez de estourar a lateral, e o kicker fica na
+     primeira delas. */
+  .grupos {
+    gap: 8px;
+  }
+
+  /* 76px e não 68px: a coluna passou a carregar `AGO 2026`, que é a linha mais
+     longa dela — com os 68px anteriores o ano quebrava para baixo do mês. */
   .fila {
-    grid-template-columns: 68px 1fr;
+    grid-template-columns: 76px 1fr;
     gap: 4px 18px;
     padding: 22px 12px;
   }
@@ -189,6 +384,11 @@
 
   .dia {
     font-size: 26px;
+  }
+
+  .mesEAno {
+    font-size: 10px;
+    letter-spacing: 0.03em;
   }
 
   .nome {

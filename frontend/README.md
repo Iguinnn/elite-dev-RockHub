@@ -384,8 +384,8 @@ frontend/
       not-found.module.css
       (site)/                 # casca com masthead: tudo que é navegável
         layout.tsx
-        page.tsx              # raiz — a programação pública (Story 3.1)
-        page.module.css       # a fila de jornal em quatro colunas, e o colapso em duas
+        page.tsx              # raiz — a programação, com busca e chips na URL (3.1 e 3.2)
+        page.module.css       # a barra de busca, os chips, e a fila de jornal em quatro colunas
         conta/
           page.tsx            # Server Component com a guarda de sessão
           page.module.css
@@ -430,7 +430,7 @@ frontend/
       catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
       portarias.ts            # listarPortarias() — só servidor (Story 2.5)
       eventos.ts              # listarMeusEventos() e obterMeuEvento() — só servidor (Story 2.6)
-      programacao.ts          # listarProgramacao() — só servidor, e o único sem cookie (Story 3.1)
+      programacao.ts          # listarProgramacao(filtros) e listarCidadesEmCartaz() — sem cookie
       formato.ts              # data, hora e dinheiro em pt-BR — módulo puro, os dois lados o usam (2.6)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
@@ -1330,13 +1330,24 @@ chamam `cookies()` **fora** do `try`, e já saem do modo estático antes de cheg
 há cookie, e o `fetch` é o único sinal que resta — daí a chamada ser a primeira linha do `catch`.
 
 `partesDaFilaPublica` entrou no `formato.ts` em vez de nascer dentro do `page.tsx`, e não é a
-`partesDaData` com outro nome. As duas filas do produto são primas, não gêmeas: a do organizador
-mostra `15 ago 2026` inteiro em mono, porque ele precisa saber o ano de um show de 2001; a pública só
-lista o que ainda vai acontecer, então o que decide é o dia da semana e a hora. A tipografia segue
-essa divisão — dia da semana e hora em mono versalete, o dia em serifada de 30px, que é a assinatura
-visual da listagem e a primeira coisa desta story a sair do protótipo. O `FUSO` continua num lugar
-só: foram as três formatações inline da fila de "Meus eventos" que ficaram sem `timeZone` e fizeram a
-mesma publicação aparecer com duas datas.
+`partesDaData` com outro nome. As duas filas do produto são primas, não gêmeas: a do organizador é um
+inventário e mostra `15 ago 2026` em três blocos de mono do mesmo tamanho; a pública é uma linha de
+jornal, e a tipografia separa o que decide de o que situa — o dia em serifada de 30px, com dia da
+semana, mês, ano e hora em mono versalete ao redor dele. Essa é a assinatura visual da listagem e a
+primeira coisa da Story 3.1 a sair do protótipo. O `FUSO` continua num lugar só: foram as três
+formatações inline da fila de "Meus eventos" que ficaram sem `timeZone` e fizeram a mesma publicação
+aparecer com duas datas.
+
+⚠️ **O mês e o ano faltavam, e isso era um defeito, não um recorte.** Eu tinha escrito que a
+programação pública "só mostra o que ainda vai acontecer, então o ano é sempre o mesmo ou o próximo,
+e o que interessa é o dia da semana e a hora". A primeira tela com quatro eventos reais desmentiu as
+duas metades: a coluna mostrava `14`, `12` e `23` — agosto, setembro e novembro —, e a âncora de
+leitura da lista não dizia qual show vinha antes; e "o mesmo ou o próximo" ainda são **dois** anos,
+com um show de setembro de 2026 e outro de setembro de 2027 idênticos na tela. Agora vem `AGO 2026`
+entre o dia e a hora, e o ano vem **sempre**, não só quando difere do atual: uma regra que muda com o
+relógio daria duas formas para a mesma coluna, e ninguém saberia qual está certa olhando uma captura
+de tela. Abaixo de 900px a coluna foi de 68px para 76px, que é o que impede o ano de quebrar para
+baixo do mês.
 
 **A fila esgotada é um `<div>`, e a com ingresso é um `<Link>`** — a troca é do elemento, não do CSS.
 Um `<Link>` com `pointer-events: none` continua no Tab e continua sendo anunciado como link por
@@ -1348,6 +1359,46 @@ até lá o clique cai na 404 do projeto. É janela consciente, do mesmo tipo da 
 contraria o precedente escrito no `Masthead.tsx` ("link que cai no 404 não fica no repositório"), e a
 diferença que aceitei é de alcance — lá é navegação permanente, visível em toda tela; aqui é um
 `href` que fecha na mesma epic.
+
+**A busca é a URL, não estado** (Story 3.2), e é isso que mantém a raiz inteira no servidor depois de
+ela ganhar um campo de texto, dois grupos de chips e um botão. A barra é um `<form method="get"
+action="/">` e submeter troca o endereço para `/?q=marina` — recarregável, compartilhável, e com o
+botão voltar funcionando. É a mesma escolha que a tela de publicar fez na 2.4 ("a escolha é
+navegação, não estado"), agora na tela mais visitada do produto. Descartei filtrar em JavaScript a
+lista já carregada: seria instantâneo ao digitar e transformaria a raiz numa ilha `"use client"`, com
+o filtro morrendo a cada recarga. Não há `onChange`, `useState`, `useRouter` nem debounce em lugar
+nenhum aqui — basta um deles para o `npm run build` deixar de marcar `/` como `ƒ`, que é o sintoma a
+vigiar. A programação e as cidades saem em `Promise.all`, porque uma não depende da outra e
+encadeá-las custaria uma ida à rede em série na tela de entrada.
+
+**O período é chip e a cidade é `<select>`, e a diferença não é arbitrária: um conjunto é fechado e o
+outro é aberto.** O período sempre terá três opções, hoje e no fim do projeto — chip é o elemento
+certo, e cada um é um `<Link>`, porque clicar nele troca a URL e isso é navegação (o mesmo raciocínio
+que fez a fila esgotada ser um `<div>` acima). Diferente do `NavLink`, eles não precisam de
+`"use client"`: quem sabe qual filtro está ativo é a própria página, que já leu a URL no servidor. O
+ativo é preenchido em `var(--neon)` com texto em `var(--breu)`, os outros ficam vazados, e todos levam
+`aria-current` — a informação não é dada só por matiz (UX-DR9). A cidade cresce com o catálogo, e eu
+cheguei a fazê-la de chips também: com duas cidades aquilo parecia um filtro que não filtra, e com
+quinze seriam três linhas de botões empurrando a programação para baixo da dobra. Virou um
+`<select name="cidade">` **dentro do form que já existe**, então ele não custa uma linha de
+JavaScript — escolher e apertar `Buscar` manda termo e cidade juntos, e ele só aparece com duas
+cidades ou mais. O preço é real e é um só: a cidade deixou de filtrar num clique. Devolvê-lo exigiria
+um `onChange` com `useRouter().push()`, que é a decisão desta tela ao contrário. E o detalhe que um
+teste de tela não pegaria: o `periodo` viaja como `<input type="hidden">` no form e o termo entra no
+`href` de cada chip — sem isso, buscar apaga o filtro e filtrar apaga a busca.
+
+**A raiz tem agora três frases de lista vazia, e elas não se misturam.** *Nenhum show em cartaz* é
+verdade sobre o produto — não há evento publicado e futuro; *Nenhum show encontrado para essa busca*
+é verdade sobre o que a pessoa digitou, e vem com um link de texto `Ver toda a programação`; *Não foi
+possível carregar* é falha temporária. Cada uma pede um conserto diferente — esperar, corrigir a
+busca, ou desistir —, e uma frase só para os três mandaria a pessoa fazer a coisa errada em dois
+casos. Duas decisões pequenas fecham isso: a barra de busca **não some** quando a busca não achou
+nada, porque ela é a única ferramenta de corrigir o que foi digitado; e o `periodo` da URL é
+normalizado contra os três valores conhecidos **antes** da chamada, para `/?periodo=xyz` digitado à
+mão mostrar a programação inteira em vez de "não foi possível carregar" — que seria uma mentira sobre
+um backend que está no ar. `listarCidadesEmCartaz` é a única função do `lib/` que engole a falha e
+devolve `[]`, e é de propósito: sem os chips a tela continua inteira, e um resultado discriminado
+criaria um ramo que ela renderiza igual ao caso feliz.
 
 ## Sobre não ter teste automatizado aqui
 

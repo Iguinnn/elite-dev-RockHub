@@ -230,10 +230,10 @@ backend/
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
       organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · GET /organizador/portarias
                       # · POST /organizador/eventos · GET /organizador/eventos e /eventos/{id} (2.6)
-      publico.py      # GET /eventos — a programação, sem exigir conta (Story 3.1)
+      publico.py      # GET /eventos (com ?q=, ?cidade=, ?periodo=) e /eventos/cidades — sem conta
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
-      evento.py       # publicar() — evento, setores e escala na mesma transação (2.4/2.5)
+      evento.py       # publicar() (2.4/2.5) · listar_programacao() com os filtros no where (3.2)
                       # · listar_portarias() — quem pode ser escalado (2.5)
                       # · listar_do_organizador() e obter_do_organizador() — as leituras da 2.6
                       # · listar_programacao() — a leitura pública da 3.1
@@ -244,7 +244,7 @@ backend/
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
-      evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida, PortariaSaida
+      evento.py       # EventoEntrada/Saida, EventoResumo, EventoNaProgramacao, PeriodoDaProgramacao
                       # · EventoResumo — a vista de lista, com os dois totais somados (2.6)
                       # · EventoNaProgramacao — a vista pública, sem estoque nenhum (3.1)
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
@@ -257,7 +257,8 @@ backend/
       seguranca.py    # hash Argon2id e token de sessão (JWT)
   migrations/         # Alembic
     env.py
-    versions/
+    versions/         # 4: usuario · evento+setor · evento_portaria · e a extensão unaccent,
+                      #    a única que não cria tabela (Story 3.2)
   seeds/              # dados exigidos pelo desafio — não sobe com o uvicorn
     semear.py          # as cinco contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
@@ -267,7 +268,7 @@ backend/
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
     test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
     test_organizador_meus_eventos.py # GET /organizador/eventos e /eventos/{id} (Story 2.6)
-    test_programacao.py # GET /eventos — a rota pública (Story 3.1)
+    test_programacao.py # as duas rotas públicas, com busca e filtros (Stories 3.1 e 3.2)
   alembic.ini
   pyproject.toml
   uv.lock
@@ -1192,6 +1193,50 @@ que começa neste instante. A ordem é `data_hora` com `Evento.id` de desempate,
 lista do organizador, e os setores vêm por `selectinload` — esta é a raiz do produto, a tela mais
 visitada que existe aqui, e uma consulta por evento seria o custo crescendo junto com o catálogo.
 
+**A peneira roda no `where` do Postgres, e não na tela** (Story 3.2). A mesma rota ganhou
+`?q=`, `?cidade=` e `?periodo=`: o termo casa `nome`, `local` **ou** `cidade` por trecho; a cidade é
+igualdade exata, porque o valor vem sempre dos nossos próprios chips e não de um campo de digitação;
+e o período é um `str, Enum` com `todos`, `semana` (7 dias corridos) e `mes` (30 dias corridos) — o
+teto usa o **mesmo** `agora` do corte de eventos passados, nunca um segundo relógio. Os três se
+somam com `AND` **sobre** as duas condições que já existiam, e há um teste para cada um dos dois
+provando que rascunho e evento passado continuam fora mesmo quando o termo casa perfeitamente com o
+nome deles: um `WHERE` novo não abre porta num corte antigo. A alternativa — devolver a lista
+inteira e filtrá-la em JavaScript — daria busca instantânea ao digitar e custaria três coisas: a
+raiz viraria uma ilha de cliente, o filtro não sobreviveria a recarregar nem a compartilhar o link,
+e a programação inteira atravessaria a rede a cada visita. Filtrar em Python dentro do próprio
+service teria o mesmo defeito por outra porta, trazendo a tabela toda para a memória.
+
+**A busca ignora acento, e isso obrigou a primeira migração deste projeto que não cria tabela.**
+`sao paulo` precisa achar `São Paulo` porque é assim que as pessoas digitam no celular, e quem
+avalia vai digitar assim. Uso a extensão `unaccent` do Postgres nos **dois** lados da comparação —
+`unaccent(coluna) ILIKE unaccent(padrão)` —, e ela é habilitada por `06c1ad5ac276`, escrita à mão,
+com `CREATE EXTENSION IF NOT EXISTS unaccent` no `upgrade` e o `DROP` no `downgrade`. Descartei um
+`translate()` com mapa de letras na consulta: resolveria a mesma tela sem tocar o banco, e é um mapa
+de trinta caracteres que ninguém revisa de novo e que esquece `ü` e `ñ` em silêncio. Duas
+consequências valem lembrar: sem rodar `alembic upgrade head` no banco de desenvolvimento a suíte
+passa e a tela quebra com `function unaccent(text) does not exist`, porque o `conftest.py` migra
+sozinho só o `rockhub_teste`; e `unaccent()` não é `IMMUTABLE`, então ela não entra em índice sem
+uma função wrapper — com este volume não há índice para criar.
+
+**O termo é escapado antes de virar padrão de `LIKE`, e essa é a linha mais fácil de esquecer da
+story.** `%` e `_` são curingas, e o termo vem digitado por gente: sem escape, `?q=%` devolve a
+programação inteira com `200` e cara de resultado, e ninguém descobre porque a tela funciona. Escapo
+`\`, `%` e `_` nessa ordem — a contrabarra primeiro, ou ela escapa as próprias escapadas — e declaro
+`escape="\\"` no `ilike`. Há três testes só sobre isso: `%`, `_` e a contrabarra sozinha, que sem
+tratamento derruba a consulta com `invalid escape sequence`, ou seja, `500` para uma busca digitada
+por engano. O teto do termo é `Query("", max_length=120)`, o mesmo de `GET /organizador/catalogo`, e
+o `<input>` da tela leva o `maxLength` gêmeo.
+
+**`GET /eventos/cidades` existe para os chips não mentirem.** Ela devolve as cidades distintas, em
+ordem alfabética, sem `null`, e usando o **mesmo** recorte de publicado e futuro — chip que oferece
+uma cidade sem show em cartaz é um filtro que só sabe devolver lista vazia, e quem clicasse
+concluiria que a busca está quebrada. Ela **não** recebe parâmetro nenhum, de propósito: a lista de
+escolhas é o universo, não o resultado, e encolhê-la conforme se filtra faz o chip sumir debaixo do
+cursor de quem ia clicar. Declarei-a **antes** de qualquer rota com path param no `publico.py`, com
+comentário explicando: a Story 3.4 pendura `/eventos/{id}` no mesmo router, e com ela em cima o
+FastAPI tentaria ler `"cidades"` como UUID e devolveria `422` para um endereço que existe. A suíte
+foi de 231 para **263 testes**.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -1262,7 +1307,7 @@ cd backend
 uv run pytest
 ```
 
-São **231 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **263 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
@@ -1270,8 +1315,9 @@ papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`,
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
 também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Stories 2.4 e
 2.5), a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5) e as duas
-rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e a rota pública
-`GET /eventos` (`test_programacao.py`, Story 3.1).
+rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e as duas rotas
+públicas, `GET /eventos` e `GET /eventos/cidades` (`test_programacao.py`, Stories 3.1 e 3.2 —
+incluindo os três testes do escape do `LIKE` e os dois da busca sem acento nos dois sentidos).
 
 `test_programacao.py` é o único arquivo cujos testes começam por `cliente.cookies.clear()` em vez de
 um login: o `TestClient` guarda cookie entre chamadas, e um teste que "prova" acesso anônimo depois

@@ -60,6 +60,8 @@ def _evento_gravado(
     nome: str = "Um show qualquer",
     data_hora: datetime | None = None,
     publicado: bool = True,
+    local: str = "Espaço Unimed",
+    cidade: str | None = "São Paulo",
     setores: list[tuple[str, int, int, int]] | None = None,
 ) -> Evento:
     """Um evento com setores, gravado direto pelo ORM.
@@ -80,6 +82,18 @@ def _evento_gravado(
     tempo "não informei" e "é rascunho", e o `if publicado_em is not None` do
     default engolia a segunda intenção. Um `bool` não tem esse ponto cego — e
     nenhum teste daqui precisa escolher *qual* carimbo o evento publicado leva.
+
+    `local` e `cidade` ganharam parâmetro na Story 3.2, **com o mesmo valor de
+    antes como default**: os testes da 3.1 continuam gravando "Espaço Unimed" em
+    "São Paulo" sem saber que os campos passaram a ser escolhíveis. `cidade`
+    aceita `None` de propósito — a coluna é anulável desde a 2.3, e há um teste
+    que depende disso.
+
+    ⚠️ **`cidade=None` não cai no ponto cego do `publicado`.** Aqui `None` é um
+    valor de domínio ("este evento não tem cidade") e não a ausência do
+    argumento, e o helper o repassa cru: não existe `cidade or "São Paulo"`
+    nenhum abaixo, justamente para o teste do filtro poder gravar o evento sem
+    cidade que ele precisa.
     """
     # `is None`, e não `setores or [...]`: lista vazia é falsy, e o atalho daria
     # um setor de brinde ao teste que existe para provar que evento sem setor
@@ -91,8 +105,8 @@ def _evento_gravado(
         organizador_id=organizador.id,
         nome=nome,
         data_hora=data_hora or _daqui_a(30),
-        local="Espaço Unimed",
-        cidade="São Paulo",
+        local=local,
+        cidade=cidade,
         origem_externa_id="G5vYZ9a1kd",
         # `NULL` é rascunho (Story 2.3). O default é "publicado" porque o
         # rascunho é o caso excepcional — só o AC2 o pede.
@@ -386,10 +400,671 @@ def test_a_rota_publica_nao_declara_parametro_de_seguranca(
     Se alguém acrescentar `Depends(exigir_papel(...))` aqui um dia, a rota
     passa a declarar o cookie no OpenAPI — e este teste cai antes de o sintoma
     chegar à tela do visitante.
+
+    ⚠️ **A segunda asserção mudou na Story 3.2, e é a única linha de teste da
+    3.1 que precisou mudar.** Ela dizia `parameters == []`, o que era a forma
+    exata de escrever "nenhum parâmetro" enquanto a rota não tinha nenhum. Com
+    `?q=`, `?cidade=` e `?periodo=`, essa frase deixou de caber — mas a
+    invariante que ela protegia não mudou: o que não pode existir aqui é
+    parâmetro **de sessão**. Agora é isso que está escrito, e por construção:
+    todo parâmetro declarado precisa vir de `in: query`. Um `Depends` de cookie
+    ou de header apareceria como `in: cookie`/`in: header` e derrubaria o teste
+    igual — só que agora ele continua derrubando mesmo depois de a rota ganhar
+    filtros, que é justamente quando alguém teria a chance de errar.
     """
     esquema = cliente.get("/openapi.json").json()
 
     rota = esquema["paths"]["/eventos"]["get"]
 
+    assert "security" not in rota
+    assert {parametro["in"] for parametro in rota.get("parameters", [])} <= {"query"}
+
+
+# =========================================================================== #
+# Story 3.2 — buscar e filtrar a programação
+#
+# Tudo daqui para baixo é da 3.2. O helper acima ganhou `local` e `cidade` com
+# os mesmos valores de antes como default, e é por isso que nada acima precisou
+# mudar (a única exceção está documentada no teste logo acima deste bloco).
+# =========================================================================== #
+
+
+def _nomes(resposta: object) -> list[str]:
+    """Os nomes da resposta, na ordem — o que quase toda asserção daqui olha."""
+    return [evento["nome"] for evento in resposta.json()]  # type: ignore[attr-defined]
+
+
+# --------------------------------------------------------------------------- #
+# AC1 — o termo casa nome, local ou cidade
+# --------------------------------------------------------------------------- #
+
+
+def test_o_termo_casa_o_nome_do_evento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena")
+    _evento_gravado(sessao, organizador, nome="Djavan")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "marina"})
+
+    assert resposta.status_code == 200
+    assert _nomes(resposta) == ["Marina Sena"]
+
+
+def test_o_termo_casa_a_casa_de_show(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O termo é "artista, casa ou cidade" — e a casa é o campo `local`."""
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Show A", local="Qualistage")
+    _evento_gravado(sessao, organizador, nome="Show B", local="Espaço Unimed")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "qualistage"})
+
+    assert _nomes(resposta) == ["Show A"]
+
+
+def test_o_termo_casa_a_cidade(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Casar cidade pelo `?q=` é o que permite digitar em vez de achar o chip."""
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="No Rio", cidade="Rio de Janeiro")
+    _evento_gravado(sessao, organizador, nome="Em SP", cidade="São Paulo")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "rio de janeiro"})
+
+    assert _nomes(resposta) == ["No Rio"]
+
+
+def test_termo_sem_resultado_responde_lista_vazia(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`200 []`, nunca `404`: filtrar não cria um endereço que não existe."""
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "orquestra sinfonica"})
+
+    assert resposta.status_code == 200
+    assert resposta.json() == []
+
+
+# --------------------------------------------------------------------------- #
+# AC2 — caixa e acento: `MARINA`, `marina`, `sao paulo` e `SÃO` acham o mesmo
+# --------------------------------------------------------------------------- #
+
+
+def test_a_busca_ignora_a_caixa_do_termo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    cliente.cookies.clear()
+
+    maiuscula = cliente.get("/eventos", params={"q": "MARINA"})
+    minuscula = cliente.get("/eventos", params={"q": "marina"})
+
+    assert _nomes(maiuscula) == ["Marina Sena"]
+    assert maiuscula.json() == minuscula.json()
+
+
+def test_termo_sem_acento_acha_o_evento_com_acento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`sao paulo` acha `São Paulo` — é assim que se digita no celular.
+
+    Este é o teste que prova a extensão `unaccent` (migração `06c1ad5ac276`)
+    estar ligada. Se ela sumir do banco, ele **não** falha com asserção: a
+    consulta estoura antes, com `function unaccent(text) does not exist`.
+    """
+    _evento_gravado(
+        sessao, _organizador(fabricar_usuario), nome="Show", cidade="São Paulo"
+    )
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "sao paulo"})
+
+    assert _nomes(resposta) == ["Show"]
+
+
+def test_termo_com_acento_acha_o_evento_gravado_sem_acento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O outro sentido, que é o que exige `unaccent` nos **dois** lados.
+
+    Com a extensão só na coluna, quem digitasse `SÃO` não acharia um evento
+    gravado como `Sao Joao da Serra` — e o defeito só apareceria para quem tem
+    teclado com acento, ou seja, quase ninguém em teste.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Sao Joao da Serra")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "SÃO"})
+
+    assert _nomes(resposta) == ["Sao Joao da Serra"]
+
+
+# --------------------------------------------------------------------------- #
+# AC3 — `%` e `_` são curingas do LIKE, e o termo é escapado
+# --------------------------------------------------------------------------- #
+
+
+def test_buscar_por_porcento_nao_devolve_a_programacao_inteira(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ O teste mais importante desta story, e o defeito mais silencioso dela.
+
+    Sem escape, `?q=%` vira o padrão `%%%` e devolve tudo — com `200`, com cara
+    de resultado, e sem ninguém desconfiar porque a tela parece funcionar.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="100% Rock")
+    _evento_gravado(sessao, organizador, nome="Marina Sena")
+    _evento_gravado(sessao, organizador, nome="Djavan")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "%"})
+
+    assert _nomes(resposta) == ["100% Rock"]
+
+
+def test_buscar_por_sublinhado_nao_casa_qualquer_caractere(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`_` casa um caractere qualquer no `LIKE` — e não deve casar nada aqui."""
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Rock_Hub ao vivo")
+    _evento_gravado(sessao, organizador, nome="Marina Sena")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "_"})
+
+    assert _nomes(resposta) == ["Rock_Hub ao vivo"]
+
+
+def test_buscar_por_contrabarra_nao_quebra_a_consulta(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A contrabarra é o caractere de escape: sozinha, ela é padrão inválido.
+
+    Sem escapá-la, o Postgres recusa o `LIKE` com `invalid escape sequence` e
+    a rota devolve `500` — para uma busca que uma pessoa digitou por engano.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "\\"})
+
+    assert resposta.status_code == 200
+    assert resposta.json() == []
+
+
+# --------------------------------------------------------------------------- #
+# AC4, AC5 — termo vazio, só espaços, e o teto de 120 caracteres
+# --------------------------------------------------------------------------- #
+
+
+def test_termo_vazio_ou_so_com_espacos_devolve_a_programacao_inteira(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Antes", data_hora=_daqui_a(5))
+    _evento_gravado(sessao, organizador, nome="Depois", data_hora=_daqui_a(40))
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos", params={"q": ""})) == ["Antes", "Depois"]
+    assert _nomes(cliente.get("/eventos", params={"q": "   "})) == ["Antes", "Depois"]
+
+
+def test_o_termo_e_aparado_antes_de_virar_padrao(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`?q=%20marina%20` acha `Marina Sena` — espaço colado não é parte do termo."""
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "  marina  "})
+
+    assert _nomes(resposta) == ["Marina Sena"]
+
+
+def test_termo_acima_de_120_caracteres_e_recusado(cliente: TestClient) -> None:
+    """O mesmo teto de `GET /organizador/catalogo`, e o mesmo do `<input>`."""
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "a" * 121})
+
+    assert resposta.status_code == 422
+
+
+def test_termo_com_exatamente_120_caracteres_passa(cliente: TestClient) -> None:
+    """O teto é inclusivo — 120 é válido, 121 não. Prova que o limite é onde se diz."""
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "a" * 120})
+
+    assert resposta.status_code == 200
+
+
+# --------------------------------------------------------------------------- #
+# AC6 — cidade por igualdade exata, e o evento sem cidade
+# --------------------------------------------------------------------------- #
+
+
+def test_o_filtro_de_cidade_recorta_por_igualdade_exata(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Em SP", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="No Rio", cidade="Rio de Janeiro")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"cidade": "São Paulo"})
+
+    assert _nomes(resposta) == ["Em SP"]
+
+
+def test_cidade_escrita_diferente_do_chip_nao_casa(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Igualdade exata, e não `ilike` (decisão do Igor).
+
+    O valor vem sempre dos nossos próprios chips. Quem digitar `?cidade=sao
+    paulo` à mão recebe lista vazia — e o campo de busca serve exatamente para
+    isso, porque ele **casa cidade** e ignora acento.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), cidade="São Paulo")
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos", params={"cidade": "sao paulo"}).json() == []
+    assert _nomes(cliente.get("/eventos", params={"q": "sao paulo"})) != []
+
+
+def test_evento_sem_cidade_fica_fora_do_filtro_e_dentro_da_lista(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A cidade é anulável desde a Story 2.3, e os dois lados importam.
+
+    Fora de qualquer filtro de cidade — `NULL = 'São Paulo'` é `NULL`, nunca
+    verdadeiro — e dentro da programação sem filtro, porque o show existe.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Sem cidade", cidade=None)
+    _evento_gravado(sessao, organizador, nome="Em SP", cidade="São Paulo")
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos", params={"cidade": "São Paulo"})) == ["Em SP"]
+    assert sorted(_nomes(cliente.get("/eventos"))) == ["Em SP", "Sem cidade"]
+
+
+def test_evento_sem_cidade_continua_achavel_pelo_nome(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ `unaccent(NULL) ILIKE …` é `NULL`, e `TRUE OR NULL` é `TRUE`.
+
+    É o comportamento certo, e ele é frágil: qualquer `coalesce(cidade, '')`
+    "consertando" a coluna anulável passaria despercebido sem este teste — e
+    qualquer troca do `or_` por três condições separadas o quebraria na hora.
+    """
+    _evento_gravado(
+        sessao, _organizador(fabricar_usuario), nome="Marina Sena", cidade=None
+    )
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos", params={"q": "marina"})) == ["Marina Sena"]
+
+
+# --------------------------------------------------------------------------- #
+# AC7, AC8 — o período, em janelas corridas a partir de agora
+# --------------------------------------------------------------------------- #
+
+
+def test_o_periodo_recorta_em_janelas_corridas_de_7_e_30_dias(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Um show em 3 dias, um em 15 e um em 60 → 1, 2 e 3 eventos.
+
+    As janelas são **corridas a partir de agora** (decisão do Igor), e não a
+    semana e o mês do calendário: "esta semana" numa sexta-feira significaria
+    dois dias, e o filtro pareceria quebrado no dia em que mais gente procura
+    show. Os rótulos da tela dizem `7 DIAS` e `30 DIAS` por isso.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Em 3 dias", data_hora=_daqui_a(3))
+    _evento_gravado(sessao, organizador, nome="Em 15 dias", data_hora=_daqui_a(15))
+    _evento_gravado(sessao, organizador, nome="Em 60 dias", data_hora=_daqui_a(60))
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos", params={"periodo": "semana"})) == [
+        "Em 3 dias"
+    ]
+    assert _nomes(cliente.get("/eventos", params={"periodo": "mes"})) == [
+        "Em 3 dias",
+        "Em 15 dias",
+    ]
+    assert len(cliente.get("/eventos").json()) == 3
+
+
+def test_periodo_todos_devolve_o_mesmo_que_a_ausencia_do_parametro(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`TODOS` não acrescenta condição — ele existe para o chip ter o que apontar."""
+    _evento_gravado(sessao, _organizador(fabricar_usuario), data_hora=_daqui_a(300))
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos", params={"periodo": "todos"}).json() == (
+        cliente.get("/eventos").json()
+    )
+
+
+def test_periodo_fora_do_enum_e_recusado(cliente: TestClient) -> None:
+    """`422` do FastAPI, e não uma comparação silenciosa que devolve tudo."""
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos", params={"periodo": "ontem"}).status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# AC9 — os três filtros se somam, e não abrem porta nos cortes da 3.1
+# --------------------------------------------------------------------------- #
+
+
+def test_os_tres_filtros_valem_juntos(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Cada um dos três derruba um candidato diferente; sobra um.
+
+    Os distratores existem para provar que os filtros se somam com `AND`: se um
+    deles fosse ignorado, ou se as condições virassem `OR`, a lista voltaria com
+    dois ou mais nomes.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(
+        sessao,
+        organizador,
+        nome="Marina Sena",
+        cidade="São Paulo",
+        data_hora=_daqui_a(3),
+    )
+    # Casa termo e cidade, mas está fora da semana.
+    _evento_gravado(
+        sessao,
+        organizador,
+        nome="Marina Sena de novo",
+        cidade="São Paulo",
+        data_hora=_daqui_a(20),
+    )
+    # Casa termo e período, mas é em outra cidade.
+    _evento_gravado(
+        sessao,
+        organizador,
+        nome="Marina Sena no Rio",
+        cidade="Rio de Janeiro",
+        data_hora=_daqui_a(3),
+    )
+    # Casa cidade e período, mas é outro artista.
+    _evento_gravado(
+        sessao, organizador, nome="Djavan", cidade="São Paulo", data_hora=_daqui_a(3)
+    )
+    cliente.cookies.clear()
+
+    resposta = cliente.get(
+        "/eventos",
+        params={"q": "marina", "cidade": "São Paulo", "periodo": "semana"},
+    )
+
+    assert _nomes(resposta) == ["Marina Sena"]
+
+
+def test_rascunho_continua_fora_mesmo_com_termo_que_casaria(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ Um `where` novo não abre porta num corte antigo.
+
+    O termo casa o rascunho perfeitamente, e ele continua invisível: as duas
+    condições da Story 3.1 não têm exceção.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena", publicado=False)
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos", params={"q": "marina"}).json() == []
+
+
+def test_evento_passado_continua_fora_mesmo_com_termo_que_casaria(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O gêmeo do teste acima, para a outra condição da 3.1."""
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        nome="Marina Sena",
+        data_hora=_daqui_a(-10),
+    )
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos", params={"q": "marina"}).json() == []
+
+
+# --------------------------------------------------------------------------- #
+# AC10 — `GET /eventos/cidades`: o universo dos chips
+# --------------------------------------------------------------------------- #
+
+
+def test_as_cidades_vem_distintas_ordenadas_e_sem_nulo_sem_nenhum_cookie(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Pública como a programação, e sem `null` — chip em branco não é escolha."""
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="A", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="B", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="C", cidade="Rio de Janeiro")
+    _evento_gravado(sessao, organizador, nome="D", cidade="Belo Horizonte")
+    _evento_gravado(sessao, organizador, nome="E", cidade=None)
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos/cidades")
+
+    assert resposta.status_code == 200
+    assert resposta.json() == ["Belo Horizonte", "Rio de Janeiro", "São Paulo"]
+
+
+def test_as_cidades_usam_o_mesmo_recorte_de_publicado_e_futuro(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Chip de cidade sem show em cartaz é um filtro que só devolve lista vazia."""
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Em cartaz", cidade="São Paulo")
+    _evento_gravado(
+        sessao, organizador, nome="Rascunho", cidade="Curitiba", publicado=False
+    )
+    _evento_gravado(
+        sessao,
+        organizador,
+        nome="Já aconteceu",
+        cidade="Salvador",
+        data_hora=_daqui_a(-10),
+    )
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos/cidades").json() == ["São Paulo"]
+
+
+def test_as_cidades_nao_reagem_ao_termo_de_busca(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ A lista de escolhas é o universo, não o resultado.
+
+    Encolhê-la conforme se filtra faria o chip sumir debaixo do cursor de quem
+    ia clicar — e tiraria o caminho de volta de quem filtrou errado. A rota nem
+    declara os parâmetros: eles chegam e são ignorados pelo FastAPI.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="Djavan", cidade="Rio de Janeiro")
+    cliente.cookies.clear()
+
+    com_termo = cliente.get("/eventos/cidades", params={"q": "marina"})
+
+    assert com_termo.json() == ["Rio de Janeiro", "São Paulo"]
+
+
+def test_banco_sem_evento_em_cartaz_devolve_lista_de_cidades_vazia(
+    cliente: TestClient,
+) -> None:
+    """`200 []`: sem cidade nenhuma a tela simplesmente não desenha o grupo."""
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos/cidades")
+
+    assert resposta.status_code == 200
+    assert resposta.json() == []
+
+
+# --------------------------------------------------------------------------- #
+# AC12 — o contrato não afrouxa por causa de um `where` novo (UX-DR7)
+# --------------------------------------------------------------------------- #
+
+
+def test_com_busca_ativa_o_corpo_continua_com_as_sete_chaves(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O AC7 da Story 3.1, repetido **com filtro ligado**.
+
+    Um `WHERE` novo é exatamente o tipo de mudança em que um `setores` aparece
+    "só para a próxima story usar" — e o `response_model` é a garantia, não a
+    tela.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    cliente.cookies.clear()
+
+    (evento,) = cliente.get(
+        "/eventos", params={"q": "marina", "periodo": "mes"}
+    ).json()
+
+    assert set(evento) == CHAVES_DO_CONTRATO
+
+
+def test_com_busca_ativa_nenhuma_palavra_de_estoque_aparece_na_resposta(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A varredura do texto inteiro, também com filtro ligado."""
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        nome="Marina Sena",
+        setores=[("Pista", 800, 137, 12000)],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get(
+        "/eventos", params={"q": "marina", "cidade": "São Paulo"}
+    ).text
+
+    for palavra in (
+        "capacidade",
+        "vendidos",
+        "setores",
+        "imagem_url",
+        "publicado_em",
+        "organizador_id",
+    ):
+        assert palavra not in corpo
+
+
+# --------------------------------------------------------------------------- #
+# AC1, AC8, AC10 — o contrato declarado das duas rotas
+# --------------------------------------------------------------------------- #
+
+
+def test_o_openapi_declara_os_tres_parametros_de_filtro(
+    cliente: TestClient,
+) -> None:
+    """Os três, todos em `query`, e o período com os três valores do enum."""
+    esquema = cliente.get("/openapi.json").json()
+
+    parametros = {
+        parametro["name"]: parametro
+        for parametro in esquema["paths"]["/eventos"]["get"]["parameters"]
+    }
+
+    assert set(parametros) == {"q", "cidade", "periodo"}
+    assert all(parametro["in"] == "query" for parametro in parametros.values())
+
+    # O enum pode vir por `$ref` (Pydantic v2 nomeia o schema) ou inline; o que
+    # importa é que os três valores estejam publicados no documento.
+    assert esquema["components"]["schemas"]["PeriodoDaProgramacao"]["enum"] == [
+        "todos",
+        "semana",
+        "mes",
+    ]
+
+
+def test_o_openapi_declara_a_rota_de_cidades_como_lista_de_texto(
+    cliente: TestClient,
+) -> None:
+    """`list[str]`, sem parâmetro nenhum e sem segurança."""
+    esquema = cliente.get("/openapi.json").json()
+
+    rota = esquema["paths"]["/eventos/cidades"]["get"]
+    corpo = rota["responses"]["200"]["content"]["application/json"]["schema"]
+
+    assert corpo["items"]["type"] == "string"
     assert "security" not in rota
     assert rota.get("parameters", []) == []

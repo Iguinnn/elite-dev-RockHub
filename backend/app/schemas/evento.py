@@ -38,6 +38,7 @@ existem.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Annotated
 from uuid import UUID
 
@@ -233,6 +234,34 @@ class EventoResumo(BaseModel):
     # disponibilidade, e o `UPDATE` condicional da Epic 3 é quem vai mexer nela.
     capacidade_total: int
     vendidos_total: int
+
+
+class PeriodoDaProgramacao(str, Enum):
+    """O recorte de tempo do filtro `?periodo=` da programação (Story 3.2).
+
+    **`str, Enum`, no molde do `PapelUsuario`.** Declarado como tipo do `Query`,
+    ele faz três coisas de uma vez: documenta os três valores no OpenAPI,
+    devolve `422` para qualquer outro **antes** de a consulta ser montada, e dá
+    ao service um valor de que ele pode comparar sem `if` de string solta.
+    Aceitar `str` cru e comparar dentro do service faria `?periodo=ontem` cair
+    silenciosamente no ramo "sem filtro" — a pessoa veria a programação inteira
+    achando que filtrou.
+
+    **As janelas são corridas** — 7 e 30 dias **a partir de agora** —, e não a
+    semana e o mês do calendário (decisão do Igor). "Esta semana" numa
+    sexta-feira significaria dois dias, e "este mês" no dia 29 significaria
+    quase nada: o filtro pareceria quebrado justamente nos dias em que mais
+    gente procura show. Os rótulos da tela dizem exatamente isso — `7 DIAS` e
+    `30 DIAS` —, para o chip não prometer calendário e entregar outra coisa.
+
+    `TODOS` é o padrão e **não acrescenta condição nenhuma** ao `where`: ele
+    existe para o chip "Todos" ter um valor a apontar, não para virar um teto
+    infinito escrito em SQL.
+    """
+
+    TODOS = "todos"
+    SEMANA = "semana"
+    MES = "mes"
 
 
 class EventoNaProgramacao(BaseModel):
