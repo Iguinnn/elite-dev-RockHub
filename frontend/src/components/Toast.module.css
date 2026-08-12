@@ -1,0 +1,90 @@
+/* O aviso flutuante do canto inferior direito (Story 3.6).
+
+   Sem card, sem sombra, sem raio (UX-DR3): quem desenha a caixa é um fio de 1px
+   em `--brasa`, a mesma cor de erro do sistema, sobre a superfície elevada
+   `--breu2`. É a anatomia do `.selo` esgotado, num bloco. */
+
+/* ⚠️ **A região `role="alert"` fica sempre no DOM, e é esta camada.** Ela é
+   fixa e vazia na maior parte do tempo, então precisa de `pointer-events: none`:
+   sem isso, um retângulo invisível no canto inferior direito interceptaria o
+   clique de quem estivesse mirando o que está embaixo dele. O toast em si
+   devolve `auto`, senão o botão de fechar não seria clicável. */
+.area {
+  position: fixed;
+  right: 18px;
+  /* ⚠️ **Acima do rodapé fixo da página do evento, e não colado na base.** O
+     rodapé é `position: sticky; bottom: 0` e tem ~88px de altura com o botão
+     dentro; um toast em `bottom: 18px` cairia exatamente sobre o total e o
+     `Reservar e pagar` — ou seja, sobre a ação que a própria mensagem está
+     pedindo para refazer. O valor acompanha aquele rodapé porque ele é o único
+     consumidor deste componente hoje; quando houver um segundo, isto vira prop.
+     A média-query lá embaixo cuida do rodapé empilhado do celular. */
+  bottom: 104px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 360px;
+  padding: 16px 18px;
+  border: 1px solid var(--brasa);
+  background: var(--breu2);
+  pointer-events: auto;
+}
+
+/* Mono 11px como todo aviso de erro do sistema (`AvisoDeErro.module.css`), mas
+   em `--cal` e não em `--brasa`: aqui o vermelho já está no fio da caixa, e
+   texto vermelho sobre superfície elevada num bloco deste tamanho vira parede.
+   A cor não é o canal único da informação de qualquer jeito (UX-DR9) — a frase
+   diz o que aconteceu. */
+.texto {
+  margin: 0;
+  color: var(--cal);
+  font: 11px/1.7 var(--mono);
+}
+
+/* O `<strong>` da primeira frase ("Esgotou enquanto você decidia") é o que
+   separa o que aconteceu do que fazer a respeito. */
+.texto strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--brasa);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ⚠️ `background: none` e `border: none` pela mesma razão do `.passo` e do
+   `Botao`: não existe reset de `<button>` no `globals.css`, e o padrão do
+   navegador é uma borda clara com fundo quase branco. */
+.fechar {
+  flex: 0 0 auto;
+  margin: -4px -4px 0 0;
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--fumaca);
+  cursor: pointer;
+  font: 18px/1 var(--mono);
+}
+
+.fechar:hover {
+  color: var(--cal);
+}
+
+@media (max-width: 900px) {
+  /* No celular o rodapé empilha (resumo e total numa linha, botão em outra) e
+     passa de ~88px para ~150px. E o toast vira largura cheia: 360px numa tela de
+     360 encostaria nas duas bordas. */
+  .area {
+    right: 12px;
+    left: 12px;
+    bottom: 168px;
+  }
+
+  .toast {
+    max-width: none;
+  }
+}

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import EscolhaDeIngressos from "@/components/EscolhaDeIngressos";
 import { dataDaChamada } from "@/lib/formato";
 import { obterEvento } from "@/lib/programacao";
+import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
 
@@ -29,8 +30,12 @@ import estilos from "./page.module.css";
  * existe" para quem tropeçou numa instabilidade é a única das duas mensagens que
  * manda a pessoa desistir.
  *
- * **Não há nada para editar, e não há botão de reservar** (decisão do Igor):
- * `Reservar e pagar` é a Story 3.6, junto com a rota que ele chamaria.
+ * **A Story 3.6 trouxe o botão** — e com ele a única leitura de sessão desta
+ * tela. A página continua **pública**: quem não está logado como cliente vê um
+ * link para o login no lugar do botão, e o resto da tela é idêntico. A sessão é
+ * lida aqui, no servidor, e desce como um `boolean` para a ilha: é o que evita
+ * uma ida à rede para ouvir `401` sobre algo que esta página já sabia antes de
+ * renderizar.
  */
 export default async function PaginaDoEvento({
   params,
@@ -44,6 +49,13 @@ export default async function PaginaDoEvento({
   // `notFound()` **levanta**, como o `redirect()`, e não pode ficar dentro de um
   // `try/catch` — o `try` mora dentro do `lib/programacao.ts`.
   const resultado = await obterEvento(id);
+
+  // ⚠️ **Sem guarda de sessão, e a ausência é a decisão**: esta página é pública
+  // e continua sendo. A sessão é lida só para saber se **há botão**, e
+  // `obterUsuarioDaSessao` já devolve `null` sem ida à rede quando não há cookie
+  // (o caso comum aqui). Nenhum `redirect`, nenhum `403`: visitante, organizador
+  // e portaria leem a página inteira.
+  const usuario = await obterUsuarioDaSessao();
 
   if (resultado.estado === "nao-encontrado") {
     notFound();
@@ -167,8 +179,13 @@ export default async function PaginaDoEvento({
         // serializáveis: a lista de setores e o teto por compra. Nenhuma função
         // passa por aqui.
         <EscolhaDeIngressos
+          eventoId={evento.id}
           setores={evento.setores}
           maximoPorCompra={evento.maximo_por_compra}
+          // Só o papel `CLIENTE` reserva (AD-9, e a rota cobra o mesmo).
+          // Organizador e portaria caem no mesmo caminho do visitante: um link
+          // para entrar com a conta certa.
+          podeReservar={usuario?.papel === "CLIENTE"}
         />
       )}
     </section>

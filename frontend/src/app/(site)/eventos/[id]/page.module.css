@@ -367,8 +367,11 @@
    transparente e a lista de setores passa por baixo do total. O `padding-bottom`
    generoso da `.pagina` é o que garante que ele não cobre o último setor.
 
-   ⚠️ **Sem botão** (decisão do Igor): `Reservar e pagar` é a Story 3.6, junto com
-   a rota que ele chamaria. */
+   **O botão entrou na Story 3.6**, à direita do total: é o rodapé que responde
+   "quanto vou pagar" e é dele que sai a ação de pagar. ⚠️ **O erro não mora
+   aqui** — ele é o `Toast` do canto inferior direito. Posto dentro do rodapé, a
+   frase do UX-DR8 (que nomeia dois setores) empurraria o total e o botão para
+   baixo no instante em que a pessoa mais precisa que a tela fique parada. */
 .rodape {
   position: sticky;
   bottom: 0;
@@ -379,6 +382,37 @@
   padding: 20px 12px;
   border-top: 1px solid var(--fio);
   background: var(--breu);
+}
+
+/* ⚠️ **Largura fixa em volta do `Botao`, e não uma variante nova dele.** O
+   componente é `width: 100%` desde a Story 1.4 (ele nasceu em formulário), e
+   solto nesta linha ele comeria o espaço do resumo e do total. Uma prop
+   `variante` para um caso só seria abstração inventada — o `Botao.tsx` diz isso
+   com todas as letras. O contêiner resolve, e o botão continua um só. */
+.acao {
+  flex: 0 0 auto;
+  width: 210px;
+}
+
+/* O caminho de quem não está logado como cliente, no lugar do botão: **link, e
+   não botão desabilitado** — botão presente e apagado lê como defeito, e entrar
+   é navegação. Anatomia do `.voltar`, com o neon do `Botao` para o alvo
+   continuar sendo o mesmo ponto da tela. */
+.entrar {
+  flex: 0 0 auto;
+  padding: 18px 20px;
+  border: 1px solid var(--neon);
+  color: var(--neon);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.entrar:hover {
+  background: var(--neon);
+  color: var(--breu);
 }
 
 .resumo {
@@ -449,5 +483,20 @@
 
   .total {
     font-size: 25px;
+  }
+
+  /* O rodapé empilha: resumo e total numa linha, o botão em outra, de largura
+     cheia. Num celular, o botão ao lado do total deixaria os dois estreitos
+     demais — e é o botão que a pessoa precisa acertar com o polegar.
+     ⚠️ O `bottom` do `Toast.module.css` acompanha esta altura. */
+  .rodape {
+    flex-wrap: wrap;
+  }
+
+  .acao,
+  .entrar {
+    flex: 1 0 100%;
+    width: auto;
+    text-align: center;
   }
 }

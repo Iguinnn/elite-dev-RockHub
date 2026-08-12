@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (story 3.5 implementada — review)
+last_updated: 2026-08-12 (story 3.6 implementada — review)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -152,7 +152,21 @@ development_status:
   # por `.rowcount` antes de existir service. `frontend/` e o README da raiz não
   # são tocados.
   3-5-modelo-de-reserva: review
-  3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: backlog
+  # A garantia mais pontuada do desafio, e a primeira escrita do lado do cliente:
+  # `setor.vendidos` sai de zero pela primeira vez. Cinco decisões do Igor: **a
+  # tela vai até `/reservas/{id}`**, com botão na página do evento e o cronômetro
+  # ali, ficando o pagamento para a 3.8; **o visitante vai ao login e volta** pelo
+  # `?voltar=` que já existe desde a 1.4, e **a escolha do stepper se perde** de
+  # propósito (o estoque pode ter mudado nesses segundos); **o `409` se resolve
+  # relendo `GET /eventos/{id}`** e montando a frase do UX-DR8 com dados frescos —
+  # o corpo do erro continua `{codigo, mensagem}`, sem exceção ao formato único do
+  # `core/erros.py`; e **os 10 minutos são constante do service**, no precedente do
+  # `MAXIMO_POR_COMPRA`, não variável de ambiente. ⚠️ Duas armadilhas: ler
+  # `setor.vendidos` para dentro do Python "só para conferir antes" é o AD-3
+  # quebrado com o resultado certo em 99% dos casos; e a corrida **não** se prova
+  # pelo `TestClient` — a fixture `cliente` amarra o app a uma sessão só, então o
+  # teste precisa de duas `Session` em conexões distintas, com commit e limpeza.
+  3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: review
   3-7-reserva-abandonada-devolve-o-estoque: backlog
   3-8-pagar-com-aprovacao-e-com-recusa: backlog
   3-9-receber-ingressos-com-codigo-nao-forjavel: backlog

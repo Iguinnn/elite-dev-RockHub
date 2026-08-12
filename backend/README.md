@@ -228,6 +228,7 @@ backend/
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
+      cliente.py      # POST /reservas e GET /reservas/{id} — exige papel CLIENTE (3.6)
       organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · GET /organizador/portarias
                       # · POST /organizador/eventos · GET /organizador/eventos e /eventos/{id} (2.6)
       publico.py      # GET /eventos (com ?q=, ?cidade=, ?periodo=) e /eventos/cidades — sem conta
@@ -237,6 +238,7 @@ backend/
                       # · listar_portarias() — quem pode ser escalado (2.5)
                       # · listar_do_organizador() e obter_do_organizador() — as leituras da 2.6
                       # · listar_programacao() — a leitura pública da 3.1
+      reserva.py      # criar() — o UPDATE condicional do AD-3 e a transação · obter() (3.6)
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
@@ -248,6 +250,7 @@ backend/
       evento.py       # EventoEntrada/Saida, EventoResumo, EventoNaProgramacao, PeriodoDaProgramacao
                       # · EventoResumo — a vista de lista, com os dois totais somados (2.6)
                       # · EventoNaProgramacao — a vista pública, sem estoque nenhum (3.1)
+      reserva.py      # ReservaEntrada/Saida e os dois de item — o contrato da compra (3.6)
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
       ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
@@ -270,7 +273,8 @@ backend/
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
     test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
     test_organizador_meus_eventos.py # GET /organizador/eventos e /eventos/{id} (Story 2.6)
-    test_programacao.py # as duas rotas públicas, com busca e filtros (Stories 3.1 e 3.2)
+    test_programacao.py # as quatro rotas públicas, com busca e filtros (Stories 3.1 a 3.4)
+    test_reservar.py    # POST /reservas e GET /reservas/{id} — e a corrida do AD-3 (3.6)
   alembic.ini
   pyproject.toml
   uv.lock
@@ -1388,6 +1392,62 @@ mais óbvia para "quantos foram vendidos", e ela está errada — a resposta é 
 sempre. Escrevi a proibição no docstring de `app/models/reserva.py`, que é o arquivo que mais
 convida a desobedecê-la.
 
+## Reservar
+
+Duas rotas novas, num router novo — `app/api/cliente.py`, o quinto. **`POST /reservas`** recebe
+`{evento_id, itens: [{setor_id, quantidade}]}` e devolve `201` com a reserva `PENDENTE`, o prazo e
+o total; **`GET /reservas/{id}`** devolve o mesmo corpo. As duas exigem
+`Depends(exigir_papel(PapelUsuario.CLIENTE))` na assinatura, e o `cliente_id` vem sempre da sessão:
+não há parâmetro de corpo, de query ou de caminho por onde outro id pudesse entrar. Pus as duas num
+arquivo próprio porque o critério do `publico.py` é a **ausência** de autenticação e o do
+`organizador.py` é outro papel — misturar faria alguém procurar a guarda de sessão em dois lugares.
+Sem `prefix`, como o `publico.py`: o recurso é a reserva, e a URL dela é `/reservas`.
+
+**O estoque muda por um `UPDATE` condicional e nada mais** — é o AD-3, e é a garantia mais pontuada
+do desafio: `UPDATE setor SET vendidos = vendidos + :q WHERE id = :id AND vendidos + :q <=
+capacidade`, um por item, e a decisão é o `rowcount`. Zero linhas afetadas é `409
+ESTOQUE_INSUFICIENTE`. **`setor.vendidos` nunca é lido para dentro do Python** — nem para conferir
+antes, nem para logar, nem para montar mensagem. A alternativa confortável (`if setor.vendidos + q >
+setor.capacidade`) tem os `Setor` já carregados a uma linha de distância, passa em todo teste
+sequencial e **perde a corrida**: entre ler e escrever cabe outra transação inteira. O Postgres
+bloqueia a linha para a segunda tentativa e reavalia o `WHERE` contra a versão nova ao liberá-la, e
+é só isso que faz duas pessoas comprando o último ingresso terminarem com uma levando. Pelo mesmo
+motivo o `.values()` usa a **coluna** (`Setor.vendidos + q`) e não um número calculado antes, e não
+existe `SELECT ... FOR UPDATE` em lugar nenhum — ele seria um segundo mecanismo para a mesma
+garantia. Há um teste com duas `Session` em conexões distintas e commit de verdade provando isso; ele
+é o único do arquivo que não passa pelo `TestClient`, porque a fixture amarra o app a uma sessão só e
+a corrida nunca aconteceria lá dentro.
+
+**A ordem das quatro recusas é o que impede rastro pela metade**, e é a mesma disciplina da
+publicação: `RESERVA_SEM_ITEM` (itens vazio ou ausente), `ITEM_DUPLICADO` (o mesmo setor duas vezes
+no corpo), `ACIMA_DO_MAXIMO_POR_COMPRA` (a **soma** das quantidades passa de seis) e `SETOR_INVALIDO`
+(setor que não existe ou é de outro show) — as três primeiras sem tocar o banco, e só então o
+`UPDATE`. O `ITEM_DUPLICADO` existe pelo mesmo motivo do `SETOR_DUPLICADO` da 2.4: sem ele o `UNIQUE`
+de `item_reserva` estouraria no `commit` e viraria `500`, erro de cliente lido como erro de servidor.
+E o teto de seis é `MAXIMO_POR_COMPRA` **importado de `services/evento.py`**, a mesma constante que o
+`EventoPublico` já entrega ao stepper: com o número em dois lugares, o dia em que a regra mudar é o
+dia em que a tela e a rota discordam.
+
+**Um pedido com dois setores é tudo ou nada.** Dois na Pista (que tem) e três no Camarote (que não
+tem) não podem deixar a Pista com dois vendidos e a pessoa sem reserva: o `409` sobe como
+`ErroDeDominio` de dentro da transação, sem `commit`, e o `finally: sessao.close()` de `obter_sessao`
+descarta o `UPDATE` que já tinha acontecido. Não há `sessao.rollback()` explícito no service de
+propósito — ele seria um segundo dono da mesma garantia —, e não há `try/except IntegrityError`,
+pelo mesmo argumento escrito no topo de `services/evento.py`. O evento é recortado exatamente como
+nas quatro rotas públicas (`publicado_em IS NOT NULL` e `data_hora >= agora`), com o mesmo `404` e a
+mesma mensagem: sem a condição de data, um link guardado venderia ingresso para uma noite que já
+passou.
+
+Duas coisas que o contrato **não** carrega e uma que ele carrega. Não carrega estoque — nem
+`capacidade`, nem `vendidos`, nem disponibilidade de setor (UX-DR7, AD-13); `quantidade`,
+`preco_unitario_centavos` e `total_centavos` são a compra, não o inventário. Não carrega `criado_em`
+nem nada que a tela não desenhe. E carrega o **preço congelado** no ato da reserva: ler
+`setor.preco_centavos` para gravá-lo em `item_reserva` não contradiz a regra do parágrafo acima —
+preço não é estoque, e a reserva paga precisa continuar dizendo quanto custou depois de o organizador
+mudar a tabela. O prazo de dez minutos do AD-4 é `PRAZO_DE_RESERVA_MINUTOS`, constante do service ao
+lado do precedente `MAXIMO_POR_COMPRA`: não é coluna, não é variável de ambiente e não é parâmetro do
+corpo.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -1458,7 +1518,7 @@ cd backend
 uv run pytest
 ```
 
-São **316 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **340 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento`, `Setor`, `Reserva` e `ItemReserva`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
@@ -1469,7 +1529,17 @@ também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.
 rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e as quatro rotas
 públicas, `GET /eventos`, `GET /eventos/cidades`, `GET /eventos/destaque` e `GET /eventos/{id}`
 (`test_programacao.py`, Stories 3.1 a 3.4 — incluindo os três testes do escape do `LIKE`, os dois da
-busca sem acento nos dois sentidos e o da borda dos 20% no limiar de "últimos ingressos").
+busca sem acento nos dois sentidos e o da borda dos 20% no limiar de "últimos ingressos") e as duas
+rotas de reserva (`test_reservar.py`, Story 3.6).
+
+`test_reservar.py` tem o único teste do projeto que **sai da transação revertida do `conftest.py`**:
+o da corrida do AD-3, com duas `Session` em conexões distintas, `threading.Barrier(2)` e commit de
+verdade — pelo `TestClient` a corrida nunca aconteceria, porque a fixture amarra o app a uma sessão
+só. Ele asserta `sum(rowcounts) == 1`, nunca "a primeira venceu" (a ordem é do escalonador do sistema
+operacional), e limpa num `finally` o que comitou. O teste do "tudo ou nada" tem `commit`/`rollback`
+explícitos ao redor da chamada pelo motivo inverso: `dependency_overrides` entrega a sessão do teste
+e **não a fecha**, então o `rollback` faz aqui o papel do `finally: sessao.close()` de
+`obter_sessao`.
 
 `test_programacao.py` é o único arquivo cujos testes começam por `cliente.cookies.clear()` em vez de
 um login: o `TestClient` guarda cookie entre chamadas, e um teste que "prova" acesso anônimo depois

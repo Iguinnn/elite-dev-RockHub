@@ -389,6 +389,14 @@ frontend/
         conta/
           page.tsx            # Server Component com a guarda de sessão
           page.module.css
+        eventos/
+          [id]/
+            page.tsx          # a página pública do evento (3.4); lê a sessão só para saber se há botão
+            page.module.css   # compartilhado com a ilha EscolhaDeIngressos
+        reservas/
+          [id]/
+            page.tsx          # a reserva: itens, total e cronômetro (3.6) — sem botão de pagar
+            page.module.css
         organizador/
           publicar/
             page.tsx          # Server Component — passos 1 (2.2), 2 (2.4) e 3 (2.5); a escolha vem da URL
@@ -419,10 +427,15 @@ frontend/
       Botao.module.css
       AvisoDeErro.tsx         # a região role="alert" e a regra que a faz funcionar
       AvisoDeErro.module.css
+      Toast.tsx               # o mesmo role="alert", flutuando no canto inferior direito (3.6)
+      Toast.module.css
       FormularioLogin.tsx     # "use client"
       FormularioCadastro.tsx  # "use client"
       FormularioPublicacao.tsx # "use client" — a primeira ilha fora das telas de acesso (2.4/2.5)
       BotaoSair.tsx           # "use client" — logout + router.refresh()
+      EscolhaDeIngressos.tsx  # "use client" — o stepper (3.4) e o botão de reservar com o 409 (3.6)
+      Cronometro.tsx          # "use client" — os 10 minutos da reserva; informa, não pressiona (3.6)
+      Cronometro.module.css
     lib/
       api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
       servidor.ts             # API_URL + cabecalhoDeSessao() — o que os três módulos de servidor compartilham
@@ -430,7 +443,9 @@ frontend/
       catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
       portarias.ts            # listarPortarias() — só servidor (Story 2.5)
       eventos.ts              # listarMeusEventos() e obterMeuEvento() — só servidor (Story 2.6)
-      programacao.ts          # listarProgramacao(filtros) e listarCidadesEmCartaz() — sem cookie
+      programacao.ts          # listarProgramacao(filtros), listarCidadesEmCartaz(), obterDestaque()
+                              # e obterEvento(id) — as quatro leituras públicas, sem cookie (3.1 a 3.4)
+      reservas.ts             # obterReserva(id) — só servidor; o POST sai da ilha, por chamarApi (3.6)
       formato.ts              # data, hora e dinheiro em pt-BR — módulo puro, os dois lados o usam (2.6)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
@@ -533,6 +548,20 @@ primeira vez que alguém ajustar só uma.
 O `Botao` tem **só a variante primária**. O `DESIGN.md` descreve também um secundário e um
 destrutivo, e nenhum dos dois tem consumidor — uma prop `variante` com um valor só é abstração
 inventada. Quando o segundo aparecer, ela nasce ali.
+
+⚠️ **Ele passou da Story 1.4 à 3.6 com uma borda clara em volta, e ninguém tinha reparado.** Não
+existe reset de `<button>` no `globals.css` — o `*` cuida de `box-sizing`, `margin` e `padding`, e o
+resto fica com o padrão do navegador, que é `2px outset ButtonBorder`: clara, e gritante sobre o breu.
+O `.passo` do stepper e o `.remover` do formulário de publicação já escreviam `border: none` com o
+aviso ao lado; o `Botao`, que é o primário do produto, não — e a borda estava em toda tela com botão,
+inclusive nos dois `Buscar`. Entrou junto o que faltava para o botão parecer clicável: `cursor:
+pointer`, `:hover` e `:active`. O hover é `filter: brightness(1.12)` e **não** um segundo tom de rosa:
+o `globals.css` é o único lugar do frontend onde cor é declarada por valor, e um `#ff6aab` num arquivo
+de componente seria a nona cor do sistema, nascida para um estado. Inverter as tintas como o `.passo`
+faz também não servia — ele é transparente e ganha fundo neon no hover; este já **é** neon, e inverter
+o apagaria contra o fundo da página. Considerei pôr o reset de `<button>` no `globals.css` e deixei de
+fora: ele mudaria todo botão do projeto de uma vez, inclusive os três que já se defendem sozinhos, e
+é decisão de sistema visual — não de conserto de componente.
 
 **O `AvisoDeErro` foi extraído por um critério diferente dos outros dois.** `Campo` e `Botao` saíram
 porque se repetem. Este saiu porque a regra que o faz funcionar é *invisível*: a região `role="alert"`
@@ -1488,15 +1517,15 @@ no zero, que são `disabled` de verdade; cada botão tem nome acessível própri
 Pista`), porque `+` sozinho não diz de que setor é, e a quantidade fica num `aria-live="polite"` para
 a mudança ser anunciada sem a pessoa precisar reler a tela.
 
-**O teto de 6 é da compra, não do setor, e o rodapé não tem botão.** Com 4 na Pista e 2 no Camarote,
-**todos** os `+` da tela travam — é o que a palavra "por compra" diz, e é o que a Story 3.6 vai cobrar
-do servidor. O rodapé é `position: sticky; bottom: 0`, recalcula sem confirmação, mostra `2 ingressos
-· Pista` com um setor e `3 ingressos · 2 setores` com mais, e **não aparece** com zero escolhido:
-`R$ 0,00` grudado na base é ruído, e ele existe para responder "quanto vou pagar" — pergunta que ainda
-não foi feita. O botão `Reservar e pagar` ficou fora de propósito: reservar é a 3.6, junto com a rota
-que ele chamaria. Descartei tanto o botão apontando para o que vier — seria uma segunda janela como a
-do link, e um botão primário que cai na 404 é pior que um link de fila que cai — quanto o botão
-presente e desabilitado, que leria como defeito e não como escopo.
+**O teto de 6 é da compra, não do setor.** Com 4 na Pista e 2 no Camarote, **todos** os `+` da tela
+travam — é o que a palavra "por compra" diz, e é o mesmo teto que o `POST /reservas` cobra do servidor
+desde a 3.6, da mesma constante. O rodapé é `position: sticky; bottom: 0`, recalcula sem confirmação,
+mostra `2 ingressos · Pista` com um setor e `3 ingressos · 2 setores` com mais, e **não aparece** com
+zero escolhido: `R$ 0,00` grudado na base é ruído, e ele existe para responder "quanto vou pagar" —
+pergunta que ainda não foi feita. Na 3.4 o botão `Reservar e pagar` ficou fora de propósito, porque
+reservar era a story seguinte: descartei tanto o botão apontando para o que viesse — um botão primário
+que cai na 404 é pior que um link de fila que cai — quanto o botão presente e desabilitado, que leria
+como defeito e não como escopo. **A 3.6 é quem o acrescentou**, e está na seção logo abaixo.
 
 **A ficha mostra `DATA`, `CASA` e `CIDADE`, e mais nada.** O protótipo desenha `ENDEREÇO`,
 `CLASSIFICAÇÃO` e `FONTE`, e nenhum dos três existe: o `Evento` não tem coluna de endereço, o
@@ -1516,6 +1545,65 @@ preenche a coluna de texto ao lado da arte. Os três estados do `lib/` são disc
 quem chega por esta URL nunca fez login e não tem como saber, sozinho, se o show saiu de cartaz ou se a
 API caiu. `404` e `422` caem no mesmo `nao-encontrado` e viram `notFound()`; falha de rede vira uma
 frase e o link de volta.
+
+## A reserva: `/reservas/[id]`
+
+**O botão `Reservar e pagar` só existe para quem está logado como cliente, e quem decide isso é a
+página — não a ilha.** `/eventos/[id]` é Server Component e já sabe quem está do outro lado, então
+`podeReservar` desce pronto por prop: visitante, organizador e portaria veem no lugar do botão um
+link para `/login?voltar=/eventos/{id}`. Descartei o botão para todo mundo com o `401` virando aviso:
+seria uma ida à rede para descobrir o que a página sabia antes de renderizar, e um erro exibido para
+um caso que não é erro nenhum. **A escolha do stepper se perde nessa ida ao login, de propósito** — o
+destino é `/eventos/{id}` limpo. Carregar as quantidades na URL (`?setor=2&…`) daria menos atrito e
+faria a URL carregar estado de compra, o componente ler `searchParams` e a tela restaurar uma escolha
+que pode não ser mais possível: o estoque muda nesses segundos, e reescolher é ver o preço e a
+disponibilidade de agora. O `?voltar=` é o que já existe desde a Story 1.4, sanitizado por
+`caminhoInternoSeguro` — não inventei um `?destino=`.
+
+**O `409 ESTOQUE_INSUFICIENTE` se resolve relendo `GET /eventos/{id}`, e não com um corpo de erro
+maior.** A tela chama o evento de novo, troca a lista de setores pela fresca, zera a quantidade dos
+que esgotaram e monta a frase do UX-DR8 com dados de agora: *"**Esgotou enquanto você decidia.** A
+Pista acabou de esgotar. Ainda há ingressos no setor Área VIP."* Ela aparece num **`Toast` no canto
+inferior direito**, acima do rodapé fixo — dentro do rodapé, uma frase que nomeia dois setores
+empurraria o total e o botão para baixo justamente no instante em que a pessoa precisa que a tela
+fique parada. Ele **não some sozinho**: toast com temporizador é o padrão da internet e está errado
+aqui, porque esta mensagem explica uma mudança que acabou de acontecer na lista atrás dela — quem
+fecha é quem leu, ou a tentativa seguinte. A região `role="alert"` fica no DOM desde o primeiro
+render, vazia e com `pointer-events: none`, pela mesma regra invisível que fez o `AvisoDeErro` virar
+componente. Se nada sobrou, a frase é "Este show esgotou enquanto você decidia", sem oferecer nada. A
+alternativa era o erro carregar
+`setor_esgotado_id` e `setor_sugerido_id`: uma ida à rede a menos, e o `core/erros.py` — que existe
+desde a Story 1.1 para a API ter **uma** forma de erro — ganharia a primeira exceção, que é a que abre
+a segunda. E a releitura não é só para a frase: é ela que deixa o stepper utilizável para a próxima
+tentativa, que era o problema real. Escrevo "no setor X" e não "na X" porque o nome é digitado pelo
+organizador e não dá para saber o gênero — "na Camarote" é pior que a frase um pouco mais longa.
+
+**No sucesso, `router.refresh()` antes do `router.push`.** Não é o mesmo `refresh` do login: aquele
+existia por causa do masthead, e este existe porque o estoque **desta** página acabou de mudar — sem
+ele, o botão "voltar" do navegador mostraria o medidor de antes da compra. O `mensagemParaCodigo`
+nasceu já cobrindo `NAO_AUTENTICADO` e `SEM_PERMISSAO`, que foi exatamente o buraco que o code review
+da Epic 2 achou no formulário de publicação: a sessão dura 8 horas e pode cair com a tela aberta, e
+sem tradução o `401` cairia em "tente de novo em instantes" — e tentar de novo daria `401` outra vez.
+
+**A reserva ganhou endereço próprio porque ela existe no servidor.** Uma reserva é uma linha no banco
+com prazo, não um estado desta tela: ela sobrevive a fechar a aba, e recarregar `/reservas/{id}`
+continua mostrando o mesmo tempo correndo. Um recibo no rodapé da própria página do evento seria mais
+barato e perderia o caminho de volta na primeira recarga. A página é Server Component, com a guarda de
+sessão de `/conta` e `/organizador/eventos` (`redirect` para o login com o `?voltar=`), e o `lib/
+reservas.ts` discrimina os três estados no molde do `obterMeuEvento` — `404` e `422` viram
+`notFound()`, falha de rede vira frase. **Não há botão de pagar aqui**: pagar é a 3.8, e é nesta
+página que ele entra.
+
+**O cronômetro informa, não pressiona.** Ele não pisca, não muda de cor e não acelera no fim
+(`EXPERIENCE.md#cronômetro de reserva`) — é mono versalete com `tabular-nums`, para a linha não dançar
+a cada segundo. Ele conta contra o `expira_em` do servidor e o relógio do navegador é só a régua: **ao
+chegar a zero ele diz que expirou e não navega para lugar nenhum**, porque quem decide a transição é o
+banco, na Story 3.7. Um `POST` disparado pelo navegador ao zerar seria uma segunda autoridade sobre a
+mesma coisa. Ele é a única ilha `"use client"` desta tela, com estado inicial `null` e o cálculo no
+`useEffect` — `useState(() => calcular())` roda no servidor e de novo no cliente, em instantes
+diferentes, e um segundo de diferença é erro de hidratação. O `aria-live` é `polite`, nunca
+`assertive`: um número anunciado a cada segundo em `assertive` interromperia a leitura da página
+inteira.
 
 ## Sobre não ter teste automatizado aqui
 

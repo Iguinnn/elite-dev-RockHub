@@ -1,4 +1,4 @@
-/* Vindo do FormularioLogin.module.css da Story 1.4, sem mudança de valor.
+/* Vindo do FormularioLogin.module.css da Story 1.4.
    [Fonte: DESIGN.md#Components (botao)] */
 
 .botao {
@@ -9,8 +9,41 @@
   font: 700 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
+  /* ⚠️ **`border: none` não é redundância — sem ele o botão ganha uma borda
+     clara em volta.** Não existe reset de `<button>` no `globals.css`: o `*`
+     cuida de `box-sizing`, `margin` e `padding`, e o resto fica com o padrão do
+     navegador, que é `2px outset ButtonBorder` — clara, e gritante sobre o breu.
+     O `.passo` do stepper e o `.remover` do formulário de publicação já
+     escreviam estas linhas; o `Botao`, que é o primário do produto, não — e a
+     borda estava em toda tela com botão desde a Story 1.4. O DESIGN.md descreve
+     o primário como "fundo neon, texto breu", sem borda nenhuma. */
+  border: none;
+  cursor: pointer;
+  /* O único movimento previsto no sistema é mudança de cor em hover, até 120ms
+     (`globals.css`) — e quem pediu menos movimento não recebe nenhum, pelo bloco
+     de `prefers-reduced-motion` de lá. */
+  transition: filter 120ms;
 }
 
+/* ⚠️ **`filter`, e não um segundo tom de rosa.** O `globals.css` é o único lugar
+   do frontend onde cor é declarada por valor, e um `#ff6aab` aqui seria a nona
+   cor do sistema — nascida num arquivo de componente, para um estado. Inverter
+   as tintas como o `.passo` faz também não serve: ele é transparente e ganha
+   fundo neon no hover; este já **é** neon, e inverter o apagaria contra o breu
+   da página. O brilho diz "aceso" sem inventar token. */
+.botao:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+/* O afundar do clique. Sem `transform` e sem sombra: o retorno é a mesma
+   mudança de brilho, no sentido contrário. */
+.botao:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+/* `cursor: default` junto com a opacidade: o cursor não pode prometer um clique
+   que o atributo `disabled` já recusou. Mesmo par do `.passo:disabled`. */
 .botao:disabled {
   opacity: 0.35;
+  cursor: default;
 }

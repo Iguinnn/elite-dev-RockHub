@@ -1,0 +1,165 @@
+/* A página da reserva: itens, total e cronômetro (Story 3.6).
+
+   ⚠️ **Nenhum hex aqui — só `var(--token)`.** A fonte única dos valores é o
+   `globals.css`. Sem card, sem sombra, sem raio (UX-DR3): quem separa os blocos é
+   o fio de 1px, como em toda tela deste produto.
+
+   O recuo lateral de 12px é o mesmo da raiz, do masthead e da página do evento —
+   é ele que faz os fios correrem de ponta a ponta da coluna. */
+
+.pagina {
+  padding: 0 0 80px;
+}
+
+/* Anatomia do `.voltar` da página do evento, sem uma diferença sequer: mono
+   versalete em 14px, com `padding` dando alvo de toque sem virar botão. */
+.voltar {
+  display: inline-block;
+  margin: 20px 0 6px;
+  padding: 6px 12px;
+  color: var(--fumaca);
+  font: 600 14px/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.voltar:hover {
+  color: var(--neon);
+}
+
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding: 0 12px;
+  font: 19px/1.5 var(--serif);
+}
+
+/* ---- cabeçalho: o show à esquerda, o cronômetro à direita --------------- */
+
+/* O cronômetro fica **ao lado** do nome, e não no rodapé junto do total: ele é a
+   informação que muda, e informação que muda perto do que decide (o total)
+   pressiona. Aqui em cima ele é contexto. */
+.cabecalho {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 26px;
+  padding: 10px 12px 24px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Serifada grande, como na página do evento — mas 40px e não 52: aqui o `<h1>` é
+   a referência do que foi reservado, e a decisão já foi tomada na tela anterior. */
+.nomeDoEvento {
+  margin: 8px 0 6px;
+  font: 400 40px/1.05 var(--serif);
+  letter-spacing: -0.03em;
+}
+
+.data {
+  margin: 0;
+  font: 400 16px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+/* ---- os itens ----------------------------------------------------------- */
+
+.itens {
+  padding-top: 4px;
+}
+
+/* Três colunas: setor, `2 × R$ 120,00`, subtotal. O fio embaixo separa uma linha
+   da outra — o mesmo desenho da lista de setores da página do evento. */
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto 130px;
+  gap: 20px;
+  align-items: baseline;
+  padding: 18px 12px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.nomeDoSetor {
+  font: 400 23px/1.2 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.quantidade {
+  font: 600 12px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--fumaca);
+  white-space: nowrap;
+}
+
+.subtotal {
+  font: 400 20px/1 var(--serif);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---- o total ------------------------------------------------------------ */
+
+/* ⚠️ **Não é `sticky` como o rodapé da página do evento.** Lá o total acompanha
+   uma escolha que ainda está sendo feita e não pode obrigar a rolar de volta;
+   aqui ele é o fecho de uma conta fechada, e grudá-lo na base cobriria a frase
+   que explica o prazo. */
+.rodape {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 12px;
+}
+
+.rotuloDoTotal {
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.total {
+  font: 400 30px/1 var(--serif);
+  white-space: nowrap;
+}
+
+/* A frase que explica o prazo — e, por ora, o único conteúdo abaixo do total. É
+   aqui que o pagamento da Story 3.8 entra. */
+.nota {
+  max-width: 52ch;
+  margin: 0;
+  padding: 0 12px;
+  font: 16px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+/* ---- abaixo de 700px ----------------------------------------------------- */
+
+@media (max-width: 700px) {
+  /* O cronômetro desce para baixo do nome: lado a lado, num celular, o número
+     espremeria o nome do show em duas ou três linhas. */
+  .cabecalho {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .nomeDoEvento {
+    font-size: 30px;
+  }
+
+  /* O item empilha em duas linhas: setor acima; `2 × R$ 120,00` e o subtotal
+     abaixo, nas pontas. */
+  .item {
+    grid-template-columns: 1fr auto;
+  }
+
+  .nomeDoSetor {
+    grid-column: 1 / -1;
+  }
+
+  .total {
+    font-size: 25px;
+  }
+}
