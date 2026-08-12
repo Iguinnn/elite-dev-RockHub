@@ -15,7 +15,7 @@ agregado dele. Agrupar por agregado, não por arquivo que cresce.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.erros import ErroDeDominio
@@ -168,12 +168,42 @@ def compartilhar(
 
     O `404` de ingresso inexistente ou de outra pessoa vem do
     `_carregar_do_cliente`, com o mesmo código e a mesma frase do `obter`.
+
+    ⚠️ **A gravação é um `UPDATE` condicional, no precedente do AD-3** — achado
+    do code review da Epic 4. Ler `share_token IS None` em Python e gravar
+    depois é um par leitura→escrita sem trava: com o mesmo ingresso aberto em
+    duas abas, as duas transações leem `NULL`, a primeira grava o token A e a
+    segunda grava B por cima. O banco fica com B, e a aba que gravou A recebeu
+    `200` com A — que não existe mais. A pessoa manda `/i/A` por WhatsApp e
+    quem abre lê "esse link não vale mais", sem ninguém ter revogado nada.
+    O `WHERE share_token IS NULL` faz a segunda transação casar zero linhas, e
+    as duas abas saem com o mesmo token.
+
+    ⚠️ **O `refresh` não é opcional.** `SessaoLocal` usa `expire_on_commit=
+    False`, então o objeto em memória continua com `share_token = None` depois
+    do commit — sem reler a linha, quem perde a corrida devolveria `null` e
+    quem ganha devolveria um token que o `_montar_detalhe` não enxerga. É a
+    mesma armadilha de sessão que o code review da Epic 3 encontrou no
+    pagamento, aqui pelo lado oposto: lá o objeto expirava, aqui ele não
+    expira.
+
+    *Descartei* `SELECT ... FOR UPDATE` no `_carregar_do_cliente`: aquele
+    helper serve também `obter` e `revogar_compartilhamento`, e travar linha
+    nas duas leituras puras seria cobrar de toda a epic o preço de uma corrida
+    que só existe aqui.
     """
     ingresso, evento, setor = _carregar_do_cliente(sessao, cliente, ingresso_id)
 
     if ingresso.share_token is None:
-        ingresso.share_token = gerar_share_token()
+        sessao.execute(
+            update(Ingresso)
+            .where(Ingresso.id == ingresso.id, Ingresso.share_token.is_(None))
+            .values(share_token=gerar_share_token())
+        )
         sessao.commit()
+        # Relê a linha: pode ter sido o token desta transação que venceu, ou o
+        # de outra que chegou primeiro. As duas respostas são o valor gravado.
+        sessao.refresh(ingresso)
 
     return _montar_detalhe(ingresso, evento, setor)
 

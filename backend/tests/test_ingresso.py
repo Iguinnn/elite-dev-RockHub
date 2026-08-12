@@ -34,6 +34,7 @@ from app.core.seguranca import (
     conferir_codigo,
     gerar_hash,
     gerar_nonce,
+    gerar_share_token,
     montar_codigo,
 )
 from app.models.evento import Evento, Setor
@@ -370,6 +371,45 @@ def test_o_codigo_tem_o_formato_id_ponto_assinatura(
     # base64url de SHA-256 sem padding: 43 caracteres, e nenhum `=`.
     assert len(assinatura) == 43
     assert "=" not in assinatura
+
+
+def test_share_token_tem_32_caracteres_e_nao_se_repete() -> None:
+    """⚠️ **A imprevisibilidade do `share_token` é o único cadeado de `/i/{token}`.**
+
+    Achado do code review da Epic 4: a suíte inteira passava sem provar isto.
+    Os testes de `test_compartilhamento.py` conferem que o token **existe**,
+    que ele é **diferente** do `codigo` e do `nonce`, e que dois ingressos têm
+    tokens **distintos** — e um `gerar_share_token()` que devolvesse `"1"`,
+    `"2"`, `"3"` satisfaz todos eles. Inclusive o `token not in codigo`: a
+    chance de poucos caracteres urlsafe caírem dentro dos ~80 do código é
+    desprezível. O teste da migração também não segura nada, porque só lê
+    `nullable` e `unique`, e `String(32)` aceita um caractere.
+
+    O que estaria em jogo com um contador: `GET /ingressos/compartilhados/
+    {token}` é **público** e devolve o `IngressoDetalhe` inteiro — incluindo o
+    `codigo` `ID.ASSINATURA`, que é o que vale na porta (AD-5), e o
+    `titular_nome`. Quem enumerasse `/i/1`, `/i/2` sairia com o QR de entrada
+    de outra pessoa. A spec escreve "192 bits não se adivinham" como a razão
+    de o endereço só chegar a quem recebeu o link; é essa frase que este teste
+    fixa em asserção.
+
+    **Vizinho dos testes do `nonce` de propósito**, e não em
+    `test_seguranca.py`: os dois saem do mesmo `secrets.token_urlsafe(24)` e
+    têm exposições opostas — um nunca sai do servidor, o outro é feito para
+    viajar por WhatsApp. Os docstrings de `core/seguranca.py` dizem isso em
+    espelho, e o contraste só ensina alguma coisa se estiver lado a lado.
+    """
+    # 24 bytes em base64url sem padding: 24 é divisível por 3, então são
+    # sempre exatamente 32 caracteres — nunca 31, nunca 33. É o mesmo tamanho
+    # do `nonce`, e é o que a coluna `String(32)` comporta sem truncar.
+    assert len(gerar_share_token()) == 32
+    assert len(gerar_nonce()) == 32
+
+    # 500 chamadas, 500 valores distintos. Um contador, um `uuid` fatiado curto
+    # ou um `token_urlsafe(4)` cai aqui; o gerador de verdade não cai nunca —
+    # com 192 bits, uma colisão em 500 sorteios tem probabilidade da ordem de
+    # 10⁻⁵³.
+    assert len({gerar_share_token() for _ in range(500)}) == 500
 
 
 def test_assinatura_adulterada_falha_sem_consultar_o_banco() -> None:

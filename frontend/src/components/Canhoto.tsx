@@ -60,12 +60,22 @@ export default function Canhoto({ ingresso }: { ingresso: IngressoDetalhe }) {
             texto — um QR anunciado por leitor de tela é ruído (precedente
             do QR do Pix, `FormularioDePagamento`). */}
         <div className={estilos.qr} aria-hidden>
+          {/* ⚠️ **Hex literal, e não `var(--cal)`/`var(--breu)`.** São os mesmos
+              dois valores do `globals.css`, escritos à mão de propósito: estes
+              viram atributos de apresentação (`fill`) do SVG, e o modo de um
+              `var()` falhar ali é a cor cair para o preto padrão — QR preto
+              sobre preto, que nenhuma suíte vê e que só falha na fila da porta,
+              no leitor de celular de outra pessoa. O ganho de amarrar ao tema
+              não existe: o canhoto é a única superfície do produto que **não**
+              pode seguir o tema, porque leitor de QR precisa do contraste
+              claro-sobre-escuro fixo. Se o `globals.css` mudar, esta linha muda
+              junto — e é para isso que este comentário está aqui. */}
           <QRCodeSVG
             value={ingresso.codigo}
             size={180}
             level="L"
-            bgColor="var(--cal)"
-            fgColor="var(--breu)"
+            bgColor="#e4ebea"
+            fgColor="#0b1618"
           />
         </div>
 

@@ -233,6 +233,26 @@ development_status:
   # techspec só (docs/techspec-meus-ingressos.md) — o grupo de leitura do
   # mesmo agregado, lista e detalhe pelo mesmo caminho (reserva → cliente da
   # sessão), com o mesmo 404 de "não é seu". O commit continua um por story.
+  #
+  # Code review da epic em 2026-08-12, em **escopo estreito por pedido do Igor**:
+  # só o que quebra código ou deploy, reportando apenas Critical e High. Três
+  # camadas em paralelo (backend, frontend, testes), recortadas por fronteira de
+  # autenticação — quem exige sessão contra quem não exige, que é a invariante
+  # nova desta epic. Saldo: **zero Critical, 4 High, todos os 4 corrigidos**. A
+  # suíte foi de 449 para 451. Achados em code-review-epic-4.md.
+  #
+  # ⚠️ **A lição desta epic: os quatro achados foram provados por mutação, e um
+  # deles desmentiu a própria camada que o levantou.** A camada afirmou que um
+  # `share_token` sequencial passaria nos 449 testes; com contador ela erra (o
+  # "1" cai dentro do UUID do código e um teste existente pega por acaso), mas
+  # com `token_urlsafe(4)` — 32 bits, força-bruta viável — os 53 testes de
+  # compartilhamento e migração passam **todos**. O achado era real e a
+  # justificativa dele não era. Achado de revisor vale o que a mutação provar.
+  #
+  # Os três eixos que build verde e suíte verde não cobriam: corrida de escrita
+  # (o `compartilhar` era read-then-write sem trava), teste que passa nos dois
+  # sentidos (o "sem recalcular" comparava contra o valor que o recálculo também
+  # produz), e garantia declarada sem asserção nenhuma (a entropia do token).
   epic-4: in-progress
   # Commit 1: migração de `usado_em`/`validado_por` (AD-6, adiantada da 5.2
   # porque o primeiro consumidor é a leitura, não a porta), `services/
@@ -247,8 +267,11 @@ development_status:
   # canhotos, ganha a confirmação mais o link para `/ingressos`. Decisão da
   # techspec: o canhoto cheio existe só em `/ingressos/{id}` — duas versões
   # do mesmo canhoto convivendo obrigaria quem lê a decidir qual é o de
-  # verdade. `bgColor`/`fgColor` do QR via `var(--cal)`/`var(--breu)`, não
-  # hex — mesmas cores que a spec pedia em `#e4ebea`/`#0b1618`.
+  # verdade. `bgColor`/`fgColor` do QR **em hex literal** (`#e4ebea`/`#0b1618`),
+  # como a spec pedia: eles viram atributo `fill` do SVG, e `var()` que não
+  # resolva ali cai para o preto padrão — QR preto sobre preto, invisível para
+  # a suíte e detectável só na fila da porta. Chegaram como `var(--cal)`/
+  # `var(--breu)` e voltaram ao hex no code review da Epic 4.
   4-2-ver-o-canhoto-com-o-qr: done
   # A 4.3 e a 4.4 saem de outra techspec só (docs/techspec-link-compartilhado.md):
   # um recurso e seu ciclo de vida — o `share_token` nasce na 4.3 e morre na

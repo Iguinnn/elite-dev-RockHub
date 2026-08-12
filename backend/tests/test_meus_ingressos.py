@@ -20,7 +20,12 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.core.seguranca import assinar_ingresso, gerar_nonce, montar_codigo
+from app.core.seguranca import (
+    SEPARADOR_DO_CODIGO,
+    assinar_ingresso,
+    gerar_nonce,
+    montar_codigo,
+)
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
@@ -361,16 +366,43 @@ def test_o_codigo_e_montado_a_partir_da_coluna_sem_recalcular(
 
     Recalcular a assinatura aqui daria o mesmo valor no caso feliz e
     esconderia o ponto: só a portaria (Epic 5) recalcula, nunca esta rota.
+
+    ⚠️ **A coluna é adulterada de propósito, e é isso que dá força ao teste**
+    (code review da Epic 4). Antes, a asserção comparava a resposta contra
+    `montar_codigo(id, assinatura)` com a assinatura que a própria fixture
+    havia gravado pelo HMAC — e ler a coluna ou recalcular produzem **o mesmo
+    valor** no caminho feliz. Trocar o `_montar_detalhe` por um
+    `assinar_ingresso(...)` deixava os 449 testes verdes e o critério de pronto
+    da 4.2 virava letra morta.
+
+    Gravando aqui um valor que o HMAC **nunca** produziria, os dois caminhos
+    passam a divergir: se a rota recalcular, o código volta com a assinatura
+    legítima e a asserção quebra. O que estaria em jogo em produção é a coluna
+    deixar de ser a fonte do QR — e as duas rotas de leitura, a do dono e a
+    pública, passarem a depender do `TICKET_SIGNING_SECRET` em tempo de
+    leitura. Aí trocar o segredo no painel da Railway mudaria o QR exibido, em
+    vez de só invalidar a validação na porta.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd2@exemplo.com")
     comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-cd2@exemplo.com")
     evento, setor = _evento_publicado(sessao, organizador)
     ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
+
+    # Nem base64url de 43 caracteres, nem coisa que o HMAC-SHA256 saiba gerar:
+    # se este texto voltar na resposta, a rota leu a coluna. Cabe no
+    # `String(64)` com folga.
+    assinatura_impossivel = "assinatura-que-o-hmac-nunca-produziria"
+    ingresso.assinatura = assinatura_impossivel
+    sessao.flush()
+
     _entrar(cliente, comprador)
 
     codigo = cliente.get(f"/ingressos/{ingresso.id}").json()["codigo"]
 
-    assert codigo == montar_codigo(ingresso.id, ingresso.assinatura)
+    assert codigo == montar_codigo(ingresso.id, assinatura_impossivel)
+    # Redundante com a linha acima e proposital: ela falha com uma mensagem que
+    # diz *o que* deu errado, e não só que duas strings longas diferem.
+    assert codigo.endswith(f"{SEPARADOR_DO_CODIGO}{assinatura_impossivel}")
 
 
 def test_usado_em_aparece_no_canhoto_quando_gravado_a_mao(
