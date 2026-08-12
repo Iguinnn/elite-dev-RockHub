@@ -1,4 +1,4 @@
-"""Rotas de quem tem conta de cliente: reservar e acompanhar a reserva.
+"""Rotas de quem tem conta de cliente: reservar, pagar e ver o que comprou.
 
 **O critério de entrada aqui é o papel `CLIENTE`** — toda rota deste arquivo
 começa por `Depends(exigir_papel(PapelUsuario.CLIENTE))`, na assinatura (AD-9),
@@ -27,8 +27,10 @@ from sqlalchemy.orm import Session
 from app.core.db import obter_sessao
 from app.core.dependencias import exigir_papel
 from app.models.usuario import PapelUsuario, Usuario
+from app.schemas.ingresso import IngressoNaLista
 from app.schemas.pagamento import PagamentoEntrada
 from app.schemas.reserva import ReservaEntrada, ReservaSaida
+from app.services import ingresso as servico_de_ingresso
 from app.services import reserva as servico_de_reserva
 from app.services.pagamento import PaymentGateway, obter_gateway
 
@@ -145,3 +147,24 @@ def pagar_reserva(
     continua `{"erro": {"codigo", "mensagem"}}`, sem exceção ao `core/erros.py`.
     """
     return servico_de_reserva.pagar(sessao, cliente, reserva_id, dados, gateway)
+
+
+@router.get("/ingressos", response_model=list[IngressoNaLista])
+def listar_ingressos(
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> list[IngressoNaLista]:
+    """Todos os ingressos de todas as compras pagas de quem está na sessão.
+
+    **Rota própria, e não a lista filtrada da tela de detalhe da reserva**
+    (techspec da 4.1): o ingresso é um agregado com vida própria desde a Story
+    3.9, e é neste endereço que a Story 4.3 vai pendurar o compartilhamento.
+
+    **`200` com lista vazia é resposta legítima** — nunca `404`. Quem nunca
+    comprou recebeu a pergunta certa, e a resposta é "nenhum".
+
+    A lista chega **chapada**, ordenada por `evento_data_hora` crescente: quem
+    corta em *Ativos* e *Utilizados* — por `usado_em IS NULL` — é a tela, o
+    mesmo molde do `GET /organizador/eventos` da 2.6.
+    """
+    return servico_de_ingresso.listar(sessao, cliente)
