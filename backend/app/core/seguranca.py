@@ -126,7 +126,7 @@ def montar_codigo(ingresso_id: UUID, assinatura: str) -> str:
 
 
 def conferir_codigo(codigo: str, evento_id: UUID, nonce: str) -> bool:
-    """Recalcula a assinatura e compara — **sem consultar o banco** (AD-5).
+    """Recalcula a assinatura e compara com a do código (AD-5).
 
     ⚠️ **`hmac.compare_digest`, nunca `==`.** A comparação byte a byte do `==`
     para no primeiro caractere diferente, e o tempo que ela leva conta quantos
@@ -136,15 +136,35 @@ def conferir_codigo(codigo: str, evento_id: UUID, nonce: str) -> bool:
 
     ⚠️ **Recalcular é o mecanismo, e a coluna `assinatura` não participa.**
     Comparar contra o que está gravado transformaria o banco em oráculo de
-    assinatura e desfaria a garantia inteira — o AD-5 diz que assinatura
-    divergente é recusada *antes* de qualquer consulta. A coluna existe só para
-    montar o QR sem recalcular.
+    assinatura e desfaria a garantia inteira: bastaria a alguém conseguir
+    escrever na coluna. A coluna existe só para montar o QR sem recalcular. É
+    **este** recálculo — e não a ausência de I/O — que torna o código não
+    forjável, e é a garantia que o AD-5 realmente entrega.
 
-    O `evento_id` e o `nonce` vêm de quem chama (a portaria, na Epic 5), que os
-    tem em mãos para o ingresso que está validando.
+    ⚠️ **A redação antiga dizia "sem consultar o banco", e isso não se sustenta**
+    (code review da Epic 3, decisão do Igor). O QR carrega `ID.ASSINATURA` e nada
+    mais, enquanto esta função exige o `nonce`, que só existe na coluna
+    `ingresso.nonce`: quem valida tem de buscar a linha pelo `id` **antes** de
+    conseguir recalcular. Consultar o banco é pré-requisito da verificação, não
+    uma etapa posterior a ela. A alternativa considerada — tirar o `nonce` da
+    fórmula para recuperar a promessa literal — foi descartada: ela custaria a
+    entropia por ingresso, que é o que impede dois ingressos do mesmo evento de
+    compartilharem assinatura. O `nonce` fica; a promessa é que foi corrigida.
+
+    O `evento_id` e o `nonce` vêm de quem chama — a portaria, na Epic 5, depois
+    de carregar o ingresso pelo id lido no QR.
     """
     id_bruto, separador, assinatura = codigo.partition(SEPARADOR_DO_CODIGO)
     if not separador or not assinatura:
+        return False
+
+    # ⚠️ **`compare_digest` com `str` só aceita ASCII** — fora dele ele levanta
+    # `TypeError`, não devolve `False` (code review da Epic 3). Sem esta linha, um
+    # QR que decodifique como `<uuid>.çç` sobe até o handler genérico e vira
+    # `500 ERRO_INTERNO` na fila da porta, para um código simplesmente inválido.
+    # A assinatura legítima é base64 urlsafe, que é ASCII por construção: nada
+    # que passe aqui deixa de passar por ser válido.
+    if not assinatura.isascii():
         return False
 
     try:

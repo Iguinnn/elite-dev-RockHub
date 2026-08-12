@@ -78,6 +78,11 @@ export default function EscolhaDeIngressos({
   const [setoresFrescos, setSetoresFrescos] = useState<SetorPublico[] | null>(null);
   const listaDeSetores = setoresFrescos ?? setores;
 
+  // O teto segue a mesma disciplina da lista: o da releitura quando houve uma,
+  // o da prop enquanto não houve. Ver o aviso em `tratarEstoqueInsuficiente`.
+  const [tetoFresco, setTetoFresco] = useState<number | null>(null);
+  const tetoDaCompra = tetoFresco ?? maximoPorCompra;
+
   const escolhidos = listaDeSetores
     .map((setor) => ({ setor, quantidade: quantidades[setor.id] ?? 0 }))
     .filter(({ quantidade }) => quantidade > 0);
@@ -93,7 +98,7 @@ export default function EscolhaDeIngressos({
   // diz, e é o mesmo teto que o `POST /reservas` cobra do lado do servidor desde
   // a Story 3.6, da mesma constante. Seis por setor daria até dezoito numa
   // reserva.
-  const noTeto = total >= maximoPorCompra;
+  const noTeto = total >= tetoDaCompra;
 
   const mudar = (id: string, passo: number) =>
     setQuantidades((atual) => ({
@@ -119,6 +124,12 @@ export default function EscolhaDeIngressos({
     const evento = await chamarApi<EventoPublico>(`/eventos/${eventoId}`);
     setSetoresFrescos(evento.setores);
 
+    // ⚠️ **O teto vem junto na releitura, e era descartado** (code review da
+    // Epic 3). O corpo do `GET /eventos/{id}` traz `maximo_por_compra`, e ignorá-lo
+    // deixava o stepper preso no valor da primeira renderização — o desencontro
+    // que o comentário do próprio tipo `EventoPublico` existe para impedir.
+    setTetoFresco(evento.maximo_por_compra);
+
     // A quantidade dos que esgotaram volta a zero: ninguém continua olhando um
     // stepper que não pode mais funcionar.
     const esgotados = new Set(
@@ -132,11 +143,36 @@ export default function EscolhaDeIngressos({
       return proximas;
     });
 
-    // O setor nomeado é **um que eu escolhi** e que agora está esgotado; o
-    // oferecido é o primeiro da lista fresca que ainda tem ingresso.
+    // O setor nomeado é **um que eu escolhi** e que agora está esgotado.
     const meuEsgotado = evento.setores.find(
       (setor) => esgotados.has(setor.id) && escolhidosAgora.includes(setor.id),
     );
+
+    // ⚠️ **`ESTOQUE_INSUFICIENTE` não quer dizer "esgotou"** (code review da
+    // Epic 3), e tratá-lo como se quisesse era um beco sem saída. O servidor
+    // levanta esse código sempre que `vendidos + quantidade > capacidade` — e o
+    // caso mais comum de longe é a falta **parcial**: restam 3, a pessoa pediu 4.
+    // Aí o setor volta como `ULTIMOS`, não `ESGOTADO`, e a versão anterior desta
+    // função não tinha o que fazer com ele: nada era zerado, `meuEsgotado` ficava
+    // `undefined`, e a frase saía "Esgotou enquanto você decidia. Ainda há
+    // ingressos no setor Pista" — nomeando como alternativa exatamente o setor
+    // que tinha acabado de falhar, com a quantidade impossível ainda no stepper.
+    // Cada novo clique repetia o mesmo `409`, com o mesmo texto, para sempre.
+    //
+    // A frase daqui diz a única coisa verdadeira e acionável que a tela pode
+    // dizer sem violar o UX-DR7: **reduza**. Quanto ainda cabe é justamente o que
+    // o contrato não conta — e continua não contando.
+    if (!meuEsgotado) {
+      setErro(
+        <>
+          <strong>Não há mais essa quantidade.</strong> Alguém comprou enquanto
+          você decidia. Reduza os ingressos e tente de novo.
+        </>,
+      );
+      return;
+    }
+
+    // Daqui para baixo, um setor que eu escolhi esgotou de fato.
     const sobrando = evento.setores.find(
       (setor) => setor.disponibilidade !== "ESGOTADO",
     );
@@ -157,16 +193,21 @@ export default function EscolhaDeIngressos({
     setErro(
       <>
         <strong>Esgotou enquanto você decidia.</strong>{" "}
-        {meuEsgotado ? `${meuEsgotado.nome} acabou de esgotar. ` : ""}
+        {`${meuEsgotado.nome} acabou de esgotar. `}
         Ainda há ingressos no setor {sobrando.nome}.
       </>,
     );
   }
 
   async function reservar() {
+    // Guarda de reentrância: o `disabled` do botão é a rede de cima, e esta é a
+    // de baixo. Duas reservas por um clique duplo custam estoque de verdade.
+    if (enviando) return;
+
     setErro(null);
     setEnviando(true);
 
+    let reservou = false;
     const escolhidosAgora = escolhidos.map(({ setor }) => setor.id);
 
     try {
@@ -187,6 +228,9 @@ export default function EscolhaDeIngressos({
       // navegador mostraria o medidor e a disponibilidade de antes da compra.
       router.refresh();
       router.push(`/reservas/${reserva.id}`);
+      // A navegação está a caminho e esta tela vai embora: o botão **não** volta
+      // a ficar clicável. Ver o aviso no `finally`.
+      reservou = true;
     } catch (erroCapturado) {
       // `instanceof` antes de ler `.codigo`: erro de rede não tem código.
       if (erroCapturado instanceof ErroDaApi) {
@@ -201,15 +245,25 @@ export default function EscolhaDeIngressos({
           }
           return;
         }
-        setErro(mensagemParaCodigo(erroCapturado.codigo));
+        setErro(mensagemParaCodigo(erroCapturado.codigo, tetoDaCompra));
         return;
       }
       setErro(MENSAGEM_GENERICA);
     } finally {
-      // ⚠️ Fora do `try` de sucesso de propósito: no caminho feliz o `push` é
-      // assíncrono e a tela continua montada por um instante. Um botão que
-      // continuasse "Reservando…" depois de um erro seria um botão morto.
-      setEnviando(false);
+      // ⚠️ **No caminho feliz o botão NÃO volta, e essa é a correção** (code
+      // review da Epic 3). O `router.push` é assíncrono e a tela continua
+      // montada enquanto o RSC da próxima rota é buscado — o `router.refresh()`
+      // da linha acima ainda alonga essa janela. Reabilitar o botão aqui, como
+      // era antes, punha "Reservar e pagar" clicável de novo durante a
+      // navegação: um segundo clique numa conexão lenta disparava um **segundo**
+      // `POST /reservas`, que o backend aceita (não há dedupe nem limite de
+      // `PENDENTE` por cliente). Duas reservas, estoque consumido duas vezes, e
+      // a pessoa aterrissa na primeira sem nunca ver a outra — que só solta os
+      // lugares dez minutos depois.
+      //
+      // Num erro ele volta, e continua tendo que voltar: aí a tela fica, e um
+      // botão preso em "Reservando…" seria um botão morto.
+      if (!reservou) setEnviando(false);
     }
   }
 
@@ -381,9 +435,16 @@ const MENSAGEM_GENERICA =
  * aberta — sem estas duas entradas, o `401` cairia na frase genérica "tente de
  * novo em instantes", e tentar de novo daria `401` outra vez, para sempre.
  */
-function mensagemParaCodigo(codigo: string): string {
+function mensagemParaCodigo(codigo: string, tetoDaCompra: number): string {
   if (codigo === "ACIMA_DO_MAXIMO_POR_COMPRA") {
-    return "São até 6 ingressos por compra. Reduza a quantidade e tente de novo.";
+    // ⚠️ **O número vem do contrato, e não escrito à mão aqui** (code review da
+    // Epic 3). O stepper já lia `maximo_por_compra` da rota; só esta frase tinha
+    // um `6` literal — o que significa que, no dia em que o teto mudar, o
+    // stepper trava no número novo e a recusa continua dizendo seis. É
+    // exatamente o desencontro que o comentário do tipo `EventoPublico` e o AC11
+    // da Story 3.6 existem para impedir, sobrevivendo na única linha que ninguém
+    // olhou.
+    return `São até ${tetoDaCompra} ingressos por compra. Reduza a quantidade e tente de novo.`;
   }
   if (codigo === "SETOR_INVALIDO") {
     // Sem dizer **qual**: o backend não distingue "não existe" de "é de outro

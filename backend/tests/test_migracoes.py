@@ -287,6 +287,12 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
         "evento_portaria",
         "reserva",
         "item_reserva",
+        # ⚠️ **A sétima, e a que faltava** (code review da Epic 3). O AC12 da
+        # Story 3.5 avisou por escrito que sem manter esta tupla em dia "uma
+        # migração nova com o `downgrade()` quebrado passaria por ele sem ser
+        # notada" — e a `e43874e0cf3a`, da 3.9, foi exatamente essa migração
+        # nova. Quem acrescentar a oitava tabela acrescenta a linha aqui.
+        "ingresso",
     )
 
     command.downgrade(cfg, "base")
@@ -303,3 +309,78 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
     tabelas = inspetor.get_table_names()
     for tabela in tabelas_do_projeto:
         assert tabela in tabelas
+
+
+def test_upgrade_cria_a_tabela_ingresso_com_as_sete_colunas(
+    engine_teste: Engine,
+) -> None:
+    """A sétima tabela do schema, e o AC1 da Story 3.9 lido do banco.
+
+    ⚠️ **Não existia asserção nenhuma sobre `ingresso`** (code review da Epic 3):
+    `test_ingresso.py` exercita comportamento pela rota e nunca chama
+    `inspect()`. As três decisões que a migração declara no docstring — as sete
+    colunas, as FKs sem `CASCADE` e o `setor_id` deliberadamente sem índice —
+    eram reversíveis por um `--autogenerate` distraído sem quebrar nada.
+
+    Mesmo formato dos quatro testes de schema que a Story 3.5 ganhou para as
+    tabelas dela, e pelo mesmo motivo.
+    """
+    inspetor = inspect(engine_teste)
+
+    colunas = {coluna["name"] for coluna in inspetor.get_columns("ingresso")}
+    assert colunas == {
+        "id",
+        "reserva_id",
+        "evento_id",
+        "setor_id",
+        "titular_nome",
+        "assinatura",
+        "nonce",
+    }
+
+
+def test_nenhuma_chave_estrangeira_do_ingresso_tem_cascade(
+    engine_teste: Engine,
+) -> None:
+    """Apagar show, setor ou reserva com ingresso emitido é recusado pelo banco.
+
+    As três **sem** `ondelete`, e as três de propósito: um ingresso emitido é o
+    passe de entrada de alguém que pagou, e nenhuma remoção de linha vizinha pode
+    fazê-lo desaparecer em silêncio. É o mesmo argumento das três FKs da compra,
+    um degrau acima — lá o que se perde é a intenção de comprar, aqui é a compra.
+    """
+    inspetor = inspect(engine_teste)
+    do_ingresso = {
+        chave["referred_table"]: chave
+        for chave in inspetor.get_foreign_keys("ingresso")
+    }
+
+    assert set(do_ingresso) == {"reserva", "evento", "setor"}
+    for tabela in ("reserva", "evento", "setor"):
+        assert "ondelete" not in do_ingresso[tabela]["options"], (
+            f"a FK de ingresso para {tabela} ganhou ondelete — "
+            "apagar venda tem que doer"
+        )
+
+
+def test_so_as_chaves_estrangeiras_lidas_do_ingresso_tem_indice(
+    engine_teste: Engine,
+) -> None:
+    """Duas com índice, uma sem — e a que fica sem é decisão, não esquecimento.
+
+    `reserva_id` é o `where` de "os canhotos desta reserva" e `evento_id` é o da
+    portaria na Epic 5. `setor_id` não é lido por nenhuma story planejada:
+    índice preventivo é peso sem gargalo demonstrado, como em `reserva.evento_id`.
+    """
+    inspetor = inspect(engine_teste)
+
+    indices = {i["name"] for i in inspetor.get_indexes("ingresso")}
+    assert "ix_ingresso_reserva_id" in indices
+    assert "ix_ingresso_evento_id" in indices
+
+    colunas_indexadas = {
+        coluna
+        for indice in inspetor.get_indexes("ingresso")
+        for coluna in indice["column_names"]
+    }
+    assert "setor_id" not in colunas_indexadas

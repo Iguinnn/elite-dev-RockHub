@@ -40,8 +40,27 @@ _NAO_DIGITO = re.compile(r"\D")
 _FORMATO_DE_VALIDADE = re.compile(r"^(0[1-9]|1[0-2])/\d{2}$")
 
 
+# ⚠️ **Teto do valor BRUTO, e é por isso que ele mora aqui e não num
+# `Field(max_length=...)`** (code review da Epic 3). O `BeforeValidator` roda
+# **antes** de qualquer restrição do campo, então um `max_length` limitaria só o
+# resultado já normalizado — e o `re.sub` abaixo continuaria varrendo o corpo
+# inteiro que chegou. Com `meio=PIX` os quatro campos de cartão nem chegam ao
+# `model_validator`, então não havia teto nenhum sobre eles.
+#
+# 64 é folga larga: o maior campo real aqui é um cartão de 19 dígitos com
+# separadores. O `schemas/auth.py` documenta o mesmo risco ao limitar `email` e
+# `senha` — "um corpo de 10 MB vira 10 MB hasheados".
+_TAMANHO_MAXIMO_BRUTO = 64
+
+
 def _so_digitos(valor: object) -> object:
-    return _NAO_DIGITO.sub("", valor) if isinstance(valor, str) else valor
+    if not isinstance(valor, str):
+        return valor
+    if len(valor) > _TAMANHO_MAXIMO_BRUTO:
+        raise ValueError(
+            f"campo longo demais (máximo {_TAMANHO_MAXIMO_BRUTO} caracteres)"
+        )
+    return _NAO_DIGITO.sub("", valor)
 
 
 # Normalizados **antes** da validação, e é o que permite a regra ser contada em
@@ -65,7 +84,9 @@ class PagamentoEntrada(BaseModel):
     # obrigatoriedade real está no `_exigir_cartao_quando_for_cartao` abaixo.
     numero_cartao: SoDigitos | None = None
     nome_no_cartao: NomeLimpo | None = Field(default=None, max_length=120)
-    validade: str | None = None
+    # `validade` não passa pelo `SoDigitos` (a barra do `MM/AA` faz parte do
+    # formato), então o teto dela é declarado no campo mesmo.
+    validade: str | None = Field(default=None, max_length=_TAMANHO_MAXIMO_BRUTO)
     cvv: SoDigitos | None = None
 
     @field_validator("email")

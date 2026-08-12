@@ -13,6 +13,33 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 _JWT_SECRET_EXEMPLO = "troque-este-valor-em-producao"
 _TICKET_SECRET_EXEMPLO = "troque-este-valor-em-producao-tambem"
 
+# `token_urlsafe(48)` devolve 64 caracteres; 32 é folga confortável abaixo disso
+# e ainda muito acima de qualquer coisa digitada à mão num painel.
+_TAMANHO_MINIMO_DE_SEGREDO = 32
+
+_SEGREDOS_DE_EXEMPLO = frozenset({_JWT_SECRET_EXEMPLO, _TICKET_SECRET_EXEMPLO})
+
+
+def _segredo_forte(valor: str) -> bool:
+    """Um segredo serve em produção se não é de exemplo, não é vazio e é longo.
+
+    ⚠️ **Os três casos juntos, e não só o de exemplo** (code review da Epic 3).
+    Os dois validadores abaixo comparavam por igualdade contra a string de
+    exemplo, o que deixava passar o caso mais fácil de acontecer num painel de
+    deploy: o campo **apagado**. `TICKET_SIGNING_SECRET=` vira `""`, que não é o
+    valor de exemplo, então a aplicação subia e passava a assinar ingresso com
+    `hmac.new(b"", ...)` — chave conhecida por definição, e ingresso forjável por
+    qualquer um. O aviso escrito no CLAUDE.md ("conferir que não é o valor de
+    exemplo") também não pegava esse caso, porque a variável *está* definida.
+
+    O validador da `TICKETMASTER_API_KEY`, no mesmo arquivo, já fazia o certo com
+    `not ...strip()`. A assimetria era o defeito.
+    """
+    limpo = valor.strip()
+    return (
+        limpo not in _SEGREDOS_DE_EXEMPLO and len(limpo) >= _TAMANHO_MINIMO_DE_SEGREDO
+    )
+
 
 class Settings(BaseSettings):
     """Configuração do backend.
@@ -65,9 +92,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _recusar_segredo_de_exemplo_em_producao(self) -> Self:
-        if self.ambiente == "producao" and self.jwt_secret == _JWT_SECRET_EXEMPLO:
+        if self.ambiente == "producao" and not _segredo_forte(self.jwt_secret):
             raise ValueError(
-                "JWT_SECRET ainda é o valor de exemplo em produção. Gere um novo com: "
+                "JWT_SECRET ausente, fraco ou ainda no valor de exemplo em produção. "
+                f"Ele precisa ter ao menos {_TAMANHO_MINIMO_DE_SEGREDO} caracteres. "
+                "Gere um novo com: "
                 "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
             )
         return self
@@ -80,13 +109,14 @@ class Settings(BaseSettings):
         é a mais cara das três: com o segredo de exemplo em produção, qualquer
         pessoa que leia o repositório forja ingresso válido.
         """
-        if (
-            self.ambiente == "producao"
-            and self.ticket_signing_secret == _TICKET_SECRET_EXEMPLO
+        if self.ambiente == "producao" and not _segredo_forte(
+            self.ticket_signing_secret
         ):
             raise ValueError(
-                "TICKET_SIGNING_SECRET ainda é o valor de exemplo em produção — "
-                "com ele, qualquer um forja ingresso. Gere um novo com: "
+                "TICKET_SIGNING_SECRET ausente, fraca ou ainda no valor de exemplo "
+                "em produção — com qualquer um dos três, alguém forja ingresso. Ela "
+                f"precisa ter ao menos {_TAMANHO_MINIMO_DE_SEGREDO} caracteres. "
+                "Gere uma nova com: "
                 "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
             )
         return self

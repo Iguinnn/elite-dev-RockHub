@@ -17,6 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from httpx import Response
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
@@ -97,11 +98,24 @@ def sessao(engine_teste: Engine) -> Generator[Session, None, None]:
     próprio teste. Sem isso, um `flush()` que falha de propósito aborta a
     transação externa e o `rollback()` do teardown vira um `SAWarning`
     (`transaction already deassociated from connection`).
+
+    ⚠️ **`autoflush` e `expire_on_commit` copiados do `SessaoLocal`, e não os
+    defaults do SQLAlchemy** (code review da Epic 3). A divergência custou um bug
+    que a suíte inteira não conseguia enxergar: com `expire_on_commit=True` aqui
+    e `False` em produção, todo `commit` do teste expirava os objetos e escondia
+    que um `UPDATE` com `synchronize_session=False` deixa o atributo em Python
+    desatualizado. A resposta de `POST /reservas/{id}/pagamento` saía `PAGA` no
+    teste e `PENDENTE` em produção, com 379 testes verdes.
+
+    A regra que fica: **a fixture imita a sessão de produção**. Se um teste
+    precisar de outra semântica, ele constrói a sessão dele — não se afrouxa esta.
     """
     conexao = engine_teste.connect()
     transacao = conexao.begin()
     savepoint = conexao.begin_nested()
-    FabricaDeSessao = sessionmaker(bind=conexao)
+    FabricaDeSessao = sessionmaker(
+        bind=conexao, autoflush=False, expire_on_commit=False
+    )
     sessao = FabricaDeSessao()
 
     @event.listens_for(sessao, "after_transaction_end")
@@ -129,9 +143,34 @@ def cliente(sessao: Session) -> Generator[TestClient, None, None]:
     ⚠️ O `TestClient` guarda cookie entre chamadas. Um teste que faz login e
     depois quer provar o `401` precisa de outra instância ou de
     `cliente.cookies.clear()`.
+
+    ⚠️ **Cada requisição termina com `sessao.expire_all()`, e isso é o que torna
+    a fixture fiel** (code review da Epic 3). O `dependency_overrides` entrega ao
+    app a **mesma** `Session` do teste — em produção cada requisição tem a sua, e
+    é essa diferença que o `expire_all` compensa. Sem ele, um `sessao.get(Setor,
+    ...)` logo depois de um `POST` devolve o objeto que já estava no identity map,
+    com o valor de **antes** da escrita: o banco certo e a asserção lendo o
+    passado.
+
+    Antes isto acontecia por acidente, via `expire_on_commit=True` na fábrica de
+    sessões — que era justamente a divergência com o `SessaoLocal` de produção
+    que escondeu o bug da resposta do pagamento. Trocar o acidente por esta linha
+    mantém as duas propriedades ao mesmo tempo: a fixture tem a semântica de
+    produção, e o teste continua lendo o que o app acabou de gravar.
+
+    **Aqui e não em cada teste**, de propósito: espalhado, o dia em que alguém
+    esquecer a linha é o dia em que um teste de "nada mudou" passa por ler o
+    estado velho.
     """
+
+    class _ClienteQueExpira(TestClient):
+        def request(self, *args: object, **kwargs: object) -> Response:
+            resposta = super().request(*args, **kwargs)  # type: ignore[arg-type]
+            sessao.expire_all()
+            return resposta
+
     app.dependency_overrides[obter_sessao] = lambda: sessao
-    with TestClient(app) as c:
+    with _ClienteQueExpira(app) as c:
         yield c
     app.dependency_overrides.clear()
 

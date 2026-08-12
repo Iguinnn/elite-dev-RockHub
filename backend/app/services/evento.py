@@ -83,6 +83,25 @@ from app.schemas.evento import (
 # discordarem sobre qual é o teto: trocá-lo é uma linha e um teste.
 MAXIMO_POR_COMPRA = 6
 
+# Teto de linhas da programação pública (code review da Epic 3, decisão do Igor).
+#
+# **A rota não tinha teto nenhum**, e ela é a da tela mais visitada do produto:
+# `GET /eventos` sem filtro devolvia todo evento publicado e futuro, com o
+# `selectinload` trazendo os setores de todos eles. O docstring de
+# `listar_programacao` descarta filtrar no cliente porque "a programação inteira
+# atravessaria a rede a cada visita" — que era exatamente o que a rota fazia no
+# estado inicial da raiz, sem filtro nenhum.
+#
+# **Teto fixo, e não paginação** (alternativa descartada): `?pagina=`/`?limite=`
+# seria rota, schema, tela e testes para um contrato que nenhuma tela consome
+# hoje, com três dias de prazo. Duzentos shows futuros é muito acima de qualquer
+# catálogo que este projeto vá ver, e o corte é no fim da lista — a fila já sai
+# ordenada por data, então o que cai fora é o mais distante.
+#
+# ⚠️ Quando este número apertar, o conserto **não** é aumentá-lo: é a paginação
+# que ficou de fora aqui.
+TETO_DA_PROGRAMACAO = 200
+
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
     """Grava o evento e seus setores na mesma transação, já publicado.
@@ -320,8 +339,49 @@ def _escapar_curingas(termo: str) -> str:
     Quem informa ao Postgres que a contrabarra é o caractere de escape é o
     `escape="\\"` declarado no `ilike` de quem chama. Sem ele o padrão continua
     errado, só que de outro jeito.
+
+    ⚠️ **Este helper sozinho não basta, e por isso ele não é chamado direto.**
+    Ver `_padrao_de_busca` logo abaixo: escapar em Python e só então aplicar
+    `unaccent` no Postgres deixa passar o curinga que o próprio `unaccent`
+    fabrica.
     """
     return termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _padrao_de_busca(palavra: str) -> ColumnElement[str]:
+    r"""O `%palavra%` do `ILIKE`, sem acento e com os curingas neutralizados.
+
+    ⚠️ **A ordem é `unaccent` primeiro, escape depois — e a ordem é o conserto**
+    (code review da Epic 3). Antes o padrão era
+    `func.unaccent(f"%{_escapar_curingas(termo)}%")`, ou seja: escapava em Python
+    e **então** mandava o Postgres tirar os acentos. Só que `unaccent` também
+    normaliza as formas *fullwidth* — `unaccent('％')` (U+FF05) devolve `'%'`,
+    e `unaccent('＿')` devolve `'_'`. O escape via Python nunca via esses
+    caracteres, e o `unaccent` os convertia em curingas **depois** que a
+    proteção já tinha passado.
+
+    O resultado era exatamente a falha que o `_escapar_curingas` existe para
+    impedir, por uma porta que ele não cobria: `?q=％` virava o padrão `%%%` e
+    devolvia a programação inteira, com `200` e cara de resultado. Confirmado
+    contra o Postgres do `docker-compose`:
+
+    ```sql
+    SELECT unaccent(U&'\FF05');                                  -- %
+    SELECT unaccent('Show Secreto') ILIKE unaccent('%'||U&'\FF05'||'%');  -- t
+    ```
+
+    Escapando **em SQL, sobre o resultado do `unaccent`**, não sobra caractere
+    que vire curinga depois da proteção. O `_escapar_curingas` continua existindo
+    porque a ordem interna dele (contrabarra primeiro) é a mesma que estes três
+    `replace` aninhados precisam ter — e o motivo está escrito lá.
+    """
+    sem_acento = func.unaccent(palavra)
+    escapado = func.replace(
+        func.replace(func.replace(sem_acento, "\\", "\\\\"), "%", "\\%"),
+        "_",
+        "\\_",
+    )
+    return func.concat("%", escapado, "%")
 
 
 def listar_programacao(
@@ -389,31 +449,34 @@ def listar_programacao(
     # intenção — "não filtrei" —, e `?q=%20marina%20` é uma busca por "marina".
     termo_limpo = termo.strip()
     if termo_limpo:
-        # ⚠️ **`unaccent` do Postgres, e não normalização em Python** (decisão
-        # do Igor): `sao paulo` precisa achar `São Paulo` porque é assim que as
-        # pessoas digitam no celular. A extensão é habilitada pela migração
-        # `06c1ad5ac276`, e sem ela esta linha estoura com `function
-        # unaccent(text) does not exist` — não é a busca que falha, é a raiz do
-        # produto que vira `500`.
+        # ⚠️ **Uma condição por palavra, todas exigidas** (code review da Epic 3,
+        # decisão do Igor). Antes o termo inteiro era um substring só, testado
+        # contra as três colunas com `OR` — e `?q=marina sena são paulo` devolvia
+        # vazio, porque nenhuma coluna sozinha contém a string inteira. Artista +
+        # cidade é a primeira coisa que alguém digita, e o desfecho era
+        # indistinguível de "esse show não existe".
         #
-        # Nos **dois lados** da comparação: sem `unaccent` no padrão, quem
-        # digitasse `SÃO` não acharia um evento gravado sem acento.
-        padrao = func.unaccent(f"%{_escapar_curingas(termo_limpo)}%")
-        condicoes.append(
-            or_(
-                *(
-                    # `escape="\\"` é o que faz o escape do helper valer: sem
-                    # ele o Postgres lê a contrabarra como caractere comum.
-                    func.unaccent(coluna).ilike(padrao, escape="\\")
-                    # ⚠️ `Evento.cidade` é anulável (Story 2.3), e isso está
-                    # certo assim: `unaccent(NULL) ILIKE …` é `NULL`, e
-                    # `TRUE OR NULL` é `TRUE` — o evento sem cidade continua
-                    # achável pelo nome e pelo local. Não "conserte" com
-                    # `coalesce`: não há nada quebrado.
-                    for coluna in (Evento.nome, Evento.local, Evento.cidade)
+        # Agora cada palavra precisa aparecer em **alguma** das três colunas
+        # (`AND` de `OR`s): "marina" casa o nome, "paulo" casa a cidade, e o
+        # evento entra. Buscar uma palavra só continua exatamente como era.
+        for palavra in termo_limpo.split():
+            condicoes.append(
+                or_(
+                    *(
+                        # `escape="\\"` é o que faz o escape valer: sem ele o
+                        # Postgres lê a contrabarra como caractere comum.
+                        func.unaccent(coluna).ilike(
+                            _padrao_de_busca(palavra), escape="\\"
+                        )
+                        # ⚠️ `Evento.cidade` é anulável (Story 2.3), e isso está
+                        # certo assim: `unaccent(NULL) ILIKE …` é `NULL`, e
+                        # `TRUE OR NULL` é `TRUE` — o evento sem cidade continua
+                        # achável pelo nome e pelo local. Não "conserte" com
+                        # `coalesce`: não há nada quebrado.
+                        for coluna in (Evento.nome, Evento.local, Evento.cidade)
+                    )
                 )
             )
-        )
 
     # **Igualdade exata, e não `ilike`** (decisão do Igor): o valor vem dos
     # nossos próprios chips, que vêm de `listar_cidades_em_cartaz` — ou seja, do
@@ -443,6 +506,7 @@ def listar_programacao(
         # evento. É a raiz do produto: a tela mais visitada que existe aqui.
         # ⚠️ Filtrar não pode reintroduzir o N+1 que a Story 3.1 fechou.
         .options(selectinload(Evento.setores))
+        .limit(TETO_DA_PROGRAMACAO)
     )
 
     programacao: list[EventoNaProgramacao] = []
@@ -737,7 +801,20 @@ def obter_publico(sessao: Session, evento_id: UUID) -> EventoPublico:
                 # Duas casas: a barra tem 5px de altura e não mostra mais que 1%,
                 # e menos dígitos é menos superfície para alguém tentar
                 # reconstruir a capacidade a partir da proporção.
-                proporcao_vendida=round(setor.vendidos / setor.capacidade, 2),
+                #
+                # ⚠️ **O teto de `0.99` não é estético** (code review da Epic 3).
+                # `round(999/1000, 2)` é `1.0`, e nesse ponto a disponibilidade
+                # ainda é `ULTIMOS`: a tela mostrava a barra cheia ao lado da
+                # palavra "últimos ingressos", com o stepper ativo — indistinguível
+                # de esgotado. É o mesmo sintoma que o `_disponibilidade_do_setor`
+                # previne pela ordem das condições ("barra cheia e a palavra
+                # errada"), reintroduzido pelo arredondamento em capacidade
+                # grande. Barra cheia fica reservada a quem de fato esgotou.
+                proporcao_vendida=(
+                    1.0
+                    if setor.vendidos >= setor.capacidade
+                    else min(round(setor.vendidos / setor.capacidade, 2), 0.99)
+                ),
             )
             for setor in evento.setores
         ],

@@ -18,18 +18,21 @@ assinatura e exige que a verificação falhe **sem tocar o banco** — por isso 
 chama `conferir_codigo` direto, sem sessão nenhuma.
 """
 
+import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, delete, func, select
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.erros import ErroDeDominio
 from app.core.seguranca import (
     SEPARADOR_DO_CODIGO,
     assinar_ingresso,
     conferir_codigo,
+    gerar_hash,
     gerar_nonce,
     montar_codigo,
 )
@@ -37,6 +40,9 @@ from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
 from app.models.usuario import PapelUsuario, Usuario
+from app.schemas.pagamento import MeioDePagamento, PagamentoEntrada
+from app.services.pagamento import Autorizacao
+from app.services.reserva import pagar
 
 CARTAO_APROVA = "4111111111111111"
 CARTAO_RECUSA = "4111111111110002"
@@ -381,9 +387,25 @@ def test_assinatura_adulterada_falha_sem_consultar_o_banco() -> None:
 
     assert conferir_codigo(codigo, evento_id, nonce) is True
 
-    # Um caractere trocado na assinatura — o `A`/`B` cobre o caso de o último já
-    # ser `A`.
-    adulterado = codigo[:-1] + ("B" if codigo[-1] == "A" else "A")
+    # ⚠️ **Um caractere trocado no INÍCIO da assinatura, nunca no fim** (code
+    # review da Epic 3). Trocar o último não adultera coisa nenhuma numa fração
+    # dos casos: o HMAC-SHA256 tem 32 bytes, que em base64url sem padding dão 43
+    # caracteres — 258 bits para 256 de dado. Os **2 bits sobrando ficam no
+    # último caractere**, então `A`, `B`, `C` e `D` decodificam para os mesmos
+    # bytes. Em ~4,7% das execuções a "adulteração" produzia uma assinatura
+    # byte a byte idêntica, e este teste — o que existe para provar que o
+    # ingresso não é forjável — passava sem ter forjado nada.
+    #
+    # O gêmeo deste defeito estava em `test_seguranca.py`, onde ele se
+    # manifestava como falha intermitente da suíte; aqui ele era pior, porque
+    # a asserção é `is False` e a colisão passa despercebida em silêncio.
+    #
+    # O primeiro caractere carrega 6 bits significativos: trocá-lo muda sempre.
+    ingresso_bruto, _, assinatura = codigo.partition(SEPARADOR_DO_CODIGO)
+    adulterada = ("B" if assinatura[0] == "A" else "A") + assinatura[1:]
+    adulterado = f"{ingresso_bruto}{SEPARADOR_DO_CODIGO}{adulterada}"
+
+    assert adulterado != codigo
     assert conferir_codigo(adulterado, evento_id, nonce) is False
 
 
@@ -407,11 +429,30 @@ def test_codigo_malformado_nao_estoura(
 
     A portaria vai alimentar isto com o que a câmera ler, e o que a câmera lê
     nem sempre é um código deste sistema.
+
+    ⚠️ **Os três últimos são o que faltava** (code review da Epic 3). Os cinco
+    primeiros saem cedo — pelo `if not separador or not assinatura` ou pelo
+    `except ValueError` do `UUID` —, e **nenhum deles chegava ao
+    `compare_digest`**, que é a única linha perigosa da função. `compare_digest`
+    com `str` só aceita ASCII: fora dele ele levanta `TypeError`, não devolve
+    `False`. Um QR que decodificasse como `<uuid>.çç` subia até o handler
+    genérico e virava `500 ERRO_INTERNO` na fila da porta — para um código
+    simplesmente inválido, que é o caso que este teste promete cobrir.
     """
     evento_id = uuid4()
     nonce = gerar_nonce()
 
-    for lixo in ("", "sem-separador", ".", "nao-e-uuid.assinatura", f"{uuid4()}."):
+    for lixo in (
+        "",
+        "sem-separador",
+        ".",
+        "nao-e-uuid.assinatura",
+        f"{uuid4()}.",
+        # Chegam ao `compare_digest` com um `id` válido e assinatura não-ASCII.
+        f"{uuid4()}.çç",
+        f"{uuid4()}.assinatura-com-acentuação",
+        f"{uuid4()}.アイ",
+    ):
         assert conferir_codigo(lixo, evento_id, nonce) is False
 
 
@@ -433,3 +474,171 @@ def test_ingresso_de_outra_pessoa_nao_aparece(
     _entrar(cliente, intruso)
 
     assert cliente.get(f"/reservas/{reserva.id}").status_code == 404
+
+
+def test_dois_pagamentos_simultaneos_emitem_um_conjunto_so_de_ingressos(
+    engine_teste: Engine,
+) -> None:
+    """⚠️ **O teste que o AD-14 precisava e não tinha** (code review da Epic 3).
+
+    O `test_pagar_de_novo_nao_emite_ingresso_adicional` logo acima afirma no
+    docstring que é ele quem prova a emissão dentro do `if`. Não é: a segunda
+    chamada dele é barrada pela guarda de leitura (`if reserva.estado !=
+    PENDENTE`) **antes** de o `_transicionar` sequer rodar. Ele prova a guarda.
+    Mover a emissão para fora do ramo vencedor — a regressão que o AD-14 proíbe —
+    deixava a suíte inteira verde.
+
+    Provar o AD-14 exige duas conexões que passem **as duas** pela guarda de
+    leitura e só então disputem o `rowcount`. O ponto de injeção é o gateway: ele
+    é chamado depois da guarda e antes da transição, então um `PaymentGateway`
+    que espera numa `Barrier` para as duas exatamente no ramo que nunca foi
+    exercitado. Uma vence o `UPDATE` condicional e emite; a outra levanta
+    `RESERVA_NAO_PENDENTE` sem emitir nada.
+
+    A asserção que importa é a contagem: **dois** ingressos para dois lugares, e
+    não quatro. Com a emissão fora do `if`, este teste vê quatro.
+
+    ⚠️ **Este teste comita, então ele limpa** — mesma disciplina do
+    `test_duas_reservas_simultaneas...` do `test_reservar.py`: ele roda fora da
+    transação revertida do `conftest.py`.
+    """
+    Fabrica = sessionmaker(bind=engine_teste, autoflush=False, expire_on_commit=False)
+
+    cliente_id = uuid4()
+    organizador_id = uuid4()
+    evento_id = uuid4()
+    setor_id = uuid4()
+    reserva_id = uuid4()
+    quantidade = 2
+
+    with Fabrica() as preparo:
+        preparo.add(
+            Usuario(
+                id=organizador_id,
+                nome="Organizador da corrida de pagamento",
+                email=f"org-corrida-{organizador_id}@exemplo.com",
+                senha_hash=gerar_hash("rockhub"),
+                papel=PapelUsuario.ORGANIZADOR.value,
+            )
+        )
+        preparo.add(
+            Usuario(
+                id=cliente_id,
+                nome="Cliente da corrida de pagamento",
+                email=f"cli-corrida-{cliente_id}@exemplo.com",
+                senha_hash=gerar_hash("rockhub"),
+                papel=PapelUsuario.CLIENTE.value,
+            )
+        )
+        preparo.flush()
+        preparo.add(
+            Evento(
+                id=evento_id,
+                organizador_id=organizador_id,
+                nome="Show da corrida de pagamento",
+                data_hora=_daqui_a(30),
+                local="Espaço Unimed",
+                cidade="São Paulo",
+                origem_externa_id="G5vYZ9a1kd",
+                publicado_em=datetime.now(timezone.utc),
+                setores=[
+                    Setor(
+                        id=setor_id,
+                        nome="Pista",
+                        capacidade=10,
+                        # Já consumido pela reserva abaixo.
+                        vendidos=quantidade,
+                        preco_centavos=12000,
+                    )
+                ],
+            )
+        )
+        preparo.flush()
+        preparo.add(
+            Reserva(
+                id=reserva_id,
+                cliente_id=cliente_id,
+                evento_id=evento_id,
+                estado=EstadoReserva.PENDENTE.value,
+                expira_em=datetime.now(timezone.utc) + timedelta(minutes=10),
+                total_centavos=12000 * quantidade,
+                itens=[
+                    ItemReserva(
+                        setor_id=setor_id,
+                        quantidade=quantidade,
+                        preco_unitario_centavos=12000,
+                    )
+                ],
+            )
+        )
+        preparo.commit()
+
+    try:
+        # As duas threads chegam aqui depois da guarda de leitura e antes da
+        # transição. É esta linha que cria a corrida que o AD-14 descreve.
+        no_gateway = threading.Barrier(2)
+
+        class GatewayQueEspera:
+            def autorizar(
+                self,
+                *,
+                total_centavos: int,
+                meio: MeioDePagamento,
+                numero_cartao: str | None,
+            ) -> Autorizacao:
+                no_gateway.wait(timeout=30)
+                return Autorizacao(aprovada=True)
+
+        dados = PagamentoEntrada(**_corpo())
+        vitorias: list[bool] = []
+        trava = threading.Lock()
+
+        def tentar() -> None:
+            with Fabrica() as s:
+                comprador = s.get(Usuario, cliente_id)
+                assert comprador is not None
+                try:
+                    pagar(s, comprador, reserva_id, dados, GatewayQueEspera())
+                    venceu = True
+                except ErroDeDominio as erro:
+                    # A perdedora sai por aqui, e o código dela é o do ramo que
+                    # perde o `rowcount` — não o da guarda de leitura.
+                    assert erro.codigo == "RESERVA_NAO_PENDENTE"
+                    venceu = False
+                with trava:
+                    vitorias.append(venceu)
+
+        threads = [threading.Thread(target=tentar) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+
+        assert len(vitorias) == 2
+        # Exatamente uma venceu a transição.
+        assert sum(vitorias) == 1
+
+        with Fabrica() as leitura:
+            reserva = leitura.get(Reserva, reserva_id)
+            assert reserva is not None
+            assert reserva.estado == EstadoReserva.PAGA.value
+
+            emitidos = leitura.scalar(
+                select(func.count())
+                .select_from(Ingresso)
+                .where(Ingresso.reserva_id == reserva_id)
+            )
+            # ⚠️ **Dois, e não quatro.** É esta linha, e só ela, que falha quando
+            # a emissão sai de dentro do ramo que vence o `_transicionar`.
+            assert emitidos == quantidade
+    finally:
+        with Fabrica() as limpeza:
+            limpeza.execute(delete(Ingresso).where(Ingresso.reserva_id == reserva_id))
+            limpeza.execute(delete(ItemReserva).where(ItemReserva.reserva_id == reserva_id))
+            limpeza.execute(delete(Reserva).where(Reserva.id == reserva_id))
+            limpeza.execute(delete(Setor).where(Setor.id == setor_id))
+            limpeza.execute(delete(Evento).where(Evento.id == evento_id))
+            limpeza.execute(
+                delete(Usuario).where(Usuario.id.in_([cliente_id, organizador_id]))
+            )
+            limpeza.commit()

@@ -98,9 +98,21 @@ usos é o que impede girar um sem derrubar o outro — trocar a chave de sessão
 ingresso já emitido.
 
 **A coluna `assinatura` guarda o valor só para montar o QR.** A validação da portaria (Epic 5)
-**sempre recalcula**, como manda o AD-5, e assinatura divergente é recusada sem consultar o banco. A
-coluna nunca é fonte da verdade. Consequência aceita: girar o segredo invalida os ingressos antigos,
-que é o comportamento correto de um segredo rotacionado.
+**sempre recalcula**, como manda o AD-5. A coluna nunca é fonte da verdade: comparar contra o que
+está gravado transformaria o banco em oráculo de assinatura, e bastaria conseguir escrever na coluna
+para forjar. Consequência aceita: girar o segredo invalida os ingressos antigos, que é o
+comportamento correto de um segredo rotacionado.
+
+**Corrigido no code review da Epic 3 — o AD-5 prometia "recusada sem consultar o banco", e isso não
+se sustenta.** *Descartei* tirar o `nonce` da fórmula para recuperar a promessa ao pé da letra. O QR
+carrega `ID.ASSINATURA` e nada mais, enquanto `conferir_codigo` exige o `nonce`, que só existe na
+coluna `ingresso.nonce`: quem valida tem de buscar a linha pelo `id` **antes** de conseguir
+recalcular o HMAC. Consultar o banco é pré-requisito da verificação, não uma etapa posterior a ela —
+e o teste que carimbava o critério passava porque fabricava o nonce localmente, provando que a função
+é pura, não que o fluxo rejeita antes de consultar. Assinar só `id + evento_id` devolveria a promessa
+literal e custaria a entropia por ingresso, que é o que impede dois ingressos do mesmo evento de
+compartilharem assinatura. Fico com o `nonce`; a promessa é que foi reescrita. **A garantia real, e a
+que a Epic 5 pode invocar, é o recálculo** — não a ausência de I/O.
 
 **A biblioteca de QR é `qrcode.react`**, entrando um story antes do previsto por causa do Pix. Gera
 SVG no cliente, sem chamada de rede, e o canhoto da Story 4.2 reusa o mesmo componente.
@@ -197,7 +209,9 @@ fictícios.
 nasce com um ingresso por unidade, cada um com `id` e código próprios, na mesma transação da
 transição (AD-14); o código tem formato `ID.ASSINATURA` com HMAC-SHA256 do segredo do servidor
 (AD-5); pagamento reprocessado não cria ingresso adicional; assinatura adulterada falha na
-verificação **sem consultar o banco**.
+verificação, que **recalcula o HMAC em vez de comparar com a coluna** (reescrito no code review da
+Epic 3 — ver a decisão acima; a redação anterior dizia "sem consultar o banco", que o `nonce` no
+esquema da assinatura torna impossível).
 
 ## 6 · Armadilhas
 

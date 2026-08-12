@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import estilos from "./Cronometro.module.css";
@@ -27,9 +28,17 @@ import estilos from "./Cronometro.module.css";
 export default function Cronometro({ expiraEm }: { expiraEm: string }) {
   const [restante, setRestante] = useState<number | null>(null);
 
+  const router = useRouter();
+
   useEffect(() => {
     const alvo = new Date(expiraEm).getTime();
-    const calcular = () => Math.max(0, alvo - Date.now());
+    // ⚠️ **`Math.max(0, NaN)` é `NaN`, não `0`** (code review da Epic 3): a rede
+    // de proteção não protegia. Com um `expira_em` que o `Date` não parseia, o
+    // `restante` não era `null` nem `0`, os dois ramos de guarda abaixo eram
+    // pulados, e a tela imprimia `NaN:NaN` no lugar do prazo. Prazo ilegível é
+    // prazo vencido: o desfecho seguro é tratar como expirada, não como lixo.
+    const calcular = () =>
+      Number.isNaN(alvo) ? 0 : Math.max(0, alvo - Date.now());
 
     // O primeiro valor sai aqui, já no navegador — é isso que mantém o HTML do
     // servidor e o da hidratação idênticos.
@@ -46,11 +55,30 @@ export default function Cronometro({ expiraEm }: { expiraEm: string }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRestante(calcular());
 
-    const intervalo = setInterval(() => setRestante(calcular()), 1000);
+    const intervalo = setInterval(() => {
+      const agora = calcular();
+      setRestante(agora);
+
+      // ⚠️ **Chegar a zero precisa avisar o servidor** (code review da Epic 3).
+      // Antes o único efeito de zerar era o texto deste `<span>`: a página
+      // continuava com a nota "seus lugares estão segurados até o fim do prazo
+      // acima" e com o checkout inteiro submissível, ao lado da palavra
+      // "Expirada". Dava para preencher nome, CPF, cartão e CVV e só descobrir
+      // no clique — pelo ramo do `ESTADO_MUDOU`, que só faz `refresh` e não diz
+      // nada. O `refresh` daqui relê `GET /reservas/{id}`, e é o servidor que
+      // troca a tela: o cronômetro avisa, ele não decide.
+      //
+      // `clearInterval` junto: sem ele o tique continuaria rodando para sempre
+      // numa aba aberta, disparando `refresh` a cada segundo.
+      if (agora === 0) {
+        clearInterval(intervalo);
+        router.refresh();
+      }
+    }, 1000);
     // Sem isto, sair da página deixa o `setInterval` rodando e o React avisa que
     // houve `setState` em componente desmontado.
     return () => clearInterval(intervalo);
-  }, [expiraEm]);
+  }, [expiraEm, router]);
 
   if (restante === null) {
     return (

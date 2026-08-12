@@ -52,6 +52,7 @@ instante só, e as quatro recusas já as pegam na memória. Um `except` genéric
 neste ponto só transformaria bug de verdade em `422` bonito.
 """
 
+import logging
 from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -80,6 +81,8 @@ from app.services.pagamento import PaymentGateway
 # lugares, o dia em que a regra mudar é o dia em que a tela e a rota discordam —
 # e quem descobre isso é a pessoa que escolheu 8 ingressos e recebeu uma recusa.
 from app.services.evento import MAXIMO_POR_COMPRA
+
+logger = logging.getLogger(__name__)
 
 # Os dez minutos do AD-4 (decisão do Igor).
 #
@@ -141,11 +144,21 @@ def _devolver_estoque(sessao: Session, reserva_id: UUID) -> None:
     reserva que já saiu de `PENDENTE`.
     """
     itens = sessao.scalars(
-        select(ItemReserva).where(ItemReserva.reserva_id == reserva_id)
+        select(ItemReserva)
+        .where(ItemReserva.reserva_id == reserva_id)
+        # ⚠️ **`order_by` é prevenção de deadlock, não estética** (code review da
+        # Epic 3). Cada `UPDATE` abaixo trava a linha do setor até o `commit` de
+        # quem chamou. Sem uma ordem estável, duas colheitas simultâneas tocam os
+        # mesmos setores em ordens que o plano de execução escolhe — A trava
+        # Pista e espera Camarote, B trava Camarote e espera Pista, e o Postgres
+        # aborta uma com `40P01`, que vira `500` numa operação recuperável.
+        # `setor_id` é a mesma chave que o `criar()` ordena, e é isso que faz as
+        # duas famílias de escrita concordarem sobre a ordem de travamento.
+        .order_by(ItemReserva.setor_id)
     ).all()
 
     for item in itens:
-        sessao.execute(
+        resultado = sessao.execute(
             update(Setor)
             .where(
                 Setor.id == item.setor_id,
@@ -159,6 +172,27 @@ def _devolver_estoque(sessao: Session, reserva_id: UUID) -> None:
             .values(vendidos=Setor.vendidos - item.quantidade)
             .execution_options(synchronize_session=False)
         )
+
+        # ⚠️ **O AD-3 é `UPDATE` condicional provado por `rowcount`** — a
+        # condição sozinha é metade dele (code review da Epic 3). Aqui o
+        # `rowcount == 0` significa que `vendidos` já estava abaixo do que este
+        # item segurava, ou seja: a contabilidade do estoque está inconsistente.
+        # Sem esta linha o desfecho é silêncio — a reserva vira `EXPIRADA` ou
+        # `RECUSADA` e o estoque simplesmente não volta, sem erro e sem rastro.
+        #
+        # **Log e não `raise`**, de propósito: quem chama já venceu a transição e
+        # está prestes a confirmar. Derrubar a operação aqui deixaria a reserva
+        # presa em `PENDENTE` para sempre, que é pior que a perda contábil. O
+        # `CheckConstraint` do modelo já impede o estoque de ficar negativo.
+        if resultado.rowcount != 1:
+            logger.error(
+                "Devolução de estoque não aplicada: reserva %s, setor %s, "
+                "quantidade %s. O `vendidos` do setor está abaixo do que esta "
+                "reserva segurava.",
+                reserva_id,
+                item.setor_id,
+                item.quantidade,
+            )
 
 
 def expirar_vencidas(sessao: Session, setor_ids: Collection[UUID]) -> None:
@@ -208,6 +242,11 @@ def expirar_vencidas(sessao: Session, setor_ids: Collection[UUID]) -> None:
         )
         # Uma reserva com dois itens nos setores pedidos apareceria duas vezes.
         .distinct()
+        # Mesma razão do `order_by` do `_devolver_estoque`: duas colheitas
+        # simultâneas precisam percorrer as reservas vencidas na mesma ordem,
+        # senão elas travam as linhas de `setor` em ordens cruzadas e uma morre
+        # com `40P01`. Sem `ORDER BY` a ordem é a que o plano escolher.
+        .order_by(Reserva.id)
     ).all()
 
     for reserva_id in ids_vencidas:
@@ -333,7 +372,22 @@ def criar(sessao: Session, cliente: Usuario, dados: ReservaEntrada) -> ReservaSa
         for item in dados.itens
     }
 
-    for item in dados.itens:
+    # ⚠️ **A ordem do laço é a ordem em que as linhas de `setor` são travadas, e
+    # ela não pode ser a do corpo da requisição** (code review da Epic 3). Cada
+    # `UPDATE` abaixo segura a linha até o `commit` do fim desta função. Com a
+    # ordem do cliente, dois pedidos concorrentes no mesmo evento — um mandando
+    # `[Pista, Camarote]` e outro `[Camarote, Pista]` — travam em cruz e o
+    # Postgres mata um com `40P01 deadlock detected`. Não é `ErroDeDominio`:
+    # sobe até o handler genérico e vira `500 ERRO_INTERNO` numa recusa que
+    # deveria ser `201` ou `409`. Um cliente hostil provoca isso de propósito;
+    # dois compradores comuns tropeçam nisso por acaso.
+    #
+    # Ordenar por `setor_id` dá uma ordem global que **todo** caminho de escrita
+    # respeita (o `_devolver_estoque` ordena pela mesma chave), e ordem global é
+    # o que torna o ciclo de espera impossível. Não muda nada do que é validado:
+    # as quatro recusas acima já rodaram sobre o corpo inteiro, e o `409` de
+    # estoque desfaz tudo de qualquer jeito.
+    for item in sorted(dados.itens, key=lambda item: item.setor_id):
         resultado = sessao.execute(
             update(Setor)
             .where(
@@ -473,6 +527,18 @@ def pagar(
     (contra um gateway simulado isso é grátis; contra um real, é o problema que
     idempotência de cobrança resolve, e está fora do escopo do desafio) — mas
     exatamente uma vence o `rowcount`, e é ela que emite ingresso na Story 3.9.
+
+    ⚠️ **O prazo é conferido na entrada e NÃO na transição para `PAGA`, e isso é
+    escolha** (code review da Epic 3, decisão do Igor). Uma reserva que vence
+    *durante* a chamada ao gateway é aprovada: a transição vencedora condiciona
+    só `de=PENDENTE`, sem `expira_em`. A alternativa — acrescentar
+    `expira_em >= func.now()` a esta transição — fecharia a janela ao custo de
+    recusar depois de o gateway já ter autorizado, que com um gateway real é
+    cobrança sem ingresso. A folga é coerente com a colheita preguiçosa do AD-4,
+    que já parte de "a reserva vencida só morre quando alguém precisa do estoque
+    dela": quem estava pagando quando o relógio virou não é quem o AD-4 quer
+    punir. O estoque continua coerente nos dois casos, porque a reserva sai de
+    `PENDENTE` e a colheita nunca mais a alcança.
     """
     reserva = sessao.scalars(
         select(Reserva)
@@ -539,14 +605,28 @@ def pagar(
     )
 
     if not autorizacao.aprovada:
-        if _transicionar(
+        if not _transicionar(
             sessao,
             reserva.id,
             de=EstadoReserva.PENDENTE,
             para=EstadoReserva.RECUSADA,
         ):
-            _devolver_estoque(sessao, reserva.id)
-            sessao.commit()
+            # ⚠️ **Perder a transição muda a resposta** (code review da Epic 3).
+            # Outra conexão tirou a reserva de `PENDENTE` entre a recusa do
+            # gateway e esta linha — ela está `PAGA` ou `EXPIRADA`, e nada foi
+            # gravado aqui. Responder `402` neste ramo afirmaria duas coisas
+            # falsas de uma vez: que a recusa é o estado final da reserva, e que
+            # "os lugares voltaram para a venda" quando ninguém os devolveu.
+            # Este é o mesmo desfecho do ramo vencedor logo abaixo, e leva a
+            # mesma resposta.
+            raise ErroDeDominio(
+                "RESERVA_NAO_PENDENTE",
+                "Esta reserva não está mais aguardando pagamento.",
+                status_http=409,
+            )
+
+        _devolver_estoque(sessao, reserva.id)
+        sessao.commit()
 
         # ⚠️ **`402`, e não o `409` das outras recusas do domínio** (decisão do
         # Igor): recusa de pagamento não é conflito de estado, é a resposta do
@@ -607,6 +687,21 @@ def pagar(
             )
 
     sessao.commit()
+
+    # ⚠️ **Sem este `refresh`, a resposta mente em produção e a suíte não vê**
+    # (code review da Epic 3). O `_transicionar` roda com
+    # `synchronize_session=False` de propósito, então o `reserva.estado` deste
+    # objeto continua `'PENDENTE'` depois do `UPDATE`. Quem desfazia isso, por
+    # acidente, era o `expire_on_commit` do `commit` acima — que é `True` no
+    # `sessionmaker` do `conftest.py` e **`False`** no `SessaoLocal` de
+    # `app/core/db.py`. Resultado: em teste a releitura traz `PAGA`; em produção
+    # nada expira, `_ingressos` devolve `[]` e `_para_saida` serializa
+    # `PENDENTE`. O banco fica certo e o corpo do `200` fica errado.
+    #
+    # Hoje nenhuma tela quebra porque o `FormularioDePagamento` descarta o corpo
+    # e relê por `GET` — mas o docstring da rota promete o contrário, e a Epic 4
+    # lê justamente estes ingressos.
+    sessao.refresh(reserva)
 
     evento = sessao.get(
         Evento, reserva.evento_id, options=[selectinload(Evento.setores)]

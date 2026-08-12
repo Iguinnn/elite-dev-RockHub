@@ -15,6 +15,15 @@ _VARIAVEIS_DO_AMBIENTE = (
     "JWT_SECRET",
     "APP_NOME",
     "TICKETMASTER_API_KEY",
+    # ⚠️ **Faltava aqui, e a ausência tornava um teste dependente do shell**
+    # (code review da Epic 3). O `_env_file=None` desliga o `.env`, não o
+    # `os.environ`: quem tivesse `TICKET_SIGNING_SECRET` exportada — ou um CI que
+    # a injetasse como variável em vez de arquivo — fazia o `Settings` nascer com
+    # segredo próprio, o `ValueError` não acontecer, e o teste que afirma
+    # "segredo de exemplo em produção falha" quebrar por motivo alheio ao que ele
+    # testa. O comentário `# fica no valor de exemplo de propósito` descrevia uma
+    # condição que nada estabelecia.
+    "TICKET_SIGNING_SECRET",
 )
 
 
@@ -126,3 +135,40 @@ def test_chave_da_ticketmaster_ausente_em_local_nao_falha() -> None:
 
     assert settings.ambiente == "local"
     assert settings.ticketmaster_api_key == ""
+
+
+@pytest.mark.parametrize(
+    ("variavel", "trecho_da_mensagem"),
+    [
+        ("TICKET_SIGNING_SECRET", "TICKET_SIGNING_SECRET"),
+        ("JWT_SECRET", "JWT_SECRET"),
+    ],
+)
+@pytest.mark.parametrize("valor", ["", "   ", "curto-demais"])
+def test_segredo_vazio_ou_curto_em_producao_falha_na_inicializacao(
+    monkeypatch: pytest.MonkeyPatch,
+    variavel: str,
+    trecho_da_mensagem: str,
+    valor: str,
+) -> None:
+    """⚠️ **O campo apagado no painel era o buraco** (code review da Epic 3).
+
+    Os dois validadores comparavam por igualdade contra a string de exemplo, e
+    string vazia não é a string de exemplo — então `TICKET_SIGNING_SECRET=` num
+    painel de deploy subia a aplicação e passava a assinar ingresso com
+    `hmac.new(b"", ...)`. Chave conhecida por definição, ingresso forjável por
+    qualquer um, e o aviso "conferir que não é o valor de exemplo" não pegava
+    porque a variável *está* definida.
+
+    Os três valores cobrem as três formas de o segredo não servir: vazio, só
+    espaço, e curto demais para ser gerado por `token_urlsafe`.
+    """
+    monkeypatch.setenv("AMBIENTE", "producao")
+    monkeypatch.setenv("TICKETMASTER_API_KEY", "chave-de-teste-nao-vaze-isto")
+    # A outra das duas fica válida, para o erro apontar a que está sendo testada.
+    for nome in ("JWT_SECRET", "TICKET_SIGNING_SECRET"):
+        monkeypatch.setenv(nome, "um-segredo-longo-o-bastante-para-passar")
+    monkeypatch.setenv(variavel, valor)
+
+    with pytest.raises(ValueError, match=trecho_da_mensagem):
+        Settings(_env_file=None)

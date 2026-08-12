@@ -1213,9 +1213,11 @@ subiu porque `#D93B2B` dava **4,26:1**, abaixo do piso de 4,5:1, na cor de toda 
 `--verde` virou limão porque o verde-mata era vizinho de matiz do chão novo e o bloco `VÁLIDO`
 deixava de saltar; e `--ambar` virou `--neon` porque o nome ficaria mentindo em quinze arquivos.
 
-⚠️ **`src/app/icon.svg` carrega os dois hexes literais** e é o único lugar do frontend fora do
-`globals.css` onde isso acontece — SVG não lê `var(--token)`. Trocar a paleta obriga a abrir esse
-arquivo à mão; um `grep` por `var(--` não o encontra.
+⚠️ **A marca e o favicon carregam a paleta assada em pixel**, e são o único lugar do frontend fora do
+`globals.css` onde isso acontece — imagem não lê `var(--token)`. Trocar a paleta obriga a rodar
+`uv run --with pillow python scripts/gerar-marca.py`, que regera `public/logotipo-rockhub.png` e
+`src/app/icon.png` a partir do JPEG do lettering; um `grep` por `var(--` não encontra nenhum dos
+dois. As constantes ficam no topo do script, e o porquê de cada decisão está no docstring dele.
 
 ### Tipografia
 
@@ -1326,9 +1328,13 @@ horizontal em formulário, e ela está desarmada na origem.
   `prefers-color-scheme`. Tudo isso foi arrancado — se você regerar o template algum dia, arranque
   de novo. **O que sobreviveu escondido até o code review da Epic 1 foi o `favicon.ico`**: o
   triângulo da Vercel, 25.931 bytes, na aba do navegador de um projeto que está sendo avaliado.
-  Trocado por `src/app/icon.svg`, próprio. Convenção do App Router: `icon.svg` em `app/` vira o
-  ícone da aba sozinho, e o `favicon.ico` **tem precedência sobre ele** — por isso o arquivo antigo
-  precisou ser apagado, não só acompanhado
+  Trocado por um ícone próprio. Convenção do App Router: um `icon.*` em `app/` vira o ícone da aba
+  sozinho, e o `favicon.ico` **tem precedência sobre ele** — por isso o arquivo antigo precisou ser
+  apagado, não só acompanhado. Hoje o arquivo é `src/app/icon.png`, com o "R" recortado do próprio
+  lettering da marca; ele substituiu um `icon.svg` que desenhava um "R" em Georgia, quando o
+  logotipo virou imagem em 2026-08-12 e ícone e marca passariam a contar histórias diferentes.
+  **Um `icon.*` só na pasta**: com `.svg` e `.png` juntos o Next emite as duas tags e quem escolhe
+  é o navegador
 - **`.gitignore` só existe na raiz.** O que o `create-next-app` cria aqui é redundante; a única
   regra que ele tinha a mais (`next-env.d.ts`) eu movi para o arquivo da raiz
 

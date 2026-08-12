@@ -94,6 +94,18 @@ class PagamentoSimulado:
         if meio is MeioDePagamento.PIX:
             return Autorizacao(aprovada=True)
 
+        # ⚠️ **Ramo explícito para cartão, e `raise` no resto** (code review da
+        # Epic 3). Antes o cartão era o `else` de tudo que não fosse Pix, e o
+        # buraco aparecia no dia em que o enum crescesse: com `BOLETO` novo e
+        # `numero_cartao=None`, `"".endswith("0002")` é `False` e a cobrança sai
+        # **aprovada em silêncio**. Um meio que este gateway não conhece precisa
+        # falhar na hora de acrescentá-lo, não na hora de cobrar.
+        if meio is not MeioDePagamento.CARTAO:  # pragma: no cover
+            raise NotImplementedError(
+                f"PagamentoSimulado não sabe autorizar o meio {meio!r}. "
+                "Acrescente o ramo dele aqui antes de expor a opção na tela."
+            )
+
         # Máscara da tela (`4111 1111 1111 0002`) reduzida a dígitos antes de
         # olhar o final: sem isto, o mesmo cartão aprovaria ou recusaria conforme
         # quem digitou tivesse posto espaço.

@@ -452,8 +452,25 @@ class SetorPublico(BaseModel):
     nome: str
     preco_centavos: int
     disponibilidade: DisponibilidadeDoSetor
-    # `0.0`–`1.0`, duas casas. **A largura da barra**, e nada mais: não existe
-    # caminho de volta daqui para `capacidade` nem para `vendidos`.
+    # `0.0`–`1.0`, duas casas — a largura da barra. Teto de `0.99` enquanto o
+    # setor não esgotou (ver `services/evento.py`).
+    #
+    # ⚠️ **Este campo VAZA a capacidade, e o comentário antigo dizia o contrário**
+    # (code review da Epic 3, decisão do Igor de manter). Uma única leitura não
+    # entrega nada, mas a diferença entre duas, sim: reservar `N` ingressos e
+    # recarregar dá `Δp ≈ N/capacidade`, logo `capacidade ≈ N/Δp`. Num setor de
+    # 15 lugares, comprar 3 move a proporção em exatamente `0.20` e revela a
+    # capacidade inteira — e é justamente no setor pequeno, o que fica `ULTIMOS`,
+    # que o UX-DR7 importa.
+    #
+    # **Fica assim de propósito.** Explorar isso exige compra real e repetida
+    # (cada leitura custa uma reserva, com teto de 6 por compra), e a barra é a
+    # informação que a tela usa para dar urgência sem números. A alternativa
+    # descartada foi trocar o float por faixa discreta — quartis fechariam o
+    # canal e granulariam a barra. O que **não** podia ficar era o comentário
+    # anterior afirmando que "não existe caminho de volta daqui para
+    # `capacidade` nem para `vendidos`": ele autorizava quem viesse depois a não
+    # pensar no assunto.
     proporcao_vendida: float
 
 

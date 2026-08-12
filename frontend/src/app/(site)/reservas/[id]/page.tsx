@@ -71,7 +71,33 @@ export default async function PaginaDaReserva({
   }
 
   const reserva = resultado.reserva;
-  const pendente = reserva.estado === "PENDENTE";
+
+  // ⚠️ **`PENDENTE` não basta: o prazo também é conferido aqui** (code review da
+  // Epic 3). A colheita do AD-4 é preguiçosa — quem colhe é quem precisa do
+  // estoque —, então `GET /reservas/{id}` devolve `PENDENTE` por tempo
+  // indeterminado depois do prazo vencer, até alguém pedir aquele setor. Sem
+  // esta linha a tela acreditava no `estado` e mais nada: o cronômetro dizia
+  // "Expirada" e, logo abaixo, a nota continuava afirmando que os lugares
+  // estavam segurados e o checkout seguia inteiro, oferecendo pagar. Dava para
+  // preencher nome, CPF, cartão e CVV e só descobrir no clique.
+  //
+  // **O relógio é o do servidor**, o mesmo que renderiza a página — não o do
+  // navegador, que o `Cronometro` usa e que pode estar adiantado. E é isto que
+  // dá sentido ao `router.refresh()` que o cronômetro dispara ao zerar: o
+  // servidor reavalia o prazo e devolve a tela certa, sem precisar que o
+  // backend tenha colhido a reserva.
+  //
+  // ⚠️ **O `eslint-disable` é a parte pensada desta linha**, na mesma disciplina
+  // do `set-state-in-effect` do `Cronometro`. A regra `react-hooks/purity`
+  // protege contra render instável entre re-renderizações do **cliente** — e
+  // este arquivo é Server Component assíncrono, sem uma linha de `"use client"`
+  // (ver o aviso no topo). Ele roda uma vez por requisição, exatamente como o
+  // `datetime.now(timezone.utc)` que o backend lê uma vez por requisição pelo
+  // mesmo motivo. Não há hidratação para divergir: este componente nunca
+  // renderiza no navegador.
+  // eslint-disable-next-line react-hooks/purity
+  const prazoVencido = new Date(reserva.expira_em).getTime() <= Date.now();
+  const pendente = reserva.estado === "PENDENTE" && !prazoVencido;
 
   return (
     <section className={estilos.pagina}>
@@ -91,8 +117,15 @@ export default async function PaginaDaReserva({
         {/* ⚠️ **O cronômetro só existe enquanto ele significa alguma coisa.**
             Numa reserva paga ele contaria para trás um prazo que não vale mais;
             numa expirada, contaria de zero para baixo. Quem diz se o prazo
-            importa é o `estado`, nunca o relógio (Story 3.7). */}
-        {pendente && <Cronometro expiraEm={reserva.expira_em} />}
+            importa é o `estado`, nunca o relógio (Story 3.7).
+
+            ⚠️ Ele segue atrelado ao `estado`, e **não** ao `pendente` calculado
+            acima: numa reserva ainda `PENDENTE` cujo prazo venceu, é ele quem
+            mostra a palavra "Expirada". Some só quando a reserva saiu de
+            `PENDENTE` de verdade. */}
+        {reserva.estado === "PENDENTE" && (
+          <Cronometro expiraEm={reserva.expira_em} />
+        )}
       </div>
 
       {/* A cara de cada desfecho, acima dos itens: quem chega aqui depois de
@@ -197,6 +230,12 @@ export default async function PaginaDaReserva({
         // agora, na página do evento — a escolha antiga não sobrevive de
         // propósito, como já não sobrevive à ida ao login desde a 3.6.
         <p className={estilos.nota}>
+          {prazoVencido && reserva.estado === "PENDENTE" && (
+            <>
+              <strong>O prazo desta reserva acabou.</strong> Os ingressos
+              voltaram para a venda, e nada foi cobrado.{" "}
+            </>
+          )}
           <Link href={`/eventos/${reserva.evento_id}`}>
             Ver o show na programação
           </Link>

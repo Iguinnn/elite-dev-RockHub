@@ -25,11 +25,13 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
+from app.services import evento as servico_de_evento
 
 # As sete chaves do `EventoNaProgramacao`, e nenhuma a mais (AC1, AC7).
 CHAVES_DO_CONTRATO = {
@@ -377,7 +379,23 @@ def test_nenhuma_palavra_de_estoque_aparece_no_texto_da_resposta(
 
     corpo = cliente.get("/eventos").text
 
-    for palavra in ("capacidade", "vendidos", "setores", "imagem_url", "organizador_id"):
+    # ⚠️ **As nove que o AC7 enumera, e não cinco** (code review da Epic 3). A
+    # varredura cobria metade da lista: `publicado_em` e `origem_externa_id`
+    # ficavam de fora justamente em `GET /eventos`, que é a única rota em que os
+    # ACs das três stories os declaram proibidos. O helper grava
+    # `origem_externa_id="G5vYZ9a1kd"` em todo evento, então um vazamento aninhado
+    # atravessava a varredura sem ser visto — que é exatamente o buraco que a
+    # busca no texto inteiro existe para fechar.
+    # (`capacidade_total` e `vendidos_total` já entram por substring.)
+    for palavra in (
+        "capacidade",
+        "vendidos",
+        "setores",
+        "imagem_url",
+        "origem_externa_id",
+        "publicado_em",
+        "organizador_id",
+    ):
         assert palavra not in corpo
 
 
@@ -1031,6 +1049,8 @@ def test_com_busca_ativa_nenhuma_palavra_de_estoque_aparece_na_resposta(
         "vendidos",
         "setores",
         "imagem_url",
+        # Faltava, pelo mesmo motivo do gêmeo da 3.1 — ver o comentário lá.
+        "origem_externa_id",
         "publicado_em",
         "organizador_id",
     ):
@@ -2000,3 +2020,164 @@ def test_o_openapi_declara_o_evento_com_um_parametro_de_path_e_nada_mais(
 
     setor = esquema["components"]["schemas"]["SetorPublico"]["properties"]
     assert set(setor) == CHAVES_DO_SETOR_PUBLICO
+
+
+# --------------------------------------------------------------------------- #
+# Code review da Epic 3 — o curinga que o `unaccent` fabricava, e a busca
+# com mais de uma palavra
+# --------------------------------------------------------------------------- #
+
+
+def test_curinga_fullwidth_nao_devolve_a_programacao_inteira(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ **O mesmo defeito do `?q=%`, por uma porta que o escape não cobria.**
+
+    O escape rodava em Python e o `unaccent` no Postgres, nessa ordem — e
+    `unaccent` normaliza as formas *fullwidth*: `unaccent('％')` (U+FF05) devolve
+    `'%'`, `unaccent('＿')` devolve `'_'`. O curinga era **fabricado depois** de a
+    proteção já ter passado, e `?q=％` virava o padrão `%%%`: a programação
+    inteira, com `200` e cara de resultado, que é exatamente o desfecho que o
+    `test_buscar_por_porcento_nao_devolve_a_programacao_inteira` existe para
+    impedir.
+
+    O conserto foi inverter a ordem — `unaccent` primeiro, escape em SQL sobre o
+    resultado. Ver `_padrao_de_busca` em `services/evento.py`.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena")
+    _evento_gravado(sessao, organizador, nome="Djavan")
+    cliente.cookies.clear()
+
+    # U+FF05 FULLWIDTH PERCENT SIGN e U+FF3F FULLWIDTH LOW LINE.
+    assert _nomes(cliente.get("/eventos", params={"q": "\uff05"})) == []
+    assert _nomes(cliente.get("/eventos", params={"q": "\uff3f"})) == []
+
+
+def test_busca_com_duas_palavras_cruza_nome_e_cidade(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Artista + cidade é o que se digita primeiro, e devolvia vazio.
+
+    O termo era um substring único testado contra `nome`, `local` e `cidade` com
+    `OR`: nenhuma coluna sozinha contém `"marina são paulo"`, então a resposta era
+    `200 []` — indistinguível de "esse show não existe". Agora cada palavra
+    precisa aparecer em alguma das três colunas (`AND` de `OR`s).
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="Marina Sena", cidade="Recife")
+    _evento_gravado(sessao, organizador, nome="Djavan", cidade="São Paulo")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos", params={"q": "marina sao paulo"})
+
+    # Só o que casa as duas palavras — e sem acento, pelo `unaccent`.
+    assert _nomes(resposta) == ["Marina Sena"]
+    corpo = resposta.json()
+    assert len(corpo) == 1
+    assert corpo[0]["cidade"] == "São Paulo"
+
+
+def test_palavra_que_nao_casa_nenhuma_coluna_derruba_o_resultado_inteiro(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O `AND` entre palavras é o que dá sentido à busca de duas palavras.
+
+    Sem ele bastaria uma palavra casar para o evento entrar, e `?q=marina
+    curitiba` traria a Marina de São Paulo — pior que devolver vazio, porque
+    parece resposta.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena", cidade="São Paulo")
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos", params={"q": "marina curitiba"})) == []
+
+
+def test_espacos_entre_as_palavras_nao_criam_termo_vazio(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`split()` sem argumento colapsa espaço repetido — e é por isso que é ele.
+
+    Com `split(" ")`, `"marina  sena"` produziria um token vazio, cujo padrão
+    `%%` casa tudo: a condição extra não filtraria nada e o `AND` viraria enfeite.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Marina Sena")
+    _evento_gravado(sessao, organizador, nome="Djavan")
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos", params={"q": "marina   sena"})) == [
+        "Marina Sena"
+    ]
+
+
+def test_barra_nao_enche_enquanto_ainda_ha_ingresso(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ Barra cheia é reservada a quem esgotou — o resto tem teto de `0.99`.
+
+    `round(999/1000, 2)` é `1.0`, e nesse ponto a disponibilidade ainda é
+    `ULTIMOS`: a tela mostrava a barra em 100% ao lado de "últimos ingressos",
+    com o stepper ativo, indistinguível de esgotado. É o mesmo sintoma que a
+    ordem das condições do `_disponibilidade_do_setor` previne, reintroduzido
+    pelo arredondamento em capacidade grande (code review da Epic 3).
+    """
+    evento = _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[("Pista", 1000, 999, 12000), ("Camarote", 1000, 1000, 30000)],
+    )
+    cliente.cookies.clear()
+
+    setores = {s["nome"]: s for s in cliente.get(f"/eventos/{evento.id}").json()["setores"]}
+
+    assert setores["Pista"]["disponibilidade"] == "ULTIMOS"
+    assert setores["Pista"]["proporcao_vendida"] == 0.99
+
+    # Quem de fato esgotou continua chegando a 1.0.
+    assert setores["Camarote"]["disponibilidade"] == "ESGOTADO"
+    assert setores["Camarote"]["proporcao_vendida"] == 1.0
+
+
+def test_a_programacao_tem_teto_de_linhas(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rota da tela mais visitada não devolve o catálogo inteiro sem limite.
+
+    O teto real é `TETO_DA_PROGRAMACAO`; aqui ele é baixado para três, porque
+    gravar 201 eventos para provar um `LIMIT` é custo sem informação. O que o
+    teste prova é que **existe** um teto e que ele corta pelo fim da fila
+    ordenada por data — o show mais distante é o que fica de fora.
+    """
+    monkeypatch.setattr(servico_de_evento, "TETO_DA_PROGRAMACAO", 3)
+
+    organizador = _organizador(fabricar_usuario)
+    for dias in (5, 10, 15, 20, 25):
+        _evento_gravado(
+            sessao,
+            organizador,
+            nome=f"Show em {dias} dias",
+            data_hora=_daqui_a(dias),
+        )
+    cliente.cookies.clear()
+
+    assert _nomes(cliente.get("/eventos")) == [
+        "Show em 5 dias",
+        "Show em 10 dias",
+        "Show em 15 dias",
+    ]

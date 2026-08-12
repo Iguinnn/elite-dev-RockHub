@@ -82,6 +82,18 @@
   border-color: var(--neon);
 }
 
+/* ⚠️ **O filtro ativo fica marcado em neon** — o AC da Story 3.2, que este
+   controle não cumpria (code review da Epic 3). O chip de período inverte
+   inteiro (`.chipAtivo`); aqui a inversão não serve, porque o texto da opção
+   escolhida é o próprio conteúdo do controle e um fundo neon sólido brigaria com
+   a seta desenhada pelo sistema. A marcação é a borda e a cor do texto — a mesma
+   `--neon`, o mesmo peso de sinal, sem inventar tratamento visual novo. */
+.seletorCidadeAtivo,
+.seletorCidadeAtivo:hover {
+  border-color: var(--neon);
+  color: var(--neon);
+}
+
 /* ⚠️ O `Botao` é `width: 100%` (Story 1.4). Sem esta largura fixa e sem o
    `flex-shrink: 0`, ele resolve o `100%` contra a barra inteira e o campo
    colapsa a zero — o mesmo invólucro que a busca do catálogo usa. */

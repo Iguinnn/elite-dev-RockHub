@@ -73,8 +73,20 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
   const primeiro = (valor: string | string[] | undefined) =>
     (Array.isArray(valor) ? valor[0] : valor) ?? "";
 
-  const termo = primeiro(parametros.q);
-  const cidade = primeiro(parametros.cidade);
+  // ⚠️ **Cortados em 120, pelo mesmo motivo do `periodo` logo abaixo** (code
+  // review da Epic 3). A rota declara `Query(max_length=120)` para os dois, e o
+  // `maxLength={120}` do `<input>` só protege quem digita no formulário — um
+  // endereço colado, um link compartilhado ou uma URL editada à mão passavam
+  // direto e voltavam `422`, que cai no `!resposta.ok` de `listarProgramacao` e
+  // imprime "não foi possível carregar a programação agora". É literalmente a
+  // mentira sobre o backend que a normalização do `periodo` foi escrita para
+  // evitar, dois parâmetros ao lado dela.
+  //
+  // Cortar e buscar é melhor que recusar: quem colou um texto enorme na busca
+  // vê o resultado dos primeiros 120 caracteres, não uma tela de erro.
+  const TETO_DO_PARAMETRO = 120;
+  const termo = primeiro(parametros.q).slice(0, TETO_DO_PARAMETRO);
+  const cidade = primeiro(parametros.cidade).slice(0, TETO_DO_PARAMETRO);
 
   // ⚠️ **Normalizado antes da chamada, e é isso que protege a tela.** O backend
   // devolve `422` para valor fora do enum, e sem esta linha um `/?periodo=xyz`
@@ -208,10 +220,22 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
             <label htmlFor="cidade" className={estilos.rotuloOculto}>
               Filtrar por cidade
             </label>
+            {/* ⚠️ **Marcado em neon quando há cidade escolhida** (code review
+                da Epic 3). O AC da Story 3.2 pede que o filtro ativo fique
+                marcado em neon; o chip de período cumpria e este controle não —
+                o neon dele só aparecia no `:hover`, então nada distinguia
+                "filtrando por São Paulo" de "todas as cidades" além do texto
+                dentro da caixa. A decisão registrada trocou o **elemento** (lista
+                em vez de chips, porque cidade é conjunto aberto); ela não
+                dispensou a marcação do estado. O UX-DR9 continua satisfeito
+                pelo próprio texto selecionado — o neon é reforço, não a única
+                pista. */}
             <select
               id="cidade"
               name="cidade"
-              className={estilos.seletorCidade}
+              className={`${estilos.seletorCidade} ${
+                cidade ? estilos.seletorCidadeAtivo : ""
+              }`}
               defaultValue={cidade}
             >
               {/* `value=""` e não o nome de uma cidade: é o que apaga o filtro,
@@ -228,10 +252,22 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
 
         {/* O período escolhido sobrevive à busca. Sem esta linha, buscar um
             termo desligaria o filtro de tempo — e um teste de tela não pegaria
-            isso. A cidade não precisa de gêmeo: o `<select>` acima já é um
-            campo do form, e se submete sozinho. */}
+            isso. A cidade não precisa de gêmeo **enquanto o `<select>` está na
+            tela**: ele já é um campo do form, e se submete sozinho. */}
         {periodo !== "todos" && (
           <input type="hidden" name="periodo" value={periodo} />
+        )}
+
+        {/* ⚠️ **E precisa de gêmeo quando o `<select>` NÃO está na tela** (code
+            review da Epic 3). Ele é renderizado sob `cidades.length > 1`, mas a
+            `?cidade=` da URL é aplicada sempre. Com o catálogo em uma cidade só
+            — ou com `GET /eventos/cidades` fora do ar, que devolve `[]` — a
+            lista saía filtrada por um controle invisível, e **buscar um termo
+            apagava a cidade em silêncio** enquanto clicar num chip de período a
+            preservava: dois caminhos da mesma barra discordando sobre o mesmo
+            parâmetro. */}
+        {cidades.length <= 1 && cidade && (
+          <input type="hidden" name="cidade" value={cidade} />
         )}
 
         {/* ⚠️ **O `Botao` precisa do invólucro de largura fixa.** Ele é
@@ -261,7 +297,9 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
       {/* A chamada principal: o bloco grande que faz a tela parecer jornal
           (UX-DR4, `DESIGN.md#Components/chamada-principal`). **Uma só por
           tela**, e ela é o próximo show — não uma curadoria. */}
-      {destaque && <ChamadaPrincipal evento={destaque} />}
+      {destaque && (
+        <ChamadaPrincipal evento={destaque} ehOTituloDaTela={aFilaSobrouVazia} />
+      )}
 
       {!aFilaSobrouVazia && (
         <div className={estilos.secTitulo}>
@@ -369,7 +407,14 @@ function comoFrase(nomes: string[]): string {
  * `components/`: ele lê `estilos` deste módulo e não tem segundo consumidor —
  * promovê-lo agora seria inventar uma API para um chamador só.
  */
-function ChamadaPrincipal({ evento }: { evento: EventoEmDestaque }) {
+function ChamadaPrincipal({
+  evento,
+  ehOTituloDaTela,
+}: {
+  evento: EventoEmDestaque;
+  /** Verdadeiro quando a fila esvaziou e esta capa é o único show da tela. */
+  ehOTituloDaTela: boolean;
+}) {
   const conteudo = (
     <>
       <div
@@ -417,8 +462,19 @@ function ChamadaPrincipal({ evento }: { evento: EventoEmDestaque }) {
 
         {/* `<h2>` e não `<h1>`: o `<h1>` da tela é "Programação", e a capa é um
             item dentro dela — dois `<h1>` deixariam o documento sem título
-            único. */}
-        <h2 className={estilos.manchete}>{evento.nome}</h2>
+            único.
+
+            ⚠️ **Menos quando a capa é a tela inteira** (code review da Epic 3).
+            Com um único show em cartaz ele vira a capa, a fila esvazia, o bloco
+            "Programação" é suprimido — e a página inicial do produto ficava sem
+            `<h1>` nenhum, com um `<h2>` como cabeçalho de maior nível. É estado
+            alcançável no primeiro dia de qualquer instalação nova. Quando não há
+            fila, este título **é** o título do documento. */}
+        {ehOTituloDaTela ? (
+          <h1 className={estilos.manchete}>{evento.nome}</h1>
+        ) : (
+          <h2 className={estilos.manchete}>{evento.nome}</h2>
+        )}
 
         {/* `CASA · CIDADE · SETORES` (decisão do Igor), e **nenhuma contagem de
             ingresso em lugar nenhum** (UX-DR7). `<dl>` porque é literalmente uma
