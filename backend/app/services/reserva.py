@@ -54,17 +54,24 @@ neste ponto só transformaria bug de verdade em `422` bonito.
 
 from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
+from app.core.seguranca import assinar_ingresso, gerar_nonce, montar_codigo
 from app.models.evento import Evento, Setor
+from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
 from app.models.usuario import Usuario
 from app.schemas.pagamento import PagamentoEntrada
-from app.schemas.reserva import ItemDaReservaSaida, ReservaEntrada, ReservaSaida
+from app.schemas.reserva import (
+    IngressoSaida,
+    ItemDaReservaSaida,
+    ReservaEntrada,
+    ReservaSaida,
+)
 from app.services.pagamento import PaymentGateway
 
 # ⚠️ **Importado, nunca redeclarado** (decisão registrada na Story 3.4). O
@@ -436,7 +443,10 @@ def obter(sessao: Session, cliente: Usuario, reserva_id: UUID) -> ReservaSaida:
             status_http=404,
         )
 
-    return _para_saida(reserva, evento)
+    # Os canhotos entram aqui também, e não só na resposta do pagamento: a tela
+    # da reserva paga precisa sobreviver a recarregar, e ela é servida por esta
+    # função. Em `PENDENTE` a lista sai vazia sem ida ao banco.
+    return _para_saida(reserva, evento, _ingressos(sessao, reserva, evento))
 
 
 def pagar(
@@ -563,10 +573,38 @@ def pagar(
             status_http=409,
         )
 
-    # É aqui que a Story 3.9 emite os ingressos, na **mesma transação** desta
-    # transição (AD-14) e depois deste `if`: só quem venceu o `rowcount` chega
-    # nesta linha, e é isso que faz "pagamento reprocessado não gera ingresso
-    # novo" ser verdade por construção.
+    # ⚠️ **A emissão acontece aqui, e o lugar é a garantia inteira** (AD-14).
+    # Mesma transação da transição, e **depois** do `if` acima: só quem venceu o
+    # `rowcount` chega nesta linha. É isso, e só isso, que faz "pagamento
+    # reprocessado não gera ingresso novo" ser verdade por construção — não há
+    # `if ja_tem_ingresso` em lugar nenhum, e não deve haver.
+    #
+    # **Um ingresso por unidade**, e não um por item: `2 × Pista` são duas
+    # linhas, com dois ids e dois códigos. É o que permite validar um e o outro
+    # não, que é o comportamento inteiro da Epic 5.
+    for item in reserva.itens:
+        for _ in range(item.quantidade):
+            # O id é gerado **aqui**, e não deixado para o `default` do modelo:
+            # ele entra na assinatura (AD-5), então precisa existir antes do
+            # INSERT. Esperar o banco devolvê-lo obrigaria a um `flush` e a um
+            # segundo `UPDATE` só para gravar a assinatura.
+            ingresso_id = uuid4()
+            nonce = gerar_nonce()
+            sessao.add(
+                Ingresso(
+                    id=ingresso_id,
+                    reserva_id=reserva.id,
+                    evento_id=reserva.evento_id,
+                    setor_id=item.setor_id,
+                    # O nome digitado no checkout, congelado — trocar o nome da
+                    # conta amanhã não reescreve ingresso já emitido.
+                    titular_nome=dados.nome,
+                    assinatura=assinar_ingresso(
+                        ingresso_id, reserva.evento_id, nonce
+                    ),
+                    nonce=nonce,
+                )
+            )
 
     sessao.commit()
 
@@ -580,10 +618,54 @@ def pagar(
             status_http=404,
         )
 
-    return _para_saida(reserva, evento)
+    return _para_saida(reserva, evento, _ingressos(sessao, reserva, evento))
 
 
-def _para_saida(reserva: Reserva, evento: Evento) -> ReservaSaida:
+def _ingressos(
+    sessao: Session, reserva: Reserva, evento: Evento
+) -> list[IngressoSaida]:
+    """Os canhotos de uma reserva paga — vazio em qualquer outro estado.
+
+    **A consulta só acontece quando faz sentido**: ingresso nasce dentro da
+    transação que marca `PAGA` (AD-14), então em `PENDENTE` não há o que buscar
+    e a ida ao banco seria certa de voltar vazia.
+
+    A ordem é a dos setores na página do evento — a mesma dos itens, e pelo
+    mesmo motivo escrito no `_para_saida`. Dentro de um setor, os canhotos saem
+    ordenados por `id`: eles são intercambiáveis, e o que não pode é a ordem
+    mudar entre duas leituras da mesma tela.
+    """
+    if reserva.estado != EstadoReserva.PAGA.value:
+        return []
+
+    setores_por_id = {setor.id: setor for setor in evento.setores}
+    posicao = {setor.id: indice for indice, setor in enumerate(evento.setores)}
+
+    ingressos = sessao.scalars(
+        select(Ingresso).where(Ingresso.reserva_id == reserva.id)
+    ).all()
+
+    return [
+        IngressoSaida(
+            id=ingresso.id,
+            titular_nome=ingresso.titular_nome,
+            setor_nome=setores_por_id[ingresso.setor_id].nome,
+            # ⚠️ Montado a partir da coluna, **sem recalcular**. Recalcular aqui
+            # daria o mesmo valor e escondia o ponto: a coluna existe para esta
+            # linha, e a validação da portaria é que nunca a consulta (AD-5).
+            codigo=montar_codigo(ingresso.id, ingresso.assinatura),
+        )
+        for ingresso in sorted(
+            ingressos, key=lambda i: (posicao[i.setor_id], str(i.id))
+        )
+    ]
+
+
+def _para_saida(
+    reserva: Reserva,
+    evento: Evento,
+    ingressos: list[IngressoSaida] | None = None,
+) -> ReservaSaida:
     """Monta o contrato de saída das duas rotas.
 
     Existe porque três campos da resposta **não** são atributos de `Reserva` nem
@@ -633,4 +715,5 @@ def _para_saida(reserva: Reserva, evento: Evento) -> ReservaSaida:
                 reserva.itens, key=lambda item: posicao_do_setor[item.setor_id]
             )
         ],
+        ingressos=ingressos or [],
     )

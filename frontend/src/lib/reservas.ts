@@ -45,6 +45,21 @@ export type ItemDaReserva = {
  * conta, e quem decide se a reserva expirou é o servidor, na Story 3.7 — o
  * cronômetro chegando a zero é informação, não veredito.
  */
+/**
+ * Espelha `app/schemas/reserva.py::IngressoSaida` (Story 3.9).
+ *
+ * `codigo` é `ID.ASSINATURA` (AD-5) — o conteúdo que vira QR. A assinatura e o
+ * nonce **não** chegam separados: o código já os traz no formato que a
+ * validação da portaria espera, e expor as partes convidaria a recombiná-las
+ * por fora.
+ */
+export type IngressoDaReserva = {
+  id: string;
+  titular_nome: string;
+  setor_nome: string;
+  codigo: string;
+};
+
 export type ReservaSaida = {
   id: string;
   evento_id: string;
@@ -54,6 +69,12 @@ export type ReservaSaida = {
   expira_em: string;
   total_centavos: number;
   itens: ItemDaReserva[];
+  /**
+   * ⚠️ **Vazia até a reserva ser `PAGA`**, e é isso que a torna segura de estar
+   * sempre no contrato: ingresso só nasce dentro da transação do pagamento
+   * (AD-14). A tela ramifica pelo `estado`, nunca pelo tamanho desta lista.
+   */
+  ingressos: IngressoDaReserva[];
 };
 
 /**

@@ -87,6 +87,11 @@ def test_cookie_e_secure_apenas_em_producao(
         # produção — sem isto, a `Settings` nem chega a existir para este
         # teste, que não tem nada a ver com catálogo.
         ticketmaster_api_key="chave-de-teste-nao-vaze-isto",
+        # E desde a Story 3.9 o segredo do ingresso entrou na mesma lista, pelo
+        # mesmo motivo: valor de exemplo em produção é recusado. Este teste é
+        # sobre o `Secure` do cookie e não sabe o que é ingresso — mas uma
+        # `Settings` de produção precisa estar inteira para nascer.
+        ticket_signing_secret="segredo-de-ingresso-so-para-este-teste",
     )
     monkeypatch.setattr(auth_router, "obter_settings", lambda: settings_producao)
 

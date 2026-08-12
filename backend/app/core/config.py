@@ -11,6 +11,7 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _JWT_SECRET_EXEMPLO = "troque-este-valor-em-producao"
+_TICKET_SECRET_EXEMPLO = "troque-este-valor-em-producao-tambem"
 
 
 class Settings(BaseSettings):
@@ -40,6 +41,14 @@ class Settings(BaseSettings):
     jwt_secret: str = _JWT_SECRET_EXEMPLO
     cookie_sessao_nome: str = "rockhub_sessao"
 
+    # ⚠️ **Segredo próprio, e não o `jwt_secret` reaproveitado** (decisão do
+    # Igor). Segredo com dois usos é o que impede girar um sem derrubar o outro:
+    # trocar a chave de sessão passaria a invalidar **todo ingresso já
+    # emitido**, porque a assinatura do AD-5 sai dela. São dois ciclos de vida
+    # diferentes — sessão dura 8 horas, ingresso dura até o show — e eles não
+    # cabem na mesma chave.
+    ticket_signing_secret: str = _TICKET_SECRET_EXEMPLO
+
     # Padrão `""`, não um valor de exemplo como o `JWT_SECRET`: não existe chave
     # de exemplo que a Ticketmaster aceite, então "ausente" e "de exemplo" são a
     # mesma situação aqui — o validador abaixo trata só a ausência.
@@ -59,6 +68,25 @@ class Settings(BaseSettings):
         if self.ambiente == "producao" and self.jwt_secret == _JWT_SECRET_EXEMPLO:
             raise ValueError(
                 "JWT_SECRET ainda é o valor de exemplo em produção. Gere um novo com: "
+                "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _recusar_segredo_de_ingresso_de_exemplo_em_producao(self) -> Self:
+        """Motivo separado do validador do `JWT_SECRET`, como o da Ticketmaster.
+
+        Uma mensagem só faria quem depura procurar a chave errada — e esta falha
+        é a mais cara das três: com o segredo de exemplo em produção, qualquer
+        pessoa que leia o repositório forja ingresso válido.
+        """
+        if (
+            self.ambiente == "producao"
+            and self.ticket_signing_secret == _TICKET_SECRET_EXEMPLO
+        ):
+            raise ValueError(
+                "TICKET_SIGNING_SECRET ainda é o valor de exemplo em produção — "
+                "com ele, qualquer um forja ingresso. Gere um novo com: "
                 "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
             )
         return self

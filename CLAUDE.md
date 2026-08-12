@@ -209,8 +209,11 @@ evento com setores, modelo de reserva e a reserva com `UPDATE` condicional do AD
 3.8 e 3.9**, e elas são a primeira techspec agrupada do projeto (expiração preguiçosa, pagamento
 com recusa e emissão de ingresso convergem na mesma função `pagar_reserva`).
 
-⚠️ **Antes do merge da Epic 3:** a migração da 3.2 roda `CREATE EXTENSION unaccent`. Se o Postgres
-da Railway recusar, o deploy inteiro falha — não só a busca. Confirmar no painel.
+⚠️ **Antes do merge da Epic 3:** conferir que a `TICKET_SIGNING_SECRET` no painel da Railway **não**
+é o valor de exemplo. Ela já estava definida lá, mas a Story 3.9 passou a lê-la e a validá-la — com
+o valor de exemplo, a aplicação recusa subir. O `CREATE EXTENSION unaccent` da 3.2 **já foi
+conferido** em 2026-08-11 (usuário `postgres`, `usesuper = true`, extensão criada à mão pelo painel);
+o registro está no docstring da própria migração, e não há o que refazer.
 
 **As duas metades estão no ar:** frontend em <https://elite-dev-rock-hub.vercel.app> (Vercel)
 e API + PostgreSQL em <https://elite-dev-rockhub-production.up.railway.app> (Railway), **os dois
@@ -299,6 +302,15 @@ _bmad-output/
 - **Nenhuma verificação local pega arquivo que nunca entrou no repositório.** `npm run build`,
   `tsc --noEmit` e a suíte do backend leem o disco, não o índice do git. Só um clone limpo
   revela — e o primeiro clone limpo deste projeto foi o da Vercel.
+- **Story que cria migração precisa de `uv run alembic upgrade head` no banco de desenvolvimento,
+  e a suíte não avisa que faltou.** O `conftest.py` migra o `rockhub_teste` sozinho (`downgrade
+  base` + `upgrade head`) a cada sessão, então 379 testes passam com o `rockhub` — o banco que o
+  `uvicorn` usa — uma revisão atrás. O sintoma não parece migração: a tela mostra a frase genérica
+  de erro, porque um `INSERT` em tabela inexistente vira `500` → `ERRO_INTERNO`, que nenhuma tela
+  traduz. Aconteceu na Story 3.9, com a tabela `ingresso`. **Rode o `upgrade head` no mesmo passo
+  em que a migração é criada**, e confira com `uv run alembic current` contra `alembic heads`. A
+  causa real aparece inteira no log do `uvicorn` — é o primeiro lugar a olhar quando a tela diz
+  "tente de novo em instantes".
 - `uv` instalado em `C:\Users\Asus\.local\bin` (necessário para os scripts Python do BMAD)
 - **Docker Desktop precisa estar no ar** para `uv run pytest`: a suíte roda contra o Postgres
   real desde a Story 1.3. Sem ele, só os testes de `/saude`, erros, config e segurança passam.

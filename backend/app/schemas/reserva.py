@@ -85,6 +85,24 @@ class ItemDaReservaSaida(BaseModel):
     preco_unitario_centavos: int
 
 
+class IngressoSaida(BaseModel):
+    """Um canhoto — o que a tela desenha e o que a portaria vai ler (Story 3.9).
+
+    **`codigo` é `ID.ASSINATURA`** (AD-5), e é ele que vira QR. A `assinatura` e
+    o `nonce` **não** entram separados: o código já os carrega no formato que a
+    validação espera, e expor as partes convidaria alguém a recombiná-las por
+    fora.
+
+    **`setor_nome` e não `setor_id`**: quem lê o canhoto quer saber onde vai
+    ficar. O id não é desenhado em lugar nenhum desta tela.
+    """
+
+    id: UUID
+    titular_nome: str
+    setor_nome: str
+    codigo: str
+
+
 class ReservaSaida(BaseModel):
     """A reserva como o cliente a vê — o corpo das duas rotas da Story 3.6.
 
@@ -127,3 +145,14 @@ class ReservaSaida(BaseModel):
     # que a Story 3.5 deixou escrita no modelo ao recusar um `order_by` no
     # `relationship` (lá não há coluna de ordem natural; aqui há o nome).
     itens: list[ItemDaReservaSaida]
+    # ⚠️ **Vazia enquanto a reserva não é `PAGA`**, e é isso que a torna segura
+    # de estar sempre no contrato: ingresso só nasce dentro da transação que
+    # marca o pagamento (AD-14), então não há estado em que ela minta. A tela
+    # ramifica pelo `estado`, não pelo tamanho desta lista.
+    #
+    # **Aqui, e não numa rota própria** (decisão do Igor): a reserva paga já é o
+    # endereço da confirmação, e quem acabou de pagar não deveria precisar de
+    # uma segunda chamada para ver o que comprou. `Meus ingressos` é a Epic 4, e
+    # é ela que ganha rota própria — para listar ingressos de **várias** compras,
+    # que é uma pergunta diferente.
+    ingressos: list[IngressoSaida] = []

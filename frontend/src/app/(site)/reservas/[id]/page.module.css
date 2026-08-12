@@ -172,6 +172,55 @@
   color: var(--cal);
 }
 
+/* ---- os canhotos (Story 3.9) -------------------------------------------- */
+
+.canhotos {
+  margin-top: 22px;
+  border-top: 1px solid var(--fio);
+}
+
+/* Um bloco por ingresso, separado por fio — o mesmo desenho da lista de itens
+   logo acima, e nenhum card. */
+.canhoto {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 12px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.identidadeDoCanhoto {
+  min-width: 0;
+}
+
+.setorDoCanhoto {
+  display: block;
+  font: 400 23px/1.2 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+.titular {
+  display: block;
+  margin-top: 4px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* O código é longo (36 do UUID + 43 da assinatura). `overflow-wrap` porque ele
+   é uma palavra só e estouraria a coluna no celular. */
+.codigoDoIngresso {
+  max-width: 46ch;
+  padding: 10px 12px;
+  border: 1px solid var(--fio);
+  background: var(--breu2);
+  font: 12px/1.5 var(--mono);
+  color: var(--cal);
+  overflow-wrap: anywhere;
+}
+
 /* ---- abaixo de 700px ----------------------------------------------------- */
 
 @media (max-width: 700px) {
@@ -199,5 +248,17 @@
 
   .total {
     font-size: 25px;
+  }
+
+  /* O canhoto empilha: setor e titular acima, código abaixo. Lado a lado num
+     celular sobram menos de 12 caracteres por linha para o código. */
+  .canhoto {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .codigoDoIngresso {
+    max-width: none;
   }
 }

@@ -43,7 +43,12 @@ from app.models.usuario import PapelUsuario, Usuario
 from app.services.evento import MAXIMO_POR_COMPRA
 from app.services.reserva import PRAZO_DE_RESERVA_MINUTOS
 
-# As oito chaves do `ReservaSaida`, e nenhuma a mais (AC9).
+# As nove chaves do `ReservaSaida`, e nenhuma a mais (AC9).
+#
+# ⚠️ Eram oito até a Story 3.9, que acrescentou `ingressos` — a lista de
+# canhotos, vazia enquanto a reserva não é `PAGA`. O contrato desta story
+# continua sendo o mesmo em tudo que ela afirma: o que entrou não é estoque, é o
+# que foi comprado.
 CHAVES_DA_RESERVA = {
     "id",
     "evento_id",
@@ -53,6 +58,7 @@ CHAVES_DA_RESERVA = {
     "expira_em",
     "total_centavos",
     "itens",
+    "ingressos",
 }
 
 # As quatro do `ItemDaReservaSaida`.

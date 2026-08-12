@@ -113,9 +113,11 @@ development_status:
   # URL (nada de filtrar em JavaScript — a raiz continua Server Component);
   # período e cidade vindos do banco, com `GET /eventos/cidades` alimentando os
   # chips; e a busca ignorando acento pela extensão `unaccent`, o que traz a
-  # primeira migração deste projeto que não cria tabela. ⚠️ Se o Postgres da
-  # Railway recusar `CREATE EXTENSION`, o deploy inteiro falha, não só a busca —
-  # confirmar no painel antes do merge da epic.
+  # primeira migração deste projeto que não cria tabela. ✅ RESOLVIDO em
+  # 2026-08-11: o risco de o Postgres da Railway recusar `CREATE EXTENSION` foi
+  # conferido no painel — usuário `postgres` com `usesuper = true`, extensão
+  # 1.1 disponível e já criada à mão, então a migração é no-op lá. O registro
+  # está no docstring da migração `06c1ad5ac276`. Nada pendente.
   3-2-buscar-e-filtrar-a-programacao: review
   # Seis decisões do Igor: a arte chega por **rota própria** (`GET /eventos/destaque`,
   # com `EventoEmDestaque`) em vez de `imagem_url` entrar no `EventoNaProgramacao`
@@ -191,7 +193,17 @@ development_status:
   # `RECUSADA`/`EXPIRADA` com o estoque devolvido; sem o commit, o status sai
   # idêntico e o estoque nunca volta — falha invisível fora do banco.
   3-8-pagar-com-aprovacao-e-com-recusa: review
-  3-9-receber-ingressos-com-codigo-nao-forjavel: backlog
+  # Commit 3, e o fim da techspec: tabela `ingresso` (sétima do schema), emissão
+  # de um ingresso por unidade dentro da transação que marca `PAGA` (AD-14), e o
+  # código `ID.ASSINATURA` com HMAC-SHA256 (AD-5). Decisões do Igor:
+  # `TICKET_SIGNING_SECRET` como variável própria — girar a de sessão passaria a
+  # invalidar ingresso emitido; a coluna `assinatura` guardada só para montar o
+  # QR, com a validação sempre recalculando; e `titular_nome` vindo do campo do
+  # checkout, não de `usuario.nome`. ⚠️ Duas armadilhas: a emissão tem que ficar
+  # **dentro** do ramo que vence o `_transicionar`, senão reprocessar emite em
+  # dobro sem quebrar nenhum teste sequencial; e `hmac.compare_digest`, nunca
+  # `==`. O QR desenhado é da Story 4.2 — aqui nasce o código, não a imagem.
+  3-9-receber-ingressos-com-codigo-nao-forjavel: review
   epic-3-retrospective: optional
 
   # ---------- Epic 4: Meus ingressos e compartilhamento ----------
