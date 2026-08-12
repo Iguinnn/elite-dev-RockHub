@@ -17,6 +17,8 @@ rota pública dele é `/eventos` — a URL de quem só está olhando não carreg
 nome de um papel.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -24,6 +26,7 @@ from app.core.db import obter_sessao
 from app.schemas.evento import (
     EventoEmDestaque,
     EventoNaProgramacao,
+    EventoPublico,
     PeriodoDaProgramacao,
 )
 from app.services import evento as servico_de_evento
@@ -32,13 +35,13 @@ router = APIRouter(tags=["público"])
 
 
 # ⚠️ **As duas rotas de path fixo abaixo — `/eventos/cidades` e
-# `/eventos/destaque` — precisam continuar declaradas antes de qualquer
-# `/eventos/{id}`.** A Story 3.4 pendura o detalhe do evento neste mesmo router,
-# e o FastAPI casa as rotas na ordem em que elas foram registradas: com
-# `/eventos/{id}` em cima, uma chamada a `/eventos/cidades` tentaria ler
-# `"cidades"` como UUID e devolveria `422` — um erro de validação para um
-# endereço que existe, que é a pior pista possível para quem for procurar o
-# defeito.
+# `/eventos/destaque` — precisam continuar declaradas antes do
+# `/eventos/{evento_id}` do fim do arquivo.** Ele existe desde a Story 3.4, e o
+# FastAPI casa as rotas na ordem em que elas foram registradas: com o detalhe em
+# cima, uma chamada a `/eventos/cidades` tentaria ler `"cidades"` como UUID e
+# devolveria `422` — um erro de validação para um endereço que existe, que é a
+# pior pista possível para quem for procurar o defeito. Há um teste provando as
+# duas de pé justamente por isso.
 #
 # O aviso é **um só para as duas**, e não um por rota: elas formam um bloco, e
 # repetir a explicação faria a terceira parecer uma exceção quando ela for a
@@ -143,3 +146,39 @@ def listar_programacao(
     resultado também — quem distingue os dois casos é a tela, não o status.
     """
     return servico_de_evento.listar_programacao(sessao, q, cidade, periodo)
+
+
+# ⚠️ **Esta é a rota de path param do bloco de cima, e é por isso que ela está no
+# fim do arquivo.** Mover qualquer coisa para depois dela é seguro; mover ela para
+# antes de `/eventos/cidades` ou `/eventos/destaque` quebra as duas.
+@router.get("/eventos/{evento_id}", response_model=EventoPublico)
+def obter_evento(
+    evento_id: UUID,
+    sessao: Session = Depends(obter_sessao),
+) -> EventoPublico:
+    """Um evento em cartaz com seus setores — a tela da escolha (Story 3.4).
+
+    **Pública pelo mesmo critério das outras três**: nenhuma dependência de
+    sessão, nenhum `Depends(exigir_papel(...))`, nenhum parâmetro de query.
+    Chamá-la logado como cliente, organizador ou portaria devolve exatamente o
+    mesmo corpo — não existe caminho pelo qual a identidade de quem chama
+    influencie o resultado. É ela que fecha o link que a fila da programação (3.1)
+    e a chamada principal (3.3) já apontavam.
+
+    **`evento_id: UUID`, e não `str`.** O Pydantic recusa `/eventos/banana` com
+    `422` antes de a consulta ser montada, e a tela trata `404` e `422` no mesmo
+    ramo: para quem lê, "esse endereço está errado" e "esse show não está em
+    cartaz" são a mesma coisa.
+
+    **`404` único para três casos** — `id` inexistente, evento em rascunho e
+    evento cuja data já passou. O motivo está no service: distinguir os três
+    transformaria a rota num oráculo sobre o que ainda não foi publicado.
+
+    **O que o corpo recusa**: `capacidade` e `vendidos` (UX-DR7, AD-13), e
+    `publicado_em`, `origem_externa_id` e `organizador_id` (assunto de quem
+    publica). Esta é a rota pública que chega mais perto do estoque — é nela que a
+    pessoa escolhe **quantos** ingressos quer —, e o que atravessa em lugar dos
+    dois números é uma proporção e uma palavra por setor. `preco_centavos`
+    **entra**, e é a primeira vez em rota de cliente: preço não é contagem.
+    """
+    return servico_de_evento.obter_publico(sessao, evento_id)

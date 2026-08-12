@@ -375,6 +375,146 @@ class EventoEmDestaque(BaseModel):
     esgotado: bool
 
 
+class DisponibilidadeDoSetor(str, Enum):
+    """Quanto resta de um setor, **em palavra** — nunca em número (Story 3.4).
+
+    **`str, Enum`, no molde do `PeriodoDaProgramacao`**: os três valores entram
+    no OpenAPI, e quem consome o contrato sabe que a lista é fechada. A tela lê a
+    palavra e escolhe a cor da barra; ela não tem como inventar um quarto estado
+    porque não é ela quem decide qual é o estado.
+
+    **Por que um enum de três valores e não `esgotado: bool` + `ultimos: bool`.**
+    Dois booleanos permitem quatro combinações e uma delas é impossível
+    (`esgotado=True, ultimos=True`) — a tela precisaria de um `if` para tratar um
+    estado que o backend jamais manda, ou pior, esqueceria e desenharia a barra
+    cheia com a palavra errada. Um enum fechado não tem estado inválido para
+    esquecer. É também mais barato de crescer: se um dia houver `EM_BREVE`, ele é
+    um valor a mais aqui, e não um terceiro booleano multiplicando o número de
+    combinações por dois.
+
+    **O estado é derivado no backend, e é isso que protege o UX-DR7.** O limiar
+    nasce de `capacidade` e `vendidos` (AD-13), os dois números que esta rota não
+    pode devolver. Mandar os dois para a tela decidir seria o caminho mais curto
+    para o estoque atravessar: a regra viraria uma linha de TSX e os números
+    ficariam no devtools de qualquer visitante. Aqui só a palavra atravessa —
+    `ULTIMOS` diz "corre" sem dizer "restam 3".
+
+    `ULTIMOS` é **20% ou menos da capacidade** (decisão do Igor), na mesma moeda
+    do medidor: a barra e a palavra dizem a mesma coisa, e a regra vale igual
+    para um setor de 50 e um de 5.000 lugares. A alternativa — "10 ingressos ou
+    menos" — faria metade da casa ser "últimos" num setor de 20 lugares.
+    """
+
+    DISPONIVEL = "DISPONIVEL"
+    ULTIMOS = "ULTIMOS"
+    ESGOTADO = "ESGOTADO"
+
+
+class SetorPublico(BaseModel):
+    """Um setor como **quem vai comprar** o vê (Story 3.4).
+
+    ⚠️ **Ele não é o `SetorSaida`, e reusar aquele aqui seria o UX-DR7 caindo por
+    reuso de schema.** `SetorSaida` carrega `capacidade` e `vendidos` porque é o
+    inventário do organizador — quem publicou vê números exatos, e vê por
+    direito. Esta rota é a que chega **mais perto** do estoque em todo o lado
+    público (é a tela em que a pessoa escolhe quantos ingressos quer), e é
+    justamente por isso que ela não pode carregá-lo. A tentação é maior do que na
+    Story 3.3, onde a ficha da capa só precisava de nomes: aqui a tela precisa
+    **de dado de setor de verdade**, e o schema errado está a um import de
+    distância.
+
+    **`preco_centavos` entra, e é a primeira vez em rota de cliente.** Até aqui
+    só saíram derivados (`preco_minimo_centavos`), para o estoque não vazar junto
+    com o preço. Aqui o preço de cada setor é a informação principal da tela —
+    ninguém escolhe entre Pista e Camarote sem saber quanto custa cada um —, e
+    preço não é contagem: ele não diz nada sobre quantos ingressos restam.
+
+    **`proporcao_vendida` é proporção, não contagem, e a diferença é a story
+    inteira.** Ela é `vendidos / capacidade` arredondada em duas casas, e é a
+    largura da barra do medidor. Devolver os dois números daria à tela a mesma
+    barra e mais a frase "restam 61" — que é exatamente o que o
+    `DESIGN.md#Do's and Don'ts` proíbe em tela de cliente. Duas casas desenham a
+    barra com precisão de 1%, mais do que 5px de altura conseguem mostrar, e
+    menos dígitos é menos superfície para alguém tentar reconstruir a capacidade.
+
+    ⚠️ **O nome é feminino — `proporcao_vendida`, concordando com "proporção".**
+    Não é preciosismo: `proporcao_vendidos` casaria a palavra proibida
+    `vendidos` na varredura de texto do teste desta rota, e obrigaria a afrouxar
+    a asserção que existe justamente para não ser afrouxada.
+
+    **Sem `from_attributes`**, como o `EventoNaProgramacao` e o
+    `EventoEmDestaque`: dois dos cinco campos não são atributos do `Setor` — eles
+    nascem no service, de `capacidade` e `vendidos`. Declarar a conversão
+    prometeria uma leitura que não acontece.
+    """
+
+    id: UUID
+    nome: str
+    preco_centavos: int
+    disponibilidade: DisponibilidadeDoSetor
+    # `0.0`–`1.0`, duas casas. **A largura da barra**, e nada mais: não existe
+    # caminho de volta daqui para `capacidade` nem para `vendidos`.
+    proporcao_vendida: float
+
+
+class EventoPublico(BaseModel):
+    """Um evento com seus setores, como **quem vai comprar** o vê (Story 3.4).
+
+    A quarta e última vista pública da Epic 3, e a única que abre o evento setor
+    a setor. As outras três — programação, capa e cidades — são listagem; esta é
+    a tela da decisão.
+
+    **O que ele recusa, e por quê:**
+
+    - **`capacidade` e `vendidos`** — UX-DR7 e AD-13, garantidos por este
+      `response_model` e não pela tela. O que substitui os dois é o par de campos
+      derivados do `SetorPublico`: uma proporção e uma palavra. É a diferença
+      entre desenhar uma barra pela metade e dizer "restam 61"
+    - **`publicado_em`, `origem_externa_id` e `organizador_id`** — assunto de
+      quem publica, não de quem está escolhendo um show. Mesma recusa dos outros
+      três contratos públicos
+    - **Endereço, classificação e fonte**, que o protótipo desenha — nenhum dos
+      três existe no `Evento` (decisão do Igor). A ficha mostra `CASA` e
+      `CIDADE`: o que a tela mostra é o que o banco tem
+
+    **`maximo_por_compra` é teto fixo, e não `min(disponivel, 6)`** (decisão do
+    Igor). É ele que permite ao stepper ter um teto **sem que o contrato revele
+    quantos ingressos restam**: um teto que acompanhasse o estoque diria "restam
+    2" toda vez que restassem poucos — pela tela e pelo devtools —, que é
+    exatamente o que o UX-DR7 mantém fora. Pedir mais do que existe é recusado na
+    Story 3.6, pelo `UPDATE` condicional do AD-3, e o
+    `EXPERIENCE.md#Concorrência` já tem a frase escrita.
+
+    **E ele vem do contrato em vez de ser constante da tela** porque a Story 3.6
+    vai cobrar o mesmo teto do lado do servidor: com o número em dois lugares, o
+    dia em que a regra mudar é o dia em que o stepper e a rota de reserva passam
+    a discordar sobre qual é o teto — e quem descobre isso é a pessoa que
+    escolheu 8 ingressos e recebeu uma recusa.
+
+    **Sem `from_attributes`**, como os outros dois schemas públicos: `setores` é
+    uma lista de `SetorPublico` (não de `Setor`) e `maximo_por_compra` não é
+    coluna de nada. Quem monta os dois é o service.
+    """
+
+    id: UUID
+    nome: str
+    data_hora: datetime
+    local: str
+    cidade: str | None
+    # Anulável desde a Story 2.3, e a chave **continua no corpo** quando é nula:
+    # a tela distingue "sem arte" (bloco do mesmo tamanho no lugar) de "campo que
+    # não veio", como na capa da 3.3. Nada de `exclude_none` aqui.
+    imagem_url: str | None
+    # Constante do service (`MAXIMO_POR_COMPRA`), igual para todo evento hoje.
+    # Está no contrato, e não na tela, pelo motivo escrito acima.
+    maximo_por_compra: int
+    # Todos, **inclusive o esgotado**, em ordem alfabética — a ordem já vem do
+    # `order_by="Setor.nome"` do `relationship` (Story 2.3), não de um `sorted()`
+    # no service. A tela esmaece o esgotado e tira o stepper dele; sumir com ele
+    # faria a pessoa procurar o Camarote que o amigo comprou na semana passada.
+    setores: list[SetorPublico]
+
+
 class EventoSaida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

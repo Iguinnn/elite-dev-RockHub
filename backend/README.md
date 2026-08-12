@@ -1275,8 +1275,50 @@ não recebe parâmetro nenhum, e está declarada no mesmo bloco de path fixo da 
 agora com um aviso só cobrindo as duas. `preco_minimo_centavos` segue a mesma regra da fila: é o
 menor preço **entre os setores que ainda têm ingresso**, `null` quando não há nenhum, e há um teste
 com a Pista esgotada a R$ 120,00 ao lado do Camarote a R$ 420,00 provando que ele pula o esgotado —
-os setores, esses, continuam os dois na ficha. A suíte foi de 231 para 263 e agora para **279
-testes**.
+os setores, esses, continuam os dois na ficha. A suíte foi de 231 para 263 e depois para 279 testes.
+
+**`GET /eventos/{id}` fecha a programação pública** (Story 3.4), e é a rota que chega mais perto do
+estoque em todo o lado do cliente — é nela que a pessoa escolhe *quantos* ingressos quer. Por isso o
+`EventoPublico` continua sem `capacidade` e sem `vendidos`: o que sai por setor é um par derivado,
+`proporcao_vendida` (a largura da barra do medidor) e `disponibilidade` (`DISPONIVEL`, `ULTIMOS` ou
+`ESGOTADO`). A alternativa era devolver `disponivel` cru e deixar a tela desenhar barra, palavra e
+teto do seletor — uma linha de schema e zero derivação aqui. Descartei porque é o UX-DR7 caindo no
+contrato, a mesma linha que as Stories 3.1 e 3.3 defenderam com `response_model` e teste de
+varredura: proporção não é contagem, e é essa a diferença entre desenhar uma barra pela metade e
+dizer "restam 61". `preco_centavos` **entra**, e é a primeira vez em rota de cliente — preço não é
+contagem, e ninguém escolhe entre Pista e Camarote sem saber quanto custa cada um. A consequência
+disso é a terceira lista de palavras proibidas do mesmo arquivo de teste, com o motivo escrito
+dentro dela: na 3.1 `setores` e `imagem_url` eram proibidas, na 3.3 viraram legítimas, e aqui
+`preco_centavos` também. Foi por isso que o campo derivado se chama `proporcao_vendida`, no feminino:
+`proporcao_vendidos` casaria a palavra `vendidos` na varredura e me obrigaria a afrouxar a asserção
+que existe justamente para não ser afrouxada.
+
+**`maximo_por_compra` é teto fixo — `6`, e não `min(disponivel, 6)`.** Ele vem do contrato porque é
+o que dá ao seletor de quantidade um limite **sem que a resposta revele quanto resta em estoque**: um
+teto que acompanhasse o estoque diria "restam 2" pela tela e pelo devtools toda vez que restassem
+poucos. Descartei o teto dinâmico por isso, mesmo sendo o mais honesto dos dois — quem recusa o
+pedido maior do que existe é o `UPDATE` condicional do AD-3, na Story 3.6, e é ele a garantia que o
+desafio mais pontua. E ele vem do contrato em vez de ser constante do frontend porque a mesma 3.6 vai
+cobrar o teto do lado do servidor: com o número em dois lugares, o dia em que a regra mudar é o dia
+em que a tela e a rota de reserva passam a discordar. O limiar de `ULTIMOS` é **20% ou menos da
+capacidade**, calculado em inteiros (`restam * 5 <= capacidade`) e não com `0.2` em ponto flutuante —
+um setor de 15 lugares com 12 vendidos deixa exatamente 20%, e é na borda que o `float` decide
+sozinho. `ESGOTADO` é conferido primeiro, senão zero restante cairia em `ULTIMOS`.
+
+**Os três casos fora de cartaz recebem o mesmo `404`**: `id` que não é evento nenhum, evento em
+rascunho e evento cuja data já passou, todos com `EVENTO_NAO_ENCONTRADO` e a mesma mensagem. A
+alternativa — abrir o evento passado, ou distinguir rascunho de inexistente — deixaria o recorte de
+ser um só entre as quatro rotas públicas e transformaria a rota num oráculo: daria para varrer UUIDs
+e descobrir o que um organizador ainda não publicou. É a mesma disciplina do login da 1.4, que não
+diz se o e-mail existe. O recorte é idêntico ao das outras três (`publicado_em IS NOT NULL` e
+`data_hora >= agora`, com `agora` lido uma vez), e as três condições vão no mesmo `where` de uma
+consulta só — não um `sessao.get()` seguido de dois `if` —, pelo motivo já escrito no
+`obter_do_organizador`: com tudo no `where`, "só vejo o que está em cartaz" é verdade por construção.
+Declarei a rota **no fim do `publico.py`**, depois das duas de path fixo, e há um teste provando
+`/eventos/cidades` e `/eventos/destaque` de pé depois dela existir: com o path param em cima, o
+FastAPI leria `"cidades"` como UUID e devolveria `422`, e o sintoma apareceria longe da causa — a raiz
+perderia os chips e a capa sumiria, sem que nada ligasse isso a uma rota nova de detalhe. A suíte foi
+de 279 para **293 testes**.
 
 ## Convenções que nascem aqui
 
@@ -1348,7 +1390,7 @@ cd backend
 uv run pytest
 ```
 
-São **263 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **293 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
 `Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
@@ -1356,9 +1398,10 @@ papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`,
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
 também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Stories 2.4 e
 2.5), a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5) e as duas
-rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e as duas rotas
-públicas, `GET /eventos` e `GET /eventos/cidades` (`test_programacao.py`, Stories 3.1 e 3.2 —
-incluindo os três testes do escape do `LIKE` e os dois da busca sem acento nos dois sentidos).
+rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e as quatro rotas
+públicas, `GET /eventos`, `GET /eventos/cidades`, `GET /eventos/destaque` e `GET /eventos/{id}`
+(`test_programacao.py`, Stories 3.1 a 3.4 — incluindo os três testes do escape do `LIKE`, os dois da
+busca sem acento nos dois sentidos e o da borda dos 20% no limiar de "últimos ingressos").
 
 `test_programacao.py` é o único arquivo cujos testes começam por `cliente.cookies.clear()` em vez de
 um login: o `TestClient` guarda cookie entre chamadas, e um teste que "prova" acesso anônimo depois

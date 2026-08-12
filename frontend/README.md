@@ -1364,12 +1364,13 @@ baixo do mês.
 Um `<Link>` com `pointer-events: none` continua no Tab e continua sendo anunciado como link por
 leitor de tela, e o padrão pede que a fila esgotada **não** seja clicável: a ausência de resposta ao
 hover é a informação. A palavra "Esgotado" está escrita no selo, então a informação não depende de
-enxergar o vermelho da brasa. ⚠️ O `href` aponta para `/eventos/{id}`, **que só nasce na Story 3.4** —
-até lá o clique cai na 404 do projeto. É janela consciente, do mesmo tipo da que o AD-7 teve entre a
-2.4 e a 2.5: ela vive dentro da branch da epic, que só eu publico, e a 3.4 é quem a fecha. Ela
-contraria o precedente escrito no `Masthead.tsx` ("link que cai no 404 não fica no repositório"), e a
-diferença que aceitei é de alcance — lá é navegação permanente, visível em toda tela; aqui é um
-`href` que fecha na mesma epic.
+enxergar o vermelho da brasa. O `href` aponta para `/eventos/{id}`, e **essa janela fechou na Story
+3.4**: o endereço existe, e o clique chega na página do evento. Ela ficou aberta três stories — da 3.1
+até a 3.4 —, contrariando o precedente que eu mesmo escrevi no `Masthead.tsx` ("link que cai no 404
+não fica no repositório"), e a diferença que aceitei era de alcance: lá é navegação permanente,
+visível em toda tela; aqui era um `href` dentro da branch da epic, que só eu publico. Deixo o registro
+porque a aposta era essa — janela consciente com prazo, do mesmo tipo da que o AD-7 teve entre a 2.4 e
+a 2.5 — e ela venceu no prazo.
 
 **A busca é a URL, não estado** (Story 3.2), e é isso que mantém a raiz inteira no servidor depois de
 ela ganhar um campo de texto, dois grupos de chips e um botão. A barra é um `<form method="get"
@@ -1464,6 +1465,57 @@ sozinho. O kicker ganhou `dataDaChamada` no `formato.ts`, e ela **não** é a
 `dataPorExtenso` com um parâmetro a mais: um booleano naquela função lhe daria duas saídas e obrigaria
 as quatro telas do organizador a declarar qual delas querem. Data formatada inline na tela é o defeito
 que o code review da Epic 2 achou, e o `FUSO` continua num lugar só.
+
+**A página do evento (`/eventos/[id]`, Story 3.4) é a primeira rota dinâmica pública do frontend, e a
+metade de cima dela continua Server Component.** Cabeçalho, ficha e arte são renderizados no servidor;
+o que precisa de navegador é o seletor de quantidade, e ele é a **primeira ilha `"use client"` do lado
+público** — `components/EscolhaDeIngressos.tsx`. Ele mora em `components/` e não dentro da tela, ao
+contrário do `ChamadaPrincipal` da 3.3, porque a diretiva é do **módulo**: um `"use client"` no
+`page.tsx` arrastaria o cabeçalho inteiro para o cliente, e a página deixaria de ser servidor sem que
+nada avisasse além do relatório de rotas do `npm run build`. O precedente é o `FormularioPublicacao`, e
+o que atravessa a fronteira são dados serializáveis — a lista de setores e o teto por compra —, nunca
+funções. Dinheiro é o `centavosParaReais` do `formato.ts`, que é módulo puro e atravessa de propósito:
+nada de `Intl` dentro da ilha.
+
+**Nenhum número de estoque existe do lado de cá da rede**, e não é disciplina desta tela: o contrato
+não os tem (UX-DR7). Cada setor chega com uma proporção — a largura da barra do medidor — e uma
+palavra. A barra é `aria-hidden` e a palavra está **escrita** (`Disponível`, `Últimos ingressos`,
+`Esgotado`): quem usa leitor de tela ouve o estado, não uma porcentagem sem contexto, e a informação
+não é dada só por cor (UX-DR9). O setor esgotado fica esmaecido e **sem stepper no DOM** — não são
+botões desabilitados por CSS, pelo mesmo motivo já escrito na fila da 3.1: opacidade sem o atributo
+deixa o elemento clicável e no Tab, anunciado como ativo. E o mesmo vale para os `+` no teto e os `−`
+no zero, que são `disabled` de verdade; cada botão tem nome acessível próprio (`Mais um ingresso da
+Pista`), porque `+` sozinho não diz de que setor é, e a quantidade fica num `aria-live="polite"` para
+a mudança ser anunciada sem a pessoa precisar reler a tela.
+
+**O teto de 6 é da compra, não do setor, e o rodapé não tem botão.** Com 4 na Pista e 2 no Camarote,
+**todos** os `+` da tela travam — é o que a palavra "por compra" diz, e é o que a Story 3.6 vai cobrar
+do servidor. O rodapé é `position: sticky; bottom: 0`, recalcula sem confirmação, mostra `2 ingressos
+· Pista` com um setor e `3 ingressos · 2 setores` com mais, e **não aparece** com zero escolhido:
+`R$ 0,00` grudado na base é ruído, e ele existe para responder "quanto vou pagar" — pergunta que ainda
+não foi feita. O botão `Reservar e pagar` ficou fora de propósito: reservar é a 3.6, junto com a rota
+que ele chamaria. Descartei tanto o botão apontando para o que vier — seria uma segunda janela como a
+do link, e um botão primário que cai na 404 é pior que um link de fila que cai — quanto o botão
+presente e desabilitado, que leria como defeito e não como escopo.
+
+**A ficha mostra `DATA`, `CASA` e `CIDADE`, e mais nada.** O protótipo desenha `ENDEREÇO`,
+`CLASSIFICAÇÃO` e `FONTE`, e nenhum dos três existe: o `Evento` não tem coluna de endereço, o
+formulário de publicação não pede uma, e `origem_externa_id` é assunto de quem publica. Criar a coluna
+cumpriria o AC ao pé da letra e arrastaria migração, campo no schema de entrada e um `<input>` na tela
+de publicar — que é tela já revisada da Epic 2 — para dentro de uma story de leitura, e o dado só
+existiria para o que fosse publicado dali em diante. Rotular `local · cidade` como "endereço" cumpriria
+a palavra sem cumprir a coisa: quem lê espera rua e número. **A data desceu do kicker para dentro da
+ficha depois de eu ver a tela montada**, e o kicker saiu junto em vez de ficar: os dois diriam a mesma
+frase com dois tamanhos de fonte a três centímetros de distância, que era a razão de eu ter deixado a
+data de fora dali. Com isso a ficha passou de dois pares para três, e aí ela trocou a versão **em
+linha** da capa pelas **linhas verticais do protótipo** — o desenho vertical parecia dois rótulos
+soltos num vazio com dois pares e volta a ler como ficha de jornal com três, além de ser ele que
+preenche a coluna de texto ao lado da arte. Os três estados do `lib/` são discriminados (`ok`,
+`nao-encontrado`,
+`indisponivel`) no molde do `obterMeuEvento`, e aqui a distinção vale mais que na tela do organizador:
+quem chega por esta URL nunca fez login e não tem como saber, sozinho, se o show saiu de cartaz ou se a
+API caiu. `404` e `422` caem no mesmo `nao-encontrado` e viram `notFound()`; falha de rede vira uma
+frase e o link de volta.
 
 ## Sobre não ter teste automatizado aqui
 

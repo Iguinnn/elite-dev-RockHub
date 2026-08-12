@@ -1,0 +1,453 @@
+/* A página de um evento: a ficha, a arte e os setores (Story 3.4).
+
+   ⚠️ **Nenhum hex aqui — só `var(--token)`.** O protótipo desenha o medidor com
+   `#221F1C`, o esgotado com `#3A352F` e o acento com `var(--ambar)`: os três são a
+   **paleta antiga**, de antes da troca (commit `e5ecf30`). Aqui o fundo do medidor
+   é `var(--breu2)`, o esgotado é `var(--fio2)` e o acento é `var(--neon)`. A fonte
+   única dos valores é o `globals.css`.
+
+   ⚠️ **E fio simples, nunca `3px double`.** O protótipo fecha o cabeçalho e abre o
+   rodapé com fio duplo; ele saiu do masthead por decisão do Igor em 2026-08-12
+   (dois filetes de 1px colados leem como falha de renderização), e não faria
+   sentido reintroduzi-lo numa tela nova.
+
+   Sem card, sem sombra, sem raio (UX-DR3). O recuo lateral de 12px é o mesmo da
+   raiz e do masthead: é ele que faz os fios correrem de ponta a ponta da coluna.
+
+   As classes deste arquivo servem **dois** módulos: esta página e a ilha
+   `components/EscolhaDeIngressos.tsx`, que o importa por caminho absoluto — mesmo
+   arranjo do `FormularioPublicacao` com o CSS de `organizador/publicar`. CSS
+   Module não compartilha classe entre arquivos, e este é o dono das duas metades
+   da mesma tela. */
+
+.pagina {
+  padding: 0 0 120px;
+}
+
+/* O caminho de volta, na anatomia do `.voltar` de "Meus eventos": mono versalete
+   em 14px, com `padding` dando alvo de toque sem virar botão — voltar é
+   navegação, e a identidade não usa botão para isso. */
+.voltar {
+  display: inline-block;
+  margin: 20px 0 6px;
+  padding: 6px 12px;
+  color: var(--fumaca);
+  font: 600 14px/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.voltar:hover {
+  color: var(--neon);
+}
+
+/* A frase de indisponível (EXPERIENCE.md#Vazio): frase, fim. Mesma anatomia do
+   `.aviso` da raiz e da tela do organizador. */
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding: 0 12px;
+  font: 19px/1.5 var(--serif);
+}
+
+/* ---- o cabeçalho: ficha à esquerda, arte à direita --------------------- */
+
+/* Duas colunas, com o texto ganhando a maior (decisão do Igor: a arte fica **ao
+   lado** do cabeçalho, não numa faixa acima dele — uma faixa larga teria mais
+   impacto e empurraria a lista de setores para baixo da dobra, que é justamente o
+   que a tela existe para mostrar).
+
+   Fio embaixo fechando o bloco, como o protótipo desenha — simples, não duplo. */
+.cabecalho {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 34px;
+  padding: 10px 12px 30px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.cabecalhoTexto {
+  min-width: 0;
+}
+
+/* Serifada 52px, `-0.035em` (DESIGN.md#Typography). É a maior tipografia do
+   produto, e nesta tela ela é a identidade da página — é por isso que abaixo de
+   900px o cabeçalho vem **acima** da arte, ao contrário da capa.
+
+   Sem margem no topo: **não há kicker acima dele nesta tela**, então o `<h1>` é o
+   primeiro elemento depois do link de volta. */
+.nomeDoEvento {
+  margin: 0 0 20px;
+  font: 400 52px/1 var(--serif);
+  letter-spacing: -0.035em;
+}
+
+/* ⚠️ **Linhas verticais com coluna de rótulo, e não a ficha em linha da capa** —
+   a anatomia do `.ficha` do protótipo nesta tela.
+
+   Ela nasceu em linha, como a da capa, e a escolha estava certa **enquanto eram
+   dois pares**: `ENDEREÇO`, `CLASSIFICAÇÃO` e `FONTE` não existem no `Evento`
+   (decisão do Igor), então sobravam `CASA` e `CIDADE`, e dois rótulos empilhados
+   num bloco desta altura ficavam soltos num vazio. Com a data descendo do kicker
+   para cá (decisão do Igor, tomada com a tela montada) são **três**, e aí o
+   desenho vertical volta a ser o certo: ele lê como ficha de jornal e é ele que
+   preenche a coluna de texto, que era o problema a resolver.
+
+   Cada par é uma grade de duas colunas, com fio embaixo — os fios entre as linhas
+   fazem o trabalho que um card faria, sem card (UX-DR3). */
+.ficha {
+  border-top: 1px solid var(--fio);
+}
+
+.ficha > div {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+.fichaRotulo {
+  font: 600 10px/1.8 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.fichaValor {
+  font: 400 16px/1.5 var(--serif);
+  color: var(--cal);
+}
+
+/* ⚠️ **16/10, o mesmo da capa — e não o 4/5 que o protótipo desenha aqui**
+   (decisão do Igor, tomada com a tela montada).
+
+   O retrato foi escrito primeiro e o defeito apareceu na conferência: nesta
+   coluna a arte tem ~489px de largura, então 4/5 dá **611px de altura**, e é ela
+   quem manda na altura da linha do grid. A coluna de texto ao lado tem ~250px, e
+   sobrava um vão de ~360px entre a ficha e a lista de setores. Pior: quanto mais
+   largo o container, mais alta a arte e maior o vão — a tela pioraria sozinha no
+   dia em que a coluna do site crescesse.
+
+   E o vão empurrava a lista de setores para baixo da dobra, que é exatamente o
+   motivo pelo qual a "faixa larga acima do título" tinha sido descartada nesta
+   story. O retrato reintroduzia a alternativa recusada por outro caminho: pela
+   altura em vez da largura. Em 16/10 a arte fica com ~305px e o cabeçalho
+   equilibra com o texto — e o produto passa a ter **uma** proporção de arte só.
+
+   O fundo em `--breu2` está aqui **sempre**, e não só no `.arteVazia`: ele é o
+   piso do quadro. Enquanto a imagem carrega, e se ela nunca carregar, o que se vê
+   é o mesmo bloco cinza do evento sem arte — nunca o breu da página com um buraco
+   na grade. */
+.arte {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--breu2);
+}
+
+/* Sem degradê aqui, ao contrário da capa: lá ele assenta a arte na base da faixa
+   larga; aqui a imagem é uma coluna ao lado do texto, e escurecer o pé dela só
+   apagaria parte da foto. O `.arteVazia` existe para o caso nulo ficar nomeado no
+   JSX — o bloco cinza já vem do `.arte`. */
+.arteVazia {
+  background: var(--breu2);
+}
+
+.imagemDaArte {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ⚠️ **A arte que não carrega vira o mesmo bloco cinza, e isto é CSS, não
+   JavaScript** — a regra é copiada da capa da Story 3.3, onde o problema apareceu
+   na conferência visual: a URL é da Ticketmaster, pode morrer sem aviso, e o
+   navegador desenha o ícone de imagem faltando.
+
+   **Pseudo-elemento em `<img>` só ganha caixa quando a imagem falha**: no caso
+   feliz o `<img>` é elemento substituído e o `::after` não renderiza. A
+   alternativa era um `onError`, e ela custava `"use client"` nesta metade da
+   página — que é justamente a metade que não precisa de navegador. */
+.imagemDaArte::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--breu2);
+}
+
+/* ---- a lista de setores ------------------------------------------------- */
+
+/* `SETORES` à esquerda, `ESCOLHA A QUANTIDADE` à direita — as duas em mono
+   versalete, como o protótipo escreve. A segunda é instrução, não título: ela diz
+   o que fazer com a coluna da direita, onde os steppers estão. */
+.tituloDosSetores {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 26px 12px 10px;
+}
+
+.instrucao {
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.setores {
+  border-top: 1px solid var(--fio);
+}
+
+/* Duas colunas (`1fr 230px`): nome, medidor e estado à esquerda; preço e stepper à
+   direita. Fio de 1px entre um setor e o seguinte — sem card e sem fundo, o fio é
+   o que separa (UX-DR3). */
+.setor {
+  display: grid;
+  grid-template-columns: 1fr 230px;
+  gap: 26px;
+  align-items: center;
+  padding: 22px 12px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* A anatomia do `.setor.off` do protótipo. **Esmaecido, e sem stepper no DOM** —
+   o componente não renderiza os botões do setor esgotado, e não são botões
+   desabilitados por opacidade: `opacity` sozinha deixa o elemento clicável e no
+   Tab, anunciado como ativo. */
+.setorEsgotado {
+  opacity: 0.38;
+}
+
+.identidadeDoSetor {
+  min-width: 0;
+}
+
+.nomeDoSetor {
+  display: block;
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+/* 5px de altura, fundo `--breu2`, largura máxima para a barra não atravessar a
+   tela inteira num monitor largo — proporção se lê melhor curta.
+
+   ⚠️ **`aria-hidden` no JSX**, e a palavra ao lado é quem carrega a informação
+   (UX-DR9): uma barra anunciada como "39 por cento" convidaria à leitura numérica
+   que o UX-DR7 mantém fora da tela do cliente. */
+.medidor {
+  position: relative;
+  max-width: 280px;
+  height: 5px;
+  margin-top: 11px;
+  background: var(--breu2);
+  overflow: hidden;
+}
+
+/* A largura vem do `style` inline do componente: ela é dado, e é por setor. O que
+   mora aqui é a cor. */
+.preenchimento {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+
+.preenchimentoDisponivel {
+  background: var(--neon);
+}
+
+/* `--brasa` é a cor de escassez e de erro do sistema — a mesma do selo `Esgotado`
+   da fila. Aqui ela avisa; a palavra `Últimos ingressos` ao lado é que informa. */
+.preenchimentoUltimos {
+  background: var(--brasa);
+}
+
+/* Cheio e apagado: `--fio2` é o fio sobre superfície elevada, e é o token que o
+   `globals.css` já reserva para o medidor esgotado. Barra cheia numa cor neutra é
+   "acabou", não "corre". */
+.preenchimentoEsgotado {
+  background: var(--fio2);
+}
+
+/* A palavra do estado, em mono versalete — como todo estado do sistema. */
+.estado {
+  display: block;
+  margin-top: 9px;
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.escolha {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 22px;
+}
+
+.preco {
+  font: 400 23px/1 var(--serif);
+  white-space: nowrap;
+}
+
+/* Selo vazado, raio zero — o mesmo `.selo` da fila da raiz, no lugar onde o
+   stepper estaria. */
+.selo {
+  display: inline-block;
+  padding: 5px 10px;
+  border: 1px solid var(--brasa);
+  color: var(--brasa);
+  font: 700 10px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Três células de 38px com fio entre elas (DESIGN.md#Components/stepper).
+   ⚠️ **Não é o `Botao`**: ele é `width: 100%` desde a Story 1.4 e explodiria a
+   célula. */
+.stepper {
+  display: flex;
+  border: 1px solid var(--fio);
+}
+
+/* ⚠️ **`background: none` e `border: none` não são redundância — sem eles o botão
+   sai quase branco.** Não existe reset de `<button>` no `globals.css`: o `*`
+   cuida de `box-sizing`, `margin` e `padding`, e o resto fica com o padrão do
+   navegador — `background-color: ButtonFace`, que é claro, e uma borda `outset`.
+   Nenhum botão do projeto tinha esbarrado nisso porque todos pintam o próprio
+   fundo: o `Botao` é `var(--neon)` desde a 1.4, e o `.remover` e o `.acrescentar`
+   do formulário de publicar já escrevem estas duas linhas. Os fios do stepper vêm
+   do `.stepper` e do `.quantidade` — a célula em si não tem borda nenhuma. */
+.passo {
+  width: 38px;
+  height: 38px;
+  background: none;
+  border: none;
+  color: var(--cal);
+  cursor: pointer;
+  font: 18px/1 var(--serif);
+}
+
+.passo:hover:not(:disabled) {
+  background: var(--neon);
+  color: var(--breu);
+}
+
+/* ⚠️ O botão no limite é `disabled` **de verdade** — atributo, não classe: ele sai
+   do Tab e é anunciado como indisponível. A opacidade aqui é só a leitura visual
+   disso, e `cursor: default` tira a promessa de clique que o cursor faria. */
+.passo:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.quantidade {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  border-right: 1px solid var(--fio);
+  border-left: 1px solid var(--fio);
+  font: 600 15px/1 var(--mono);
+}
+
+/* ---- o rodapé do total -------------------------------------------------- */
+
+/* Fixo na base (`EXPERIENCE.md#rodapé de compra`): ele nunca obriga a pessoa a
+   rolar de volta para saber quanto vai pagar.
+
+   ⚠️ `position: sticky` só gruda se **nenhum ancestral** tiver `overflow`
+   diferente de `visible` — o `<main>` do `(site)/layout.tsx` e a `.pagina` estão
+   limpos. Se um dia ele não grudar, o culpado é uma regra nova.
+
+   `background: var(--breu)` é obrigatório e não é decoração: sem ele o rodapé é
+   transparente e a lista de setores passa por baixo do total. O `padding-bottom`
+   generoso da `.pagina` é o que garante que ele não cobre o último setor.
+
+   ⚠️ **Sem botão** (decisão do Igor): `Reservar e pagar` é a Story 3.6, junto com
+   a rota que ele chamaria. */
+.rodape {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 12px;
+  border-top: 1px solid var(--fio);
+  background: var(--breu);
+}
+
+.resumo {
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.total {
+  font: 400 30px/1 var(--serif);
+  white-space: nowrap;
+}
+
+/* Estado vazio: frase, fim. Sem ilustração e sem botão grande (UX-DR8). */
+.vazio {
+  max-width: 46ch;
+  padding: 24px 12px 0;
+  font: 19px/1.5 var(--serif);
+}
+
+/* ---- abaixo de 900px: uma coluna, e o setor em duas linhas -------------- */
+
+/* **Cabeçalho acima da arte** (suposição declarada na story) — o contrário da capa
+   da raiz. Lá a arte é o gancho da listagem; aqui o `<h1>` é a identidade da
+   página, e empurrá-lo para baixo de uma imagem custaria a primeira tela inteira
+   no celular.
+
+   A arte **não muda de proporção aqui**: ela já é 16/10 em toda largura desde que
+   o retrato caiu. */
+@media (max-width: 900px) {
+  .cabecalho {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  /* Menor, mas ainda a maior da tela: aos 52px de largura cheia, um nome de
+     artista longo quebrava em três linhas e empurrava a ficha para baixo da
+     dobra. */
+  .nomeDoEvento {
+    margin: 8px 0 14px;
+    font-size: 36px;
+  }
+
+  /* A coluna do rótulo encolhe em vez de o valor quebrar: `CIDADE` e `DATA` cabem
+     em 78px, e o que precisa de largura é `sexta, 14 de agosto de 2026, 21h00`. */
+  .ficha > div {
+    grid-template-columns: 78px 1fr;
+    gap: 10px;
+  }
+
+  /* O setor empilha em duas linhas: nome, medidor e estado acima; preço e stepper
+     abaixo. `justify-content: space-between` na segunda linha põe o preço à
+     esquerda e o stepper à direita, sem cortar nenhum valor e sem rolagem
+     horizontal. */
+  .setor {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .escolha {
+    justify-content: space-between;
+  }
+
+  .medidor {
+    max-width: none;
+  }
+
+  .total {
+    font-size: 25px;
+  }
+}

@@ -23,6 +23,7 @@ não prova nada.
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -1520,3 +1521,482 @@ def test_o_openapi_declara_o_destaque_sem_parametro_nenhum(
 
     propriedades = esquema["components"]["schemas"]["EventoEmDestaque"]["properties"]
     assert set(propriedades) == CHAVES_DO_DESTAQUE
+
+
+# =========================================================================== #
+# Story 3.4 — ver o evento e seus setores
+#
+# `GET /eventos/{id}`: a quarta rota pública, e a única que abre o evento setor a
+# setor. Tudo daqui para baixo é da 3.4, e **nenhum teste acima precisou mudar** —
+# a rota é nova, as três antigas estão intactas e o helper não foi tocado. É o
+# AC11 desta story, e ele é verificável relendo o diff.
+#
+# É também a rota que chega **mais perto do estoque** em todo o lado público: é
+# nela que a pessoa escolhe quantos ingressos quer. Dois testes daqui existem só
+# para isso — o das chaves e o da varredura de texto.
+# =========================================================================== #
+
+# As oito chaves do `EventoPublico`, e nenhuma a mais (AC5).
+CHAVES_DO_EVENTO_PUBLICO = {
+    "id",
+    "nome",
+    "data_hora",
+    "local",
+    "cidade",
+    "imagem_url",
+    "maximo_por_compra",
+    "setores",
+}
+
+# As cinco de cada item de `setores` (AC5).
+#
+# ⚠️ Note o que **não** está aqui: `capacidade` e `vendidos`. O `SetorSaida` do
+# organizador tem os dois, e ele está a um import de distância do service desta
+# rota — reusá-lo "porque já existe um schema de setor" é a armadilha que este
+# conjunto pega.
+CHAVES_DO_SETOR_PUBLICO = {
+    "id",
+    "nome",
+    "preco_centavos",
+    "disponibilidade",
+    "proporcao_vendida",
+}
+
+
+# --------------------------------------------------------------------------- #
+# AC1 — pública por assinatura: responde sem cookie, e igual para todo mundo
+# --------------------------------------------------------------------------- #
+
+
+def test_o_evento_responde_sem_nenhum_cookie_de_sessao(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A quarta rota pública do projeto, e o mesmo cuidado das três primeiras."""
+    evento = _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    # ⚠️ O `TestClient` guarda cookie entre chamadas — sem isto o teste passaria
+    # por acidente numa suíte onde outro já tivesse feito login.
+    cliente.cookies.clear()
+
+    resposta = cliente.get(f"/eventos/{evento.id}")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["nome"] == "Marina Sena"
+
+
+def test_logado_como_cliente_o_evento_e_identico_ao_anonimo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A identidade de quem chama não influencia a página do evento.
+
+    Os corpos **inteiros**, e não só o nome: a garantia que interessa é que nenhum
+    campo a mais aparece para quem está logado — nem estoque, nem nada. É a rota
+    em que essa diferença seria mais tentadora de introduzir, porque é a tela onde
+    a pessoa vai comprar.
+    """
+    evento = _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Djavan")
+    cliente.cookies.clear()
+    anonimo = cliente.get(f"/eventos/{evento.id}")
+
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "cliente@exemplo.com")
+    entrada = cliente.post(
+        "/auth/login", json={"email": comprador.email, "senha": "rockhub"}
+    )
+    assert entrada.status_code == 200
+
+    logado = cliente.get(f"/eventos/{evento.id}")
+
+    assert logado.status_code == 200
+    assert logado.json() == anonimo.json()
+
+
+# --------------------------------------------------------------------------- #
+# AC3, AC4 — o recorte, e o `404` único para os três casos
+# --------------------------------------------------------------------------- #
+
+
+def test_os_tres_casos_fora_de_cartaz_recebem_o_mesmo_404(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`id` inexistente, rascunho e evento passado: mesma resposta, palavra por
+    palavra.
+
+    ⚠️ **A asserção é sobre os três corpos serem iguais entre si**, e não sobre
+    cada um ser `404`. Três `assert status == 404` passariam com três mensagens
+    diferentes — e é justamente a diferença de mensagem que transformaria a rota
+    num oráculo: "esse UUID é o rascunho de alguém?" seria respondível varrendo
+    endereços. É a mesma disciplina do `EVENTO_NAO_ENCONTRADO` do organizador
+    (Story 2.6) e do login da 1.4, que não diz se o e-mail existe.
+    """
+    organizador = _organizador(fabricar_usuario)
+    rascunho = _evento_gravado(sessao, organizador, nome="Rascunho", publicado=False)
+    passado = _evento_gravado(sessao, organizador, nome="Ontem", data_hora=_daqui_a(-3))
+    cliente.cookies.clear()
+
+    respostas = [
+        cliente.get(f"/eventos/{uuid4()}"),
+        cliente.get(f"/eventos/{rascunho.id}"),
+        cliente.get(f"/eventos/{passado.id}"),
+    ]
+
+    for resposta in respostas:
+        assert resposta.status_code == 404
+        assert resposta.json()["erro"]["codigo"] == "EVENTO_NAO_ENCONTRADO"
+
+    corpos = {resposta.text for resposta in respostas}
+    assert len(corpos) == 1
+
+
+def test_id_que_nao_e_uuid_recebe_422_do_pydantic(cliente: TestClient) -> None:
+    """O path param é tipado `UUID`, então a recusa acontece antes da consulta.
+
+    A tela trata `404` e `422` no **mesmo** ramo, como o `obterMeuEvento` da
+    Story 2.6 já faz: para quem lê, "esse endereço está errado" e "esse show não
+    está em cartaz" são a mesma coisa.
+    """
+    cliente.cookies.clear()
+
+    assert cliente.get("/eventos/banana").status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# AC5, AC6 — o contrato, e o estoque que não atravessa
+# --------------------------------------------------------------------------- #
+
+
+def test_o_evento_tem_oito_chaves_e_cada_setor_tem_cinco(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Igualdade de conjunto nos dois níveis: campo a mais reprova tanto quanto a
+    menos.
+
+    O setor é conferido **dentro** do evento, e não num schema à parte: é o
+    aninhamento que um teste de chaves de topo deixaria passar, e é exatamente
+    onde `capacidade` entraria se alguém reusasse o `SetorSaida`.
+    """
+    evento = _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[("Pista", 800, 137, 12000), ("Área VIP", 100, 80, 26000)],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get(f"/eventos/{evento.id}").json()
+
+    assert set(corpo) == CHAVES_DO_EVENTO_PUBLICO
+    assert len(corpo["setores"]) == 2
+    for setor in corpo["setores"]:
+        assert set(setor) == CHAVES_DO_SETOR_PUBLICO
+
+
+def test_nenhuma_palavra_de_contagem_aparece_no_texto_do_evento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A varredura do texto inteiro — e esta é a **terceira** lista deste arquivo.
+
+    ⚠️ **Não copie a de `GET /eventos` nem a de `/eventos/destaque`.** Na 3.1
+    `setores` e `imagem_url` eram proibidas; na 3.3 as duas viraram legítimas;
+    aqui **`preco_centavos` também é** — é o preço de cada setor, e é a
+    informação principal da tela: ninguém escolhe entre Pista e Camarote sem
+    saber quanto custa cada um. Preço não é contagem.
+
+    O que continua proibido é o que **conta ingresso** — `capacidade` e
+    `vendidos` — e o que é assunto de quem publica: `publicado_em`,
+    `origem_externa_id`, `organizador_id`.
+
+    ⚠️ **Se este teste falhar, não apague a asserção.** Esta é a rota pública que
+    chega mais perto do estoque, e a proteção do UX-DR7 vale mais aqui do que nas
+    outras três. Falha aqui significa que um campo de contagem atravessou o
+    `response_model` — ou que alguém nomeou o campo derivado
+    `proporcao_vendidos`, no plural masculino, e casou a palavra proibida sem
+    querer. É `proporcao_vendida`, concordando com "proporção", e o nome é
+    escolhido justamente para não colidir.
+    """
+    evento = _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[("Pista", 800, 137, 12000)],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get(f"/eventos/{evento.id}").text
+
+    for palavra in (
+        "capacidade",
+        "vendidos",
+        "publicado_em",
+        "origem_externa_id",
+        "organizador_id",
+    ):
+        assert palavra not in corpo
+
+
+def test_imagem_url_nula_volta_como_null_no_evento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A chave **continua no corpo** quando é nula, como na capa da 3.3.
+
+    A tela distingue "sem arte" — bloco do mesmo tamanho no lugar — de "campo que
+    não veio", e um `exclude_none` no schema faria as duas coisas parecerem a
+    mesma.
+    """
+    evento = _evento_gravado(sessao, _organizador(fabricar_usuario), imagem_url=None)
+    cliente.cookies.clear()
+
+    corpo = cliente.get(f"/eventos/{evento.id}").json()
+
+    assert corpo["imagem_url"] is None
+    assert "imagem_url" in corpo
+
+
+# --------------------------------------------------------------------------- #
+# AC7 — a proporção, que é o que substitui os dois números
+# --------------------------------------------------------------------------- #
+
+
+def test_a_proporcao_vendida_e_a_divisao_arredondada_em_duas_casas(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`0.39`, `0.0` e `1.0` — os três extremos da largura da barra.
+
+    39/100 é o caso do meio e é escolhido de propósito: ele só bate se a conta
+    for `vendidos / capacidade`. Um setor com 50/100 passaria por acidente com
+    meia dúzia de contas erradas.
+    """
+    evento = _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[
+            ("Camarote", 100, 39, 42000),
+            ("Mezanino", 50, 0, 18000),
+            ("Pista", 50, 50, 12000),
+        ],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get(f"/eventos/{evento.id}").json()
+    proporcoes = {
+        setor["nome"]: setor["proporcao_vendida"] for setor in corpo["setores"]
+    }
+
+    assert proporcoes == {"Camarote": 0.39, "Mezanino": 0.0, "Pista": 1.0}
+
+
+# --------------------------------------------------------------------------- #
+# AC8 — os três estados, e a borda dos 20%
+# --------------------------------------------------------------------------- #
+
+
+def test_os_tres_estados_de_disponibilidade_com_a_borda_dos_vinte_por_cento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A borda é o teste, e os três setores têm **15 lugares** por isso.
+
+    ⚠️ 12 vendidos de 15 deixa **exatamente** 20% — é o caso em que
+    `(15 - 12) <= 15 * 0.2` depende de arredondamento binário e o `float` decide
+    sozinho. A conta do service é em inteiros (`restam * 5 <= capacidade`), e é
+    esta linha que prova que ela está lá: 11/15 (26,7% restante) é
+    `DISPONIVEL`, 12/15 é `ULTIMOS`.
+
+    ⚠️ E 15/15 é `ESGOTADO`, não `ULTIMOS`: zero restante também é "20% ou
+    menos", e é a **ordem** das condições no service que decide — esgotado
+    primeiro, sempre. Com as duas trocadas, o setor acabado apareceria como
+    "Últimos ingressos", com a barra cheia e a palavra errada.
+    """
+    evento = _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[
+            ("A tranquila", 15, 11, 12000),
+            ("B na borda", 15, 12, 18000),
+            ("C acabada", 15, 15, 26000),
+        ],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get(f"/eventos/{evento.id}").json()
+    estados = {setor["nome"]: setor["disponibilidade"] for setor in corpo["setores"]}
+
+    assert estados == {
+        "A tranquila": "DISPONIVEL",
+        "B na borda": "ULTIMOS",
+        "C acabada": "ESGOTADO",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# AC9 — todos os setores, em ordem alfabética
+# --------------------------------------------------------------------------- #
+
+
+def test_os_setores_vem_em_ordem_alfabetica_incluindo_o_esgotado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Gravados fora de ordem: quem ordena é o `order_by="Setor.nome"` do
+    `relationship` (Story 2.3), não a ordem de inserção nem um `sorted()`.
+
+    ⚠️ **A Pista está esgotada e continua na lista.** A tela a esmaece e tira o
+    stepper dela; sumir com ela faria a pessoa procurar o setor que o amigo
+    comprou na semana passada e concluir que o site está quebrado.
+    """
+    evento = _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        setores=[
+            ("Pista", 800, 800, 12000),
+            ("Camarote", 60, 10, 42000),
+            ("Área VIP", 100, 20, 26000),
+        ],
+    )
+    cliente.cookies.clear()
+
+    corpo = cliente.get(f"/eventos/{evento.id}").json()
+
+    assert [setor["nome"] for setor in corpo["setores"]] == [
+        "Área VIP",
+        "Camarote",
+        "Pista",
+    ]
+
+
+def test_evento_sem_setor_nenhum_nao_quebra_a_rota_do_evento(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`setores: []`, e `200`.
+
+    Impossível pela rota de publicação (`EVENTO_SEM_SETOR`) e possível por `psql`
+    — e existe no banco de desenvolvimento do Igor, o que faz deste um caminho
+    que a conferência visual atravessa de verdade.
+    """
+    evento = _evento_gravado(sessao, _organizador(fabricar_usuario), setores=[])
+    cliente.cookies.clear()
+
+    resposta = cliente.get(f"/eventos/{evento.id}")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["setores"] == []
+
+
+# --------------------------------------------------------------------------- #
+# AC10 — o teto fixo por compra
+# --------------------------------------------------------------------------- #
+
+
+def test_o_maximo_por_compra_e_seis_e_nao_varia_com_o_estoque(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Um setor com **2 ingressos restantes**, e o teto continua `6`.
+
+    ⚠️ É este o teste que trava a decisão do Igor. `maximo_por_compra =
+    min(disponivel, 6)` daria um stepper mais honesto — e diria "restam 2" pela
+    tela e pelo devtools toda vez que restassem poucos, que é exatamente o que o
+    UX-DR7 mantém fora da tela do cliente. Quem recusa o pedido maior do que
+    existe é o `UPDATE` condicional do AD-3, na Story 3.6.
+
+    O evento com estoque folgado entra na mesma comparação: o ponto não é que o
+    número seja 6, é que ele seja **o mesmo** nos dois casos.
+    """
+    organizador = _organizador(fabricar_usuario)
+    apertado = _evento_gravado(
+        sessao, organizador, nome="Quase esgotado", setores=[("Pista", 100, 98, 12000)]
+    )
+    folgado = _evento_gravado(
+        sessao, organizador, nome="Recém-aberto", setores=[("Pista", 800, 0, 12000)]
+    )
+    cliente.cookies.clear()
+
+    teto_apertado = cliente.get(f"/eventos/{apertado.id}").json()["maximo_por_compra"]
+    teto_folgado = cliente.get(f"/eventos/{folgado.id}").json()["maximo_por_compra"]
+
+    assert teto_apertado == 6
+    assert teto_apertado == teto_folgado
+
+
+# --------------------------------------------------------------------------- #
+# AC2 — a ordem de declaração das rotas no router
+# --------------------------------------------------------------------------- #
+
+
+def test_as_duas_rotas_de_path_fixo_continuam_de_pe_depois_do_detalhe_existir(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A regressão que esta story torna possível — e o motivo do comentário no
+    `publico.py`.
+
+    ⚠️ `/eventos/cidades` e `/eventos/destaque` são paths **fixos**, e
+    `/eventos/{evento_id}` é path param no mesmo router. O FastAPI casa as rotas
+    na ordem em que foram registradas: com o detalhe declarado antes das duas,
+    uma chamada a `/eventos/cidades` tentaria ler `"cidades"` como UUID e
+    devolveria `422`.
+
+    E o sintoma apareceria longe da causa: a raiz perderia os chips de cidade e a
+    capa sumiria, sem que nada ligasse isso a uma rota nova de **detalhe**. Sem
+    este teste, a regressão só aparece na tela.
+
+    O comentário do bloco de ordem no `publico.py` foi escrito na Story 3.2
+    apontando para esta story; é aqui que ele para de ser precaução.
+    """
+    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    cliente.cookies.clear()
+
+    cidades = cliente.get("/eventos/cidades")
+    destaque = cliente.get("/eventos/destaque")
+
+    assert cidades.status_code == 200
+    assert cidades.json() == ["São Paulo"]
+
+    assert destaque.status_code == 200
+    assert destaque.json()["nome"] == "Marina Sena"
+
+
+# --------------------------------------------------------------------------- #
+# AC1, AC5 — o contrato declarado, e a rota sem parâmetro de query nem de sessão
+# --------------------------------------------------------------------------- #
+
+
+def test_o_openapi_declara_o_evento_com_um_parametro_de_path_e_nada_mais(
+    cliente: TestClient,
+) -> None:
+    """Um `path`, zero `query`, zero segurança.
+
+    Se alguém acrescentar `Depends(exigir_papel(...))` aqui um dia, a rota passa a
+    declarar o cookie no OpenAPI — e este teste cai antes de o sintoma chegar à
+    tela do visitante. Um `?quantidade=` também: esta tela não filtra nada, e o
+    dia em que ela receber um parâmetro é o dia de perguntar por quê.
+    """
+    esquema = cliente.get("/openapi.json").json()
+
+    rota = esquema["paths"]["/eventos/{evento_id}"]["get"]
+
+    assert "security" not in rota
+    assert [parametro["in"] for parametro in rota["parameters"]] == ["path"]
+    assert rota["parameters"][0]["name"] == "evento_id"
+
+    evento = esquema["components"]["schemas"]["EventoPublico"]["properties"]
+    assert set(evento) == CHAVES_DO_EVENTO_PUBLICO
+
+    setor = esquema["components"]["schemas"]["SetorPublico"]["properties"]
+    assert set(setor) == CHAVES_DO_SETOR_PUBLICO

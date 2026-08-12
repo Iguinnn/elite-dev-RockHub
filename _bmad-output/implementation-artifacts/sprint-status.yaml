@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (story 3.3 implementada — suíte em 278 testes)
+last_updated: 2026-08-12 (story 3.4 implementada — 293 testes)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -126,7 +126,20 @@ development_status:
   # link. ⚠️ A armadilha da story é o teste de varredura de palavras proibidas da
   # 3.1: `setores` e `imagem_url` viram chaves legítimas nesta resposta.
   3-3-chamada-principal-na-programacao: review
-  3-4-ver-o-evento-e-seus-setores: backlog
+  # Sete decisões do Igor: **o endereço não existe** (o `Evento` não tem a coluna,
+  # e a ficha mostra `CASA` e `CIDADE`); **o teto do stepper é fixo por compra**
+  # (`maximo_por_compra: 6` no contrato, e não `min(disponivel, 6)`) — é o que
+  # permite o stepper ter teto sem o contrato revelar estoque, com a recusa do
+  # excesso ficando para o `UPDATE` condicional do AD-3 na 3.6; **o rodapé não tem
+  # botão**, porque reservar é a 3.6; **"Últimos ingressos" é 20% ou menos**;
+  # **a arte fica ao lado do cabeçalho**; **o recorte é o mesmo das outras três
+  # rotas públicas**, com rascunho, passado e inexistente no mesmo `404`; e
+  # **vários setores somam** na mesma escolha. ⚠️ Duas armadilhas: a lista de
+  # palavras proibidas do teste é a **terceira** diferente do arquivo (agora
+  # `preco_centavos` é chave legítima), e `/eventos/{id}` precisa ser declarada
+  # **depois** de `/eventos/cidades` e `/eventos/destaque` — é esta a story que
+  # exercita o comentário de ordem escrito na 3.2.
+  3-4-ver-o-evento-e-seus-setores: review
   3-5-modelo-de-reserva: backlog
   3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: backlog
   3-7-reserva-abandonada-devolve-o-estoque: backlog

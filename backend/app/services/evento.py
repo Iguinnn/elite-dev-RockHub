@@ -60,12 +60,28 @@ from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.evento import (
+    DisponibilidadeDoSetor,
     EventoEmDestaque,
     EventoEntrada,
     EventoNaProgramacao,
+    EventoPublico,
     EventoResumo,
     PeriodoDaProgramacao,
+    SetorPublico,
 )
+
+# Quantos ingressos uma pessoa leva numa compra só (Story 3.4, decisão do Igor).
+#
+# **Teto fixo, e não `min(disponivel, 6)`**: é o que dá ao stepper um limite sem
+# que o contrato revele quanto resta em estoque (UX-DR7). Quem recusa o pedido
+# maior do que existe é o `UPDATE` condicional do AD-3, na Story 3.6 — e ele
+# recusa por concorrência, que é a garantia que o desafio mais pontua.
+#
+# **Seis não vem de regra de negócio nenhuma** — não existe uma neste produto, e
+# Sympla e Eventim usam entre 4 e 10. Ele está aqui, numa constante e no
+# contrato, porque é o único jeito de a tela e a futura rota de reserva não
+# discordarem sobre qual é o teto: trocá-lo é uma linha e um teste.
+MAXIMO_POR_COMPRA = 6
 
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
@@ -598,6 +614,133 @@ def listar_cidades_em_cartaz(sessao: Session) -> list[str]:
             # cursor a cada evento publicado.
             .order_by(Evento.cidade)
         )
+    )
+
+
+def _disponibilidade_do_setor(setor: Setor) -> DisponibilidadeDoSetor:
+    """Quanto resta de um setor, em palavra (Story 3.4).
+
+    **Função própria para a regra do limiar existir num lugar só** e ser lida por
+    um teste. Ela é uma linha e meia; inline no laço de `obter_publico` ela
+    ficaria igual de curta e sem nome — e "por que 20% e não 10?" é uma pergunta
+    que precisa de um lugar para ser respondida.
+
+    ⚠️ **`ESGOTADO` é conferido primeiro, e a ordem é a regra.** Zero restante
+    também é "20% ou menos": com as condições trocadas, o setor esgotado sairia
+    como `ULTIMOS` — barra cheia e a palavra errada, dizendo "corre" sobre o que
+    já acabou.
+
+    ⚠️ **A conta é em inteiros — `(capacidade - vendidos) * 5 <= capacidade` —, e
+    não com `0.2` em ponto flutuante.** As duas formas dizem a mesma coisa em
+    álgebra e discordam na borda: um setor de 15 lugares com 12 vendidos deixa
+    exatamente 20%, e `3 <= 15 * 0.2` depende de arredondamento binário. É
+    justamente na borda que o `float` decide sozinho, e é a borda que o teste
+    exercita.
+
+    **`capacidade > 0` é `CHECK` no banco desde a Story 2.3**, então não há
+    divisão por zero possível aqui — nem nesta função, que não divide, nem no
+    `round()` de quem a chama.
+    """
+    restam = setor.capacidade - setor.vendidos
+
+    if restam <= 0:
+        return DisponibilidadeDoSetor.ESGOTADO
+    if restam * 5 <= setor.capacidade:
+        return DisponibilidadeDoSetor.ULTIMOS
+    return DisponibilidadeDoSetor.DISPONIVEL
+
+
+def obter_publico(sessao: Session, evento_id: UUID) -> EventoPublico:
+    """Um evento em cartaz com seus setores — a tela da escolha (Story 3.4).
+
+    **Mesmo recorte das outras três rotas públicas**: publicado (`publicado_em IS
+    NOT NULL`) e ainda por acontecer (`data_hora >= agora`). Não é "parecido" — é
+    o mesmo, escrito na mesma ordem, e um evento que abrisse aqui fora do recorte
+    da programação seria um show que existe pelo link e não existe na lista.
+
+    **Uma consulta com as três condições no mesmo `where`, e não um
+    `sessao.get()` seguido de dois `if`.** Mesmo motivo escrito no
+    `obter_do_organizador`: com tudo no `where`, "só vejo o que está em cartaz" é
+    verdade **por construção**, não por disciplina de quem escrever a próxima
+    rota. Dois `if` depois do `get()` criam dois caminhos para a mesma decisão, e
+    o segundo é o que alguém esquece.
+
+    ⚠️ **Os três casos recebem o mesmo `404`, com o mesmo código e a mesma
+    mensagem** (decisão do Igor): `id` que não é evento nenhum, evento em
+    rascunho e evento cuja data já passou. Distinguir "não existe" de "é rascunho
+    de alguém" transformaria esta rota num oráculo — daria para varrer UUIDs e
+    descobrir o que um organizador ainda não publicou. É a mesma disciplina do
+    `EVENTO_NAO_ENCONTRADO` do organizador (Story 2.6) e do login da 1.4, que não
+    diz se o e-mail existe. E é por isso que o "evento passado" também não ganha
+    resposta própria: ela custaria um estado de tela ("este show já aconteceu")
+    para uma informação que quem guardou o link de ontem não vai fazer nada com.
+
+    **O estoque não atravessa, e é esta a rota em que isso mais importa.** O
+    `EventoPublico` não tem `capacidade` nem `vendidos`; o que sai é o par
+    derivado do `SetorPublico` — a proporção que desenha a barra e a palavra que
+    diz o estado (AD-13, UX-DR7). O `response_model` da rota é quem garante isso,
+    não a tela.
+    """
+    # Lido **uma vez**, como na `listar_programacao` e no `obter_destaque`, e pelo
+    # mesmo motivo: duas leituras do relógio na mesma requisição podem discordar
+    # sobre o evento que começa agora. Um `datetime` com fuso, nunca texto.
+    agora = datetime.now(timezone.utc)
+
+    evento = sessao.scalars(
+        select(Evento)
+        .where(
+            Evento.id == evento_id,
+            Evento.publicado_em.is_not(None),
+            Evento.data_hora >= agora,
+        )
+        # Uma consulta a mais para os setores, e não uma por setor: sem ele, ler
+        # `evento.setores` no laço abaixo emitiria o `SELECT` preguiçoso no meio
+        # da montagem do schema.
+        .options(selectinload(Evento.setores))
+    ).first()
+
+    if evento is None:
+        raise ErroDeDominio(
+            "EVENTO_NAO_ENCONTRADO",
+            "Esse show não está em cartaz.",
+            status_http=404,
+        )
+
+    return EventoPublico(
+        id=evento.id,
+        nome=evento.nome,
+        data_hora=evento.data_hora,
+        local=evento.local,
+        cidade=evento.cidade,
+        imagem_url=evento.imagem_url,
+        maximo_por_compra=MAXIMO_POR_COMPRA,
+        # **Todos os setores, inclusive o esgotado**, e sem `sorted()`: a ordem
+        # alfabética já vem do `order_by="Setor.nome"` do `relationship` (Story
+        # 2.3). Duas fontes para a mesma ordem é uma chance de elas discordarem.
+        #
+        # Evento **sem setor nenhum** cai aqui como lista vazia e não quebra —
+        # ele é impossível pela rota de publicação, possível por `psql`, e existe
+        # no banco de desenvolvimento. Ao contrário da `listar_programacao`, não
+        # há `min()` nenhum para proteger: a compreensão sobre lista vazia é
+        # lista vazia.
+        setores=[
+            SetorPublico(
+                id=setor.id,
+                nome=setor.nome,
+                preco_centavos=setor.preco_centavos,
+                disponibilidade=_disponibilidade_do_setor(setor),
+                # ⚠️ **AD-13**: a proporção nasce de `setor.vendidos` e
+                # `setor.capacidade`, lidos do próprio setor — é **proibido**
+                # derivá-la com `COUNT` sobre reserva ou ingresso, em qualquer
+                # camada. As duas tabelas nascem nas Stories 3.5 e 3.9.
+                #
+                # Duas casas: a barra tem 5px de altura e não mostra mais que 1%,
+                # e menos dígitos é menos superfície para alguém tentar
+                # reconstruir a capacidade a partir da proporção.
+                proporcao_vendida=round(setor.vendidos / setor.capacidade, 2),
+            )
+            for setor in evento.setores
+        ],
     )
 
 
