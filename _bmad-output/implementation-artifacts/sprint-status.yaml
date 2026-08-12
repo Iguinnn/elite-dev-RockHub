@@ -40,7 +40,7 @@
 # - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (story 3.4 implementada — 293 testes)
+last_updated: 2026-08-12 (story 3.5 implementada — review)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -140,7 +140,18 @@ development_status:
   # **depois** de `/eventos/cidades` e `/eventos/destaque` — é esta a story que
   # exercita o comentário de ordem escrito na 3.2.
   3-4-ver-o-evento-e-seus-setores: review
-  3-5-modelo-de-reserva: backlog
+  # A story gêmea da 2.3, e a primeira migração desde a 3.2 que cria tabela:
+  # duas tabelas, nenhum consumidor, o critério de pronto é o schema. Quatro
+  # decisões do Igor: `item_reserva` com `id` UUID próprio + `UNIQUE (reserva_id,
+  # setor_id)`, e não a PK composta da `evento_portaria`; apagar evento, setor ou
+  # conta com reserva é **recusado pelo banco** (as três FKs sem `ondelete`), o
+  # que faz o `CASCADE` de `setor` deixar de valer na primeira venda; só
+  # `criado_em` além do `expira_em`; e `estado` como `String(20)` + `CHECK`, no
+  # precedente do `usuario.papel`, nunca `ENUM` nativo. ⚠️ Os ACs 3 e 4 repetem
+  # de propósito o AC9 da 2.3: as duas transições condicionais do AD-4 provadas
+  # por `.rowcount` antes de existir service. `frontend/` e o README da raiz não
+  # são tocados.
+  3-5-modelo-de-reserva: review
   3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: backlog
   3-7-reserva-abandonada-devolve-o-estoque: backlog
   3-8-pagar-com-aprovacao-e-com-recusa: backlog

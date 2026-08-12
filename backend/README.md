@@ -241,6 +241,7 @@ backend/
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
       evento.py       # Evento + Setor + a Table evento_portaria (a escala, Story 2.5)
+      reserva.py      # EstadoReserva + Reserva + ItemReserva (o schema da compra, Story 3.5)
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
@@ -257,13 +258,14 @@ backend/
       seguranca.py    # hash Argon2id e token de sessão (JWT)
   migrations/         # Alembic
     env.py
-    versions/         # 4: usuario · evento+setor · evento_portaria · e a extensão unaccent,
-                      #    a única que não cria tabela (Story 3.2)
+    versions/         # 5: usuario · evento+setor · evento_portaria · a extensão unaccent,
+                      #    a única que não cria tabela (Story 3.2) · reserva+item_reserva (3.5)
   seeds/              # dados exigidos pelo desafio — não sobe com o uvicorn
     semear.py          # as cinco contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
     test_evento.py     # invariantes de evento e setor que o banco garante
+    test_reserva.py    # idem, para reserva e item_reserva (Story 3.5)
     test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
     test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
@@ -1320,6 +1322,72 @@ FastAPI leria `"cidades"` como UUID e devolveria `422`, e o sintoma apareceria l
 perderia os chips e a capa sumiria, sem que nada ligasse isso a uma rota nova de detalhe. A suíte foi
 de 279 para **293 testes**.
 
+## Reserva e item de reserva
+
+Duas tabelas, criadas juntas na Story 3.5 pela migração `6448866ff965` — a quinta do projeto, e a
+primeira desde a `unaccent` que cria tabela. `reserva` é a compra enquanto ela ainda não é uma
+compra: quem comprou, de que show, em que estado, até quando o lugar fica preso, quanto custou e
+quando nasceu. `item_reserva` é o que foi escolhido: uma linha por setor, com a quantidade e o
+**preço congelado** no ato — não uma cópia viva do `setor.preco_centavos`, porque o dia em que o
+organizador mudar o preço, a reserva paga tem que continuar dizendo quanto custou. **Nada na
+aplicação lê ou escreve nessas tabelas ainda**, e isso é o recorte, não uma falta: reservar é a
+3.6, colher o que expirou é a 3.7, pagar é a 3.8 e emitir o ingresso é a 3.9. Fiz igual à Story
+2.3, que criou `evento` e `setor` uma epic antes de alguém as ler — o formato do banco nasce antes
+do comportamento que o consome.
+
+O `estado` tem cinco valores (`PENDENTE`, `PAGA`, `RECUSADA`, `EXPIRADA`, `CANCELADA`) e é
+`varchar(20)` com um `CHECK` da lista literal, com o enum vivendo em Python como `EstadoReserva`.
+Descartei o tipo `ENUM` nativo do Postgres, que seria o mais expressivo dos dois: ele quebraria o
+precedente do `usuario.papel`, deixando duas formas de dizer a mesma coisa no mesmo schema, e
+acrescentar um estado viraria `ALTER TYPE` dentro de migração Alembic, que é o ponto de atrito
+conhecido dessa escolha. Com `CHECK`, acrescentar um valor é um `DROP`/`CREATE` de constraint que o
+`downgrade()` desfaz sem cerimônia. `estado` também é a única coluna do projeto que eu deixei de
+propósito **sem `server_default`**, ao contrário do `setor.vendidos`: zero é o começo natural de um
+contador, mas `PENDENTE` é uma *transição*, e com default um `INSERT` que esquecesse o estado
+passaria em silêncio como se tivesse decidido. `CANCELADA` nasce sem ninguém que a escreva — o
+cancelamento pelo cliente é corte consciente registrado no [README da raiz](../README.md), e o
+valor existe porque é ele que torna esse corte reversível sem migração.
+
+**Toda transição é condicionada ao estado anterior**, e testei as duas na story em que a tabela
+nasceu, antes de existir service para executá-las — o mesmo raciocínio do `UPDATE` do AD-3 na 2.3:
+
+```sql
+UPDATE reserva SET estado = 'PAGA'     WHERE id = :id AND estado = 'PENDENTE'
+UPDATE reserva SET estado = 'EXPIRADA' WHERE id = :id AND estado = 'PENDENTE' AND expira_em < now()
+```
+
+**Zero linhas afetadas é o sinal de "alguém chegou primeiro"**, não uma exceção. É esse zero que
+faz *reprocessar um pagamento aprovado não gerar ingresso novo* ser verdade por construção, e não
+por um `if` em algum lugar. O segundo é a forma da expiração preguiçosa da Story 3.7 — não há
+worker nem cron, `expira_em` é lido por quem toca a reserva — e ele prova de quebra que a coluna é
+comparável com o `now()` do **Postgres** sem conversão de fuso pelo caminho.
+
+São quatro chaves estrangeiras e **só uma tem `CASCADE`**: `item_reserva.reserva_id`, porque item
+sem reserva não significa nada. As outras três — `reserva.cliente_id`, `reserva.evento_id` e
+`item_reserva.setor_id` — vão sem `ondelete`, que é o `RESTRICT` do Postgres: apagar um show
+vendido, um setor vendido ou a conta de quem comprou é **recusado pelo banco**, do mesmo jeito que
+apagar quem publicou e quem foi escalado já era. Descartei o `CASCADE` em tudo, que seria coerente
+com a composição já declarada em `setor`, porque aqui o rastro é dinheiro: um `DELETE` distraído no
+`psql` apagaria reserva paga sem uma linha de aviso, e não existe rota nenhuma que apague evento
+para justificar a facilidade. A consequência é assumida e vale saber antes de estranhar: **o `ON
+DELETE CASCADE` de `setor` continua valendo para evento sem venda e deixa de valer no instante da
+primeira reserva.** Os dois comportamentos são desejados, cada um com o seu teste — composição some
+junto, dinheiro não some.
+
+`item_reserva` tem `id` próprio em vez da chave primária composta da `evento_portaria`, e um
+`UNIQUE (reserva_id, setor_id)` com nome escrito à mão. O `id` porque, ao contrário daquela, esta
+tabela **carrega dado próprio**, e o dia em que algo precisar apontar para um item — uma devolução
+parcial, um ingresso por item — a chave composta viraria migração. A unicidade porque ela dá ao
+`UPDATE` de estoque da 3.6 um alvo só por setor, e faz a soma que a página do evento já mostra ("3
+ingressos · 2 setores") virar uma linha por setor, sem ambiguidade; o nome vai explícito porque o
+template `uq` usaria só a primeira coluna e sairia `uq_item_reserva_reserva_id`, que lido em voz
+alta diz "um item por reserva" — o oposto. É a mesma armadilha do `uq_setor_evento_id_nome`. Uma
+última coisa, e é a que mais importa: **é proibido derivar estoque destas tabelas.** Assim que a
+`item_reserva` passou a existir, `SELECT sum(quantidade) ... WHERE setor_id = ...` virou a resposta
+mais óbvia para "quantos foram vendidos", e ela está errada — a resposta é `setor.vendidos`,
+sempre. Escrevi a proibição no docstring de `app/models/reserva.py`, que é o arquivo que mais
+convida a desobedecê-la.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -1390,9 +1458,9 @@ cd backend
 uv run pytest
 ```
 
-São **293 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **316 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
-`Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
+`Evento`, `Setor`, `Reserva` e `ItemReserva`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
 [Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
@@ -1442,7 +1510,11 @@ Ticketmaster" vira um teste em vez de uma promessa.
 constraints do `setor` recusando cada estado proibido com `IntegrityError`, o `CASCADE` levando os
 setores junto quando o evento é apagado pela sessão, o rascunho com `publicado_em` em `NULL`, e o
 `UPDATE` condicional do AD-3 afetando zero linhas quando se pede mais do que resta. Precisa do
-Compose no ar — é Postgres real, não um dublê.
+Compose no ar — é Postgres real, não um dublê. `test_reserva.py` (Story 3.5) é o irmão dele para
+[Reserva e item de reserva](#reserva-e-item-de-reserva): o `CHECK` dos cinco estados, as três
+constraints de quantidade e dinheiro, a unicidade por reserva, os quatro `ondelete` — os três que
+recusam apagar venda e o que leva os itens junto — e as **duas transições condicionais** do
+`PENDENTE`, afetando uma linha na primeira vez e zero na segunda.
 
 ### O que `test_seed.py` prova
 
