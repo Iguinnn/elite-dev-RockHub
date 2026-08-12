@@ -190,6 +190,26 @@ export function dataDaChamada(iso: string): string {
   return `${diaDaSemana}, ${dia}, ${hora}`;
 }
 
+/**
+ * ISO-8601 → só a hora: `"20h51"` (Story 4.1).
+ *
+ * A hora da entrada (`ingresso.usado_em`) é TIMESTAMPTZ em UTC (AD-11) e
+ * chega ISO-8601 com offset; formatá-la aqui, com o mesmo `FUSO` fixo das
+ * outras funções deste módulo, é o que impede o mesmo instante de aparecer
+ * com duas horas em duas telas — o defeito que a `dataPorExtenso` já corrigiu
+ * uma vez para data completa.
+ */
+export function horaDeEntrada(iso: string): string {
+  const instante = new Date(iso);
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: FUSO,
+  })
+    .format(instante)
+    .replace(":", "h");
+}
+
 /** ISO-8601 → `"Publicado em 11 de agosto, 17h22"`. Sem o ano: é recente. */
 export function momentoDaPublicacao(iso: string): string {
   const instante = new Date(iso);

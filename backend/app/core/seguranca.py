@@ -97,6 +97,12 @@ def gerar_nonce() -> str:
     evento terem assinaturas diferentes. Sem ele, `HMAC(segredo, id + evento)`
     já seria único por causa do id — mas o nonce é o que o AD-5 fixa, e ele dá
     margem para o dia em que o id deixar de entrar na conta.
+
+    ⚠️ **Este valor nunca sai do servidor.** Ele é ingrediente do HMAC, e o
+    `gerar_share_token()` do fim deste arquivo sai do **mesmo gerador** com a
+    exposição exatamente oposta — aquele é feito para viajar por WhatsApp.
+    Trocar um pelo outro, ou logar o nonce "porque o outro a gente mostra",
+    entrega a entropia da assinatura. Os dois docstrings dizem isto em espelho.
     """
     return secrets.token_urlsafe(24)
 
@@ -175,3 +181,35 @@ def conferir_codigo(codigo: str, evento_id: UUID, nonce: str) -> bool:
     return hmac.compare_digest(
         assinar_ingresso(ingresso_id, evento_id, nonce), assinatura
     )
+
+
+# --------------------------------------------------------------------------- #
+# O link compartilhável do ingresso (Story 4.3)
+#
+# ⚠️ **Fora do bloco do AD-5 de propósito, e não por descuido de organização.**
+# Os três primitivos de cima transformam um segredo do servidor em algo que o
+# cliente carrega e não consegue forjar — é o que o docstring do módulo diz. O
+# `share_token` não faz isso: ele é um identificador opaco e aleatório, sem
+# segredo nenhum na conta, e **não autentica coisa alguma**. Escrevê-lo dentro
+# da seção do código do ingresso faria a próxima pessoa supor que ele participa
+# da assinatura, que é exatamente o que a techspec do link proíbe supor.
+# --------------------------------------------------------------------------- #
+
+
+def gerar_share_token() -> str:
+    """32 caracteres de aleatoriedade para o link público de um ingresso.
+
+    **Mesmo gerador do `gerar_nonce()`**, e por engenharia igual: 192 bits não
+    se adivinham, então o endereço só chega a quem recebeu o link.
+
+    ⚠️ **A exposição é o oposto da do nonce, e é a única diferença que
+    importa.** O nonce é ingrediente secreto do HMAC e nunca sai do servidor;
+    este valor é feito para viajar por WhatsApp, e ele aparece na URL, no
+    histórico do navegador e em qualquer print que alguém tire. Confundir os
+    dois — usar este na assinatura, ou logar o nonce "porque o outro a gente
+    mostra" — entrega a entropia do AD-5 inteira.
+
+    **Ele também não substitui o código do QR.** Quem valida na porta recalcula
+    a assinatura (AD-5); o `share_token` só endereça uma visualização (AD-8).
+    """
+    return secrets.token_urlsafe(24)

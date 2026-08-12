@@ -311,7 +311,7 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
         assert tabela in tabelas
 
 
-def test_upgrade_cria_a_tabela_ingresso_com_as_sete_colunas(
+def test_upgrade_cria_a_tabela_ingresso_com_as_dez_colunas(
     engine_teste: Engine,
 ) -> None:
     """A sétima tabela do schema, e o AC1 da Story 3.9 lido do banco.
@@ -324,6 +324,12 @@ def test_upgrade_cria_a_tabela_ingresso_com_as_sete_colunas(
 
     Mesmo formato dos quatro testes de schema que a Story 3.5 ganhou para as
     tabelas dela, e pelo mesmo motivo.
+
+    `usado_em` e `validado_por` entraram na migração da Story 4.1
+    (`8b97ae6bae09`), antes de existir validação nenhuma — o consumidor é a
+    leitura de `GET /ingressos`, não a porta. `share_token` entrou na da 4.3
+    (`ed0bb0dad2a3`): é o endereço do link compartilhável, e `NULL` nele é
+    "nunca compartilhado" **ou** "revogado".
     """
     inspetor = inspect(engine_teste)
 
@@ -336,18 +342,24 @@ def test_upgrade_cria_a_tabela_ingresso_com_as_sete_colunas(
         "titular_nome",
         "assinatura",
         "nonce",
+        "usado_em",
+        "validado_por",
+        "share_token",
     }
 
 
 def test_nenhuma_chave_estrangeira_do_ingresso_tem_cascade(
     engine_teste: Engine,
 ) -> None:
-    """Apagar show, setor ou reserva com ingresso emitido é recusado pelo banco.
+    """Apagar show, setor, reserva ou quem validou é recusado pelo banco.
 
-    As três **sem** `ondelete`, e as três de propósito: um ingresso emitido é o
-    passe de entrada de alguém que pagou, e nenhuma remoção de linha vizinha pode
-    fazê-lo desaparecer em silêncio. É o mesmo argumento das três FKs da compra,
-    um degrau acima — lá o que se perde é a intenção de comprar, aqui é a compra.
+    As quatro **sem** `ondelete`, e as quatro de propósito: um ingresso emitido é
+    o passe de entrada de alguém que pagou, e nenhuma remoção de linha vizinha
+    pode fazê-lo desaparecer em silêncio. É o mesmo argumento das três FKs da
+    compra, um degrau acima — lá o que se perde é a intenção de comprar, aqui é
+    a compra. `usuario` (via `validado_por`) entrou na migração da Story 4.1,
+    pelo mesmo raciocínio de `reserva.cliente_id`: apagar quem já validou um
+    ingresso na porta tem que doer, não sumir a validação em cascata.
     """
     inspetor = inspect(engine_teste)
     do_ingresso = {
@@ -355,8 +367,8 @@ def test_nenhuma_chave_estrangeira_do_ingresso_tem_cascade(
         for chave in inspetor.get_foreign_keys("ingresso")
     }
 
-    assert set(do_ingresso) == {"reserva", "evento", "setor"}
-    for tabela in ("reserva", "evento", "setor"):
+    assert set(do_ingresso) == {"reserva", "evento", "setor", "usuario"}
+    for tabela in ("reserva", "evento", "setor", "usuario"):
         assert "ondelete" not in do_ingresso[tabela]["options"], (
             f"a FK de ingresso para {tabela} ganhou ondelete — "
             "apagar venda tem que doer"
@@ -371,6 +383,10 @@ def test_so_as_chaves_estrangeiras_lidas_do_ingresso_tem_indice(
     `reserva_id` é o `where` de "os canhotos desta reserva" e `evento_id` é o da
     portaria na Epic 5. `setor_id` não é lido por nenhuma story planejada:
     índice preventivo é peso sem gargalo demonstrado, como em `reserva.evento_id`.
+
+    A tabela tem um terceiro índice desde a Story 4.3 — o único de
+    `share_token` —, e ele não contradiz nada aqui: não é chave estrangeira, e
+    é o `where` exato da rota pública do link. O teste dele é o próximo.
     """
     inspetor = inspect(engine_teste)
 
@@ -384,3 +400,73 @@ def test_so_as_chaves_estrangeiras_lidas_do_ingresso_tem_indice(
         for coluna in indice["column_names"]
     }
     assert "setor_id" not in colunas_indexadas
+
+
+def test_usado_em_e_validado_por_sao_anulaveis_e_usado_em_carrega_fuso(
+    engine_teste: Engine,
+) -> None:
+    """As duas colunas do AD-6 (Story 4.1) — `NULL` é "nunca validado".
+
+    `usado_em` com TIMESTAMPTZ (AD-11): é contra ele que `GET /ingressos`
+    decide *Ativos* de *Utilizados*, e é o que permite comparar com o `now()`
+    do Postgres na Story 5.2 sem conversão de fuso pelo caminho.
+    """
+    inspetor = inspect(engine_teste)
+    colunas = {c["name"]: c for c in inspetor.get_columns("ingresso")}
+
+    assert colunas["usado_em"]["nullable"] is True
+    assert colunas["usado_em"]["type"].timezone is True
+    assert colunas["validado_por"]["nullable"] is True
+
+
+def test_share_token_e_anulavel_e_tem_indice_unico(engine_teste: Engine) -> None:
+    """A coluna do link compartilhável (Story 4.3), lida do banco.
+
+    **Anulável**, porque `NULL` é o estado de quem nunca compartilhou **e** o de
+    quem revogou (Story 4.4) — os dois são o mesmo estado, de propósito.
+
+    ⚠️ **Índice único, e não um índice comum.** Ele é o `where` da rota pública
+    `GET /ingressos/compartilhados/{token}`, e a unicidade é o que garante que
+    um token endereça um ingresso só. No Postgres `NULL` não colide com `NULL`
+    num índice único, então milhares de ingressos sem link convivem sem índice
+    parcial nenhum — e é justamente por isso que um `--autogenerate` distraído
+    poderia trocar `unique=True` por `unique=False` sem quebrar teste nenhum de
+    comportamento. Este é o teste que quebra.
+    """
+    inspetor = inspect(engine_teste)
+    colunas = {c["name"]: c for c in inspetor.get_columns("ingresso")}
+
+    assert colunas["share_token"]["nullable"] is True
+
+    (indice,) = [
+        i
+        for i in inspetor.get_indexes("ingresso")
+        if i["column_names"] == ["share_token"]
+    ]
+    assert indice["unique"] is True
+
+
+def test_validado_por_referencia_usuario_sem_cascade_e_sem_indice(
+    engine_teste: Engine,
+) -> None:
+    """Apagar uma conta de portaria que já validou um ingresso é recusado.
+
+    Sem índice, de propósito: nenhuma story planejada filtra ingresso por quem
+    validou — a coluna existe para o painel dizer *quem* validou, não para ser
+    o `where` de uma consulta.
+    """
+    inspetor = inspect(engine_teste)
+    chaves = {
+        chave["referred_table"]: chave
+        for chave in inspetor.get_foreign_keys("ingresso")
+    }
+
+    assert chaves["usuario"]["constrained_columns"] == ["validado_por"]
+    assert "ondelete" not in chaves["usuario"]["options"]
+
+    colunas_indexadas = {
+        coluna
+        for indice in inspetor.get_indexes("ingresso")
+        for coluna in indice["column_names"]
+    }
+    assert "validado_por" not in colunas_indexadas

@@ -17,15 +17,17 @@ regra do projeto é agrupar por **agregado**, e este é um agregado novo.
 - **Só quem paga emite** (AD-14), e só dentro da transação que marca a reserva
   como `PAGA`. Nenhum outro service, rota ou tarefa cria ingresso.
 
-⚠️ **Faltam de propósito `usado_em` e `validado_por`**, as duas colunas do AD-6.
-Elas são da Epic 5, e a disciplina do projeto é não criar coluna sem consumidor:
-aqui não existe validação nenhuma ainda. Isto **não** é esquecimento — a
-migração que as acrescenta é da Story 5.2.
+**`usado_em` e `validado_por` entram na Story 4.1**, antes de existir validação
+alguma (Epic 5): o consumidor é a leitura, não a escrita. `GET /ingressos`
+separa *Ativos* de *Utilizados* por `usado_em IS NULL`, e a Story 5.2 é quem
+primeiro grava as duas — até lá, ambas ficam sempre `NULL` (techspec
+`docs/techspec-meus-ingressos.md`).
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -87,11 +89,51 @@ class Ingresso(Base):
     # `secrets.token_urlsafe(24)` → 32 caracteres. É o que faz dois ingressos do
     # mesmo evento, do mesmo setor e da mesma reserva terem assinaturas
     # diferentes mesmo com o mesmo segredo.
+    #
+    # ⚠️ **Nunca sai do servidor**, ao contrário do `share_token` logo abaixo,
+    # que sai do mesmo gerador — ver o par de docstrings em `core/seguranca.py`.
     nonce: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    # O endereço do link compartilhável (Story 4.3). `NULL` é "nunca
+    # compartilhado" **ou** "revogado" — os dois casos são o mesmo estado, e é
+    # isso que faz a revogação da 4.4 ser um corte e não um aviso de que algo
+    # existiu ali.
+    #
+    # **Índice único**, e sem índice parcial: no Postgres `NULL` não colide com
+    # `NULL` num índice único, então milhares de ingressos sem link convivem sem
+    # complicação nenhuma. O índice é o `where` da rota pública, que busca por
+    # esta coluna e por mais nada.
+    #
+    # ⚠️ **Coluna pública por construção** (AD-8): ela vira URL, viaja por
+    # WhatsApp e aparece em print. Nada derivado de segredo entra aqui, e ela
+    # **não** participa da assinatura do AD-5 — quem valida na porta recalcula o
+    # HMAC a partir do `nonce`, que é o vizinho de cima e o oposto exato desta.
+    share_token: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, unique=True, index=True
+    )
 
     # Sem `criado_em`: o ingresso nasce na transação do pagamento, e nenhuma
     # story lê a hora de emissão. Mesmo argumento que deixou `setor` e
     # `item_reserva` sem a coluna.
+
+    # `NULL` é "nunca validado" — o estado de todo ingresso emitido até a Epic
+    # 5 existir. TIMESTAMPTZ em UTC (AD-11), como todo tempo do projeto: é
+    # contra ele que `GET /ingressos` decide *Ativos* de *Utilizados*
+    # (`usado_em IS NULL`), e é o `usado_em IS NULL` do `UPDATE` condicional
+    # da Story 5.2 que impede validar o mesmo ingresso duas vezes.
+    #
+    # ⚠️ **Sem índice** (decisão da techspec da 4.1). O `UPDATE` da 5.2 é
+    # `WHERE id = :id AND usado_em IS NULL` — busca por chave primária —, e o
+    # painel da 5.6 filtra por `evento_id`, que já é indexado.
+    usado_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Quem leu o QR na porta. Sem `ondelete`: apagar uma conta de portaria que
+    # já validou um ingresso é recusado pelo Postgres, o mesmo tratamento que
+    # `reserva.cliente_id` dá a quem comprou.
+    validado_por: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("usuario.id"), nullable=True
+    )
 
     # ⚠️ **Nenhum `relationship`**, aqui nem do outro lado. Precedente de
     # `Reserva`, que também não tem: relacionamento sem consumidor é promessa

@@ -229,11 +229,78 @@ development_status:
   epic-3-retrospective: optional
 
   # ---------- Epic 4: Meus ingressos e compartilhamento ----------
-  epic-4: backlog
-  4-1-ver-meus-ingressos: backlog
-  4-2-ver-o-canhoto-com-o-qr: backlog
-  4-3-compartilhar-o-ingresso-por-link: backlog
-  4-4-revogar-o-link-compartilhado: backlog
+  # MUDANÇA DE FORMATO, seguindo a 3.7-3.9: a 4.1 e a 4.2 saem de uma
+  # techspec só (docs/techspec-meus-ingressos.md) — o grupo de leitura do
+  # mesmo agregado, lista e detalhe pelo mesmo caminho (reserva → cliente da
+  # sessão), com o mesmo 404 de "não é seu". O commit continua um por story.
+  #
+  # Code review da epic em 2026-08-12, em **escopo estreito por pedido do Igor**:
+  # só o que quebra código ou deploy, reportando apenas Critical e High. Três
+  # camadas em paralelo (backend, frontend, testes), recortadas por fronteira de
+  # autenticação — quem exige sessão contra quem não exige, que é a invariante
+  # nova desta epic. Saldo: **zero Critical, 4 High, todos os 4 corrigidos**. A
+  # suíte foi de 449 para 451. Achados em code-review-epic-4.md.
+  #
+  # ⚠️ **A lição desta epic: os quatro achados foram provados por mutação, e um
+  # deles desmentiu a própria camada que o levantou.** A camada afirmou que um
+  # `share_token` sequencial passaria nos 449 testes; com contador ela erra (o
+  # "1" cai dentro do UUID do código e um teste existente pega por acaso), mas
+  # com `token_urlsafe(4)` — 32 bits, força-bruta viável — os 53 testes de
+  # compartilhamento e migração passam **todos**. O achado era real e a
+  # justificativa dele não era. Achado de revisor vale o que a mutação provar.
+  #
+  # Os três eixos que build verde e suíte verde não cobriam: corrida de escrita
+  # (o `compartilhar` era read-then-write sem trava), teste que passa nos dois
+  # sentidos (o "sem recalcular" comparava contra o valor que o recálculo também
+  # produz), e garantia declarada sem asserção nenhuma (a entropia do token).
+  epic-4: in-progress
+  # Commit 1: migração de `usado_em`/`validado_por` (AD-6, adiantada da 5.2
+  # porque o primeiro consumidor é a leitura, não a porta), `services/
+  # ingresso.py` (arquivo novo — o agregado tem vida própria desde a 3.9),
+  # `GET /ingressos` e a tela `/ingressos` com os blocos Ativos/Utilizados.
+  # ⚠️ O bloco Utilizados nasce vazio de propósito: nada escreve `usado_em`
+  # antes da Story 5.2 existir — provado por teste que grava a coluna à mão.
+  4-1-ver-meus-ingressos: done
+  # Commit 2: `GET /ingressos/{id}` (IngressoDetalhe, com `codigo` montado da
+  # coluna sem recalcular — AD-5), a tela do canhoto com QR em duas colunas
+  # (talão/corpo com picote tracejado), e `/reservas/{id}` enxugada: perde os
+  # canhotos, ganha a confirmação mais o link para `/ingressos`. Decisão da
+  # techspec: o canhoto cheio existe só em `/ingressos/{id}` — duas versões
+  # do mesmo canhoto convivendo obrigaria quem lê a decidir qual é o de
+  # verdade. `bgColor`/`fgColor` do QR **em hex literal** (`#e4ebea`/`#0b1618`),
+  # como a spec pedia: eles viram atributo `fill` do SVG, e `var()` que não
+  # resolva ali cai para o preto padrão — QR preto sobre preto, invisível para
+  # a suíte e detectável só na fila da porta. Chegaram como `var(--cal)`/
+  # `var(--breu)` e voltaram ao hex no code review da Epic 4.
+  4-2-ver-o-canhoto-com-o-qr: done
+  # A 4.3 e a 4.4 saem de outra techspec só (docs/techspec-link-compartilhado.md):
+  # um recurso e seu ciclo de vida — o `share_token` nasce na 4.3 e morre na
+  # 4.4, na mesma coluna, no mesmo subrecurso e no mesmo service.
+  # Commit 1: migração `ed0bb0dad2a3` (`share_token`, anulável, índice único),
+  # `gerar_share_token()`, `POST /ingressos/{id}/compartilhamento` (idempotente:
+  # com link ativo devolve o mesmo token, porque um token novo a cada clique
+  # seria revogação silenciosa), a rota pública `GET /ingressos/compartilhados/
+  # {token}` em `publico.py`, o `<Canhoto>` extraído e a tela `/i/{token}`.
+  # ⚠️ Janela consciente de um commit: aqui existe link gerado sem como
+  # revogar — a mesma forma da janela entre a 2.4 e a 2.5, e pelo mesmo motivo.
+  # Fecha no commit da 4.4.
+  # ⚠️ `/ingressos` passou a morar em dois routers, e `cliente.py` é registrado
+  # antes: o que salva a rota pública são os três segmentos do caminho contra os
+  # dois da autenticada. Há teste provando as duas de pé.
+  4-3-compartilhar-o-ingresso-por-link: done
+  # Commit 2: `DELETE /ingressos/{id}/compartilhamento` → 204 (o primeiro
+  # DELETE da API), `Botao` com a prop `variante` que o docstring dele previa
+  # desde a 1.2, `<Confirmacao>` com <dialog> nativo e o gatilho *Revogar link*
+  # na ilha. A janela do commit anterior fechou aqui.
+  # ⚠️ `showModal()`, nunca `show()`: o segundo não trava foco, não põe
+  # backdrop e não torna a página inerte — parece funcionar e não é modal.
+  # ⚠️ 204 também quando já não havia link: o DELETE é idempotente, e revogar
+  # duas vezes não é erro. Token revogado responde igual a token que nunca
+  # existiu — é isso que faz a revogação ser um corte, não um aviso.
+  # ⚠️ O `close()` do <dialog> ENFILEIRA o evento `close`; a ilha desliga o
+  # estado de confirmação na mão antes de chamar a API, senão a desmontagem
+  # do diálogo no sucesso engole o evento e a caixa reabre sozinha depois.
+  4-4-revogar-o-link-compartilhado: done
   epic-4-retrospective: optional
 
   # ---------- Epic 5: Portaria ----------

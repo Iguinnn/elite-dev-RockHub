@@ -1,0 +1,81 @@
+/* A caixa de confirmação (Story 4.4) — a única do produto.
+
+   ⚠️ **Sem raio e sem sombra**, como todo elemento deste sistema (UX-DR3): o
+   que separa a caixa da página é o fio e o backdrop, não uma elevação. O
+   navegador não desenha nada disso por conta própria, mas desenha uma borda
+   e um `padding` padrão no `<dialog>` — as três primeiras linhas os apagam. */
+
+.dialogo {
+  /* ⚠️ **`margin: auto` não é redundância — sem ele o modal encosta no canto
+     superior esquerdo.** Quem centraliza um `<dialog>` aberto por
+     `showModal()` é a folha do próprio navegador, com `position: fixed;
+     inset: 0; width: fit-content; margin: auto` — e o `* { margin: 0 }` do
+     `globals.css` derruba justamente a última. É o mesmo tipo de armadilha que
+     o `border: none` do `Botao.module.css` documenta, com o sinal trocado: lá
+     o reset **não** alcançava o `<button>`, aqui ele alcança e apaga
+     comportamento nativo que a gente queria de graça. Nenhuma coordenada à
+     mão, nenhum `transform: translate(-50%, -50%)`: o navegador centraliza
+     certo, inclusive quando a caixa é mais alta que a janela. */
+  margin: auto;
+  max-width: 46ch;
+  border: 1px solid var(--fio);
+  padding: 28px 26px;
+  background: var(--breu2);
+  color: var(--cal);
+}
+
+/* ⚠️ **`::backdrop` é elemento próprio e não herda nada da página** — nem cor,
+   nem variável de `:root` em navegador antigo. Sem esta regra o fundo do modal
+   é o preto translúcido padrão, que é `#000` e o DESIGN.md proíbe. O breu com
+   alpha é a mesma tinta do chão da aplicação, só que por cima. */
+.dialogo::backdrop {
+  background: rgb(11 22 24 / 78%);
+}
+
+.titulo {
+  font: 400 24px/1.2 var(--serif);
+  letter-spacing: -0.01em;
+}
+
+.consequencia {
+  margin-top: 12px;
+  font: 400 16px/1.55 var(--serif);
+  color: var(--fumaca);
+}
+
+/* A ação à direita, a saída à esquerda: a ordem de leitura põe primeiro o
+   caminho de volta, e o gesto de confirmar fica do lado do polegar. */
+.acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+/* O `<Botao>` é `width: 100%`; a largura de verdade é desta caixa. */
+.acao {
+  width: 170px;
+}
+
+/* Secundário: fio e texto, sem tinta — molde do `.copiar` do
+   compartilhamento. A saída não compete com a ação destrutiva ao lado. */
+.cancelar {
+  padding: 18px;
+  border: 1px solid var(--fio2);
+  background: none;
+  color: var(--fumaca);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  /* O único movimento previsto no sistema é mudança de cor em hover, até 120ms
+     (`globals.css`) — e quem pediu menos movimento não recebe nenhum. */
+  transition: color 120ms, border-color 120ms;
+}
+
+.cancelar:hover {
+  border-color: var(--cal);
+  color: var(--cal);
+}

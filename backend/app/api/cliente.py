@@ -1,4 +1,4 @@
-"""Rotas de quem tem conta de cliente: reservar e acompanhar a reserva.
+"""Rotas de quem tem conta de cliente: reservar, pagar e ver o que comprou.
 
 **O critério de entrada aqui é o papel `CLIENTE`** — toda rota deste arquivo
 começa por `Depends(exigir_papel(PapelUsuario.CLIENTE))`, na assinatura (AD-9),
@@ -21,14 +21,16 @@ pessoa não é uma chamada que o service recusa, é uma chamada que não existe.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
 from app.core.dependencias import exigir_papel
 from app.models.usuario import PapelUsuario, Usuario
+from app.schemas.ingresso import IngressoDetalhe, IngressoNaLista
 from app.schemas.pagamento import PagamentoEntrada
 from app.schemas.reserva import ReservaEntrada, ReservaSaida
+from app.services import ingresso as servico_de_ingresso
 from app.services import reserva as servico_de_reserva
 from app.services.pagamento import PaymentGateway, obter_gateway
 
@@ -145,3 +147,124 @@ def pagar_reserva(
     continua `{"erro": {"codigo", "mensagem"}}`, sem exceção ao `core/erros.py`.
     """
     return servico_de_reserva.pagar(sessao, cliente, reserva_id, dados, gateway)
+
+
+@router.get("/ingressos", response_model=list[IngressoNaLista])
+def listar_ingressos(
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> list[IngressoNaLista]:
+    """Todos os ingressos de todas as compras pagas de quem está na sessão.
+
+    **Rota própria, e não a lista filtrada da tela de detalhe da reserva**
+    (techspec da 4.1): o ingresso é um agregado com vida própria desde a Story
+    3.9, e é neste endereço que a Story 4.3 vai pendurar o compartilhamento.
+
+    **`200` com lista vazia é resposta legítima** — nunca `404`. Quem nunca
+    comprou recebeu a pergunta certa, e a resposta é "nenhum".
+
+    A lista chega **chapada**, ordenada por `evento_data_hora` crescente: quem
+    corta em *Ativos* e *Utilizados* — por `usado_em IS NULL` — é a tela, o
+    mesmo molde do `GET /organizador/eventos` da 2.6.
+    """
+    return servico_de_ingresso.listar(sessao, cliente)
+
+
+@router.get("/ingressos/{ingresso_id}", response_model=IngressoDetalhe)
+def obter_ingresso(
+    ingresso_id: UUID,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> IngressoDetalhe:
+    """O canhoto cheio, com o `codigo` que vira QR — a Story 4.2.
+
+    **Um `404 INGRESSO_NAO_ENCONTRADO` para "não existe" e para "não é seu"**,
+    nunca `403`: mesma disciplina do `obter_reserva` acima e do
+    `obter_do_organizador` da 2.6.
+
+    **`ingresso_id: UUID`, e não `str`**: o Pydantic recusa um caminho que não
+    seja UUID com `422` antes de a consulta ser montada.
+
+    **`share_token` entra na resposta a partir da Story 4.3** — `null` quando
+    nunca foi compartilhado ou depois de revogado. É o que faz o dono
+    reencontrar o próprio link ao voltar à tela.
+    """
+    return servico_de_ingresso.obter(sessao, cliente, ingresso_id)
+
+
+@router.post("/ingressos/{ingresso_id}/compartilhamento", response_model=IngressoDetalhe)
+def compartilhar_ingresso(
+    ingresso_id: UUID,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> IngressoDetalhe:
+    """Gera o link público deste ingresso, ou devolve o que já existe (4.3).
+
+    **Subrecurso `compartilhamento`, e não `POST /ingressos/{id}/compartilhar`.**
+    O par de operações é criar e remover um link, e o HTTP já nomeia as duas: o
+    `DELETE` do mesmo endereço revoga (Story 4.4). Um verbo em português na URL
+    esconderia num nome inventado a operação idempotente que o método já diz, e
+    ela teria de ser explicada num comentário em vez de ser lida.
+
+    **Sem corpo.** Não há nada para escolher: o token é gerado pelo servidor, e
+    o endereço do ingresso já diz de qual link se trata.
+
+    ⚠️ **`200` nas duas vezes, e nunca `201`.** Compartilhar é idempotente: com
+    link ativo, a chamada devolve **o mesmo token** e não escreve nada. Um `201`
+    na primeira vez informaria "foi agora" a ninguém que lê, e um token novo a
+    cada clique seria uma revogação silenciosa — cortaria quem já recebeu o
+    link, sem a confirmação que a Story 4.4 existe para exigir.
+
+    **A URL de compartilhamento é montada pelo navegador**, não aqui: a resposta
+    carrega o token, e a tela monta `{origem}/i/{token}`. O backend não conhece
+    — nem deve — o domínio do frontend, que muda a cada Preview da Vercel.
+
+    Erro possível: `404 INGRESSO_NAO_ENCONTRADO` — inexistente **ou** de outra
+    pessoa, com a mesma frase do `GET` acima e pelo mesmo motivo.
+    """
+    return servico_de_ingresso.compartilhar(sessao, cliente, ingresso_id)
+
+
+@router.delete(
+    "/ingressos/{ingresso_id}/compartilhamento",
+    status_code=204,
+    response_class=Response,
+)
+def revogar_compartilhamento(
+    ingresso_id: UUID,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> Response:
+    """Faz o link deste ingresso parar de valer — a Story 4.4.
+
+    ⚠️ **O primeiro `DELETE` da API, e ele não quebra padrão nenhum.** Nunca
+    houve aqui uma operação com forma de remoção: `POST /reservas/{id}/pagamento`
+    não é "evitamos `DELETE`", é um comando que de fato não remove nada.
+    *Descartei* `POST /ingressos/{id}/revogar`, que preservaria a uniformidade
+    ao custo de esconder num verbo em português a operação idempotente que o
+    HTTP já nomeia — e que teria de ser explicada num comentário em vez de ser
+    lida no método. O par fica: `POST` cria o link, `DELETE` do mesmo endereço o
+    revoga.
+
+    ⚠️ **`204` também quando já não havia link.** O `DELETE` é idempotente por
+    definição, e quem pediu para o link não valer mais obteve exatamente isso.
+    Revogar duas vezes responde `204` nas duas — a segunda chamada não é erro
+    nenhum, é a mesma verdade dita de novo.
+
+    **`204`, e não `200` com o ingresso.** Não há estado novo para a tela
+    aprender: o link deixou de existir, e a ilha já sabe disso por ter pedido. O
+    `share_token` volta a `null` no próximo `GET`, que o `router.refresh()`
+    dispara.
+
+    **Depois disto, compartilhar gera um token diferente** — o link antigo não
+    volta, e é isso que faz a revogação ser um corte de verdade.
+
+    Erro possível: `404 INGRESSO_NAO_ENCONTRADO` — inexistente **ou** de outra
+    pessoa, como nas duas irmãs e pelo mesmo motivo.
+    """
+    servico_de_ingresso.revogar_compartilhamento(sessao, cliente, ingresso_id)
+    # `Response` explícito, e não `return None`: com `status_code=204` o
+    # FastAPI serializaria o `None` como o corpo `null`, e uma resposta `204`
+    # com corpo é resposta malformada — o `chamarApi` do frontend, que corta no
+    # `status === 204` antes de chamar `.json()`, nunca veria o defeito.
+    return Response(status_code=204)
