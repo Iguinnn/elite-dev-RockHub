@@ -14,7 +14,10 @@ guarda de sessão em dois lugares.
 
 **Sem `prefix`**, ao contrário do `organizador.py`: o recurso é evento, e a
 rota pública dele é `/eventos` — a URL de quem só está olhando não carrega o
-nome de um papel.
+nome de um papel. A partir da Story 4.3 há um segundo recurso aqui, o ingresso
+compartilhado, e a ausência de prefixo é o que permite que a URL dele seja
+`/ingressos/...` mesmo com as rotas do dono morando em `cliente.py` — ver o
+aviso no fim do arquivo.
 """
 
 from uuid import UUID
@@ -29,7 +32,9 @@ from app.schemas.evento import (
     EventoPublico,
     PeriodoDaProgramacao,
 )
+from app.schemas.ingresso import IngressoDetalhe
 from app.services import evento as servico_de_evento
+from app.services import ingresso as servico_de_ingresso
 
 router = APIRouter(tags=["público"])
 
@@ -182,3 +187,57 @@ def obter_evento(
     **entra**, e é a primeira vez em rota de cliente: preço não é contagem.
     """
     return servico_de_evento.obter_publico(sessao, evento_id)
+
+
+# --------------------------------------------------------------------------- #
+# O ingresso compartilhado (Story 4.3)
+#
+# ⚠️ **O espaço de URL `/ingressos` mora em dois arquivos a partir daqui**, e o
+# `cliente.py` é registrado **antes** deste no `main.py`. O que salva a rota
+# abaixo é ela ter **três** segmentos contra os dois de
+# `/ingressos/{ingresso_id}`: uma rota pública futura de dois segmentos sob
+# `/ingressos` seria engolida pela autenticada e voltaria `401` ou `422` — um
+# erro que não menciona autenticação nenhuma para quem for procurar o defeito.
+# Há teste provando esta de pé sem sessão, pelo mesmo motivo que existe o das
+# duas rotas de path fixo lá em cima.
+#
+# **Ela está aqui, e não ao lado das irmãs em `cliente.py`**, porque o critério
+# declarado deste arquivo é a **ausência de autenticação**, não o recurso. Uma
+# rota sem guarda de sessão dentro do arquivo cuja invariante escrita é que toda
+# rota dali tem uma seria o tipo de exceção que faz a próxima pessoa procurar a
+# guarda em dois lugares.
+# --------------------------------------------------------------------------- #
+@router.get("/ingressos/compartilhados/{token}", response_model=IngressoDetalhe)
+def obter_ingresso_compartilhado(
+    token: str,
+    sessao: Session = Depends(obter_sessao),
+) -> IngressoDetalhe:
+    """O canhoto que um link compartilhado abre — sem conta nenhuma (Story 4.3).
+
+    **Pública pelo mesmo critério das outras quatro**: nenhuma dependência de
+    sessão, nenhum `Depends(exigir_papel(...))`. Quem recebeu o link por
+    WhatsApp pode nunca ter entrado no RockHub, e é essa pessoa que vai passar
+    na porta com ele.
+
+    **O corpo é o `IngressoDetalhe` inteiro**, `titular_nome` e `usado_em`
+    inclusive — o mesmo canhoto que o dono vê. Esconder o titular ou fingir que
+    um ingresso já utilizado ainda vale seria um segundo canhoto, diferente do
+    de verdade, e quem chegasse na porta com ele descobriria a diferença no pior
+    lugar possível.
+
+    ⚠️ **Token revogado e token que nunca existiu respondem igual** — `404
+    LINK_NAO_ENCONTRADO`, mesma frase. É o que faz a revogação da Story 4.4 ser
+    um corte, e não um aviso de que existiu algo ali.
+
+    ⚠️ **O `token` é `str`, e não há validação de formato — de propósito.** Ele
+    não é UUID nem carrega estrutura: é `secrets.token_urlsafe(24)`, e qualquer
+    coisa que não bata com a coluna cai no mesmo `404`. Um `422` para "esse
+    token tem forma estranha" contaria a quem varresse endereços qual é o
+    formato certo.
+
+    ⚠️ **Esta rota não confere assinatura, e não deve.** Ela é visualização
+    (AD-8); o `share_token` **não** substitui o HMAC do AD-5. Quem recalcula é a
+    portaria, na Epic 5 — chamar `conferir_codigo` aqui daria a impressão de que
+    o token autentica alguma coisa.
+    """
+    return servico_de_ingresso.obter_por_share_token(sessao, token)

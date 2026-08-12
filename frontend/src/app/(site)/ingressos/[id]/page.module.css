@@ -1,9 +1,9 @@
-/* O canhoto cheio, com o QR (Story 4.2).
+/* A tela do canhoto (Story 4.2), sem o canhoto: ele virou
+   `components/Canhoto.module.css` na Story 4.3, quando `/i/[token]` passou a
+   desenhar o mesmo objeto.
 
-   Duas colunas com um picote entre elas — o fio tracejado que separa o talão
-   (o que identifica) do corpo (o que se apresenta na porta). Sem card, sem
-   sombra, sem raio (UX-DR3): a separação é o próprio fio, como em toda tela
-   deste produto. */
+   O que sobrou aqui é o chrome desta página — o caminho de volta, a faixa de
+   "já utilizado" e a margem que alinha o canhoto com os dois. */
 
 .pagina {
   padding: 0 0 96px;
@@ -32,7 +32,12 @@
 }
 
 /* Neutro, não vermelho (EXPERIENCE.md#veredito): um canhoto já utilizado não
-   é fraude nem falha, é um ingresso que já cumpriu o que prometia. */
+   é fraude nem falha, é um ingresso que já cumpriu o que prometia.
+
+   ⚠️ A gêmea desta regra está em `(site)/i/[token]/page.module.css`: as duas
+   telas desenham a faixa por fora do `<Canhoto>`, porque ela é chrome de
+   página. Mudou aqui, mudou lá — do contrário o mesmo ingresso passa a dizer
+   coisas diferentes para o dono e para quem recebeu o link. */
 .jaUtilizado {
   max-width: 52ch;
   margin: 22px 12px 0;
@@ -48,96 +53,16 @@
   color: var(--cal);
 }
 
-/* ---- o canhoto ------------------------------------------------------------ */
+/* A margem lateral do canhoto e do bloco de compartilhar, num lugar só: o
+   componente não conhece a página que o desenha.
 
-.canhoto {
-  display: grid;
-  grid-template-columns: 1fr 320px;
+   ⚠️ **`miolo`, e nunca `corpo`.** O `<Canhoto>` já tem um `.corpo` — a coluna
+   do QR, com fundo `--cal` e texto `--breu` — e este `div` é **ancestral**
+   dele. Com o mesmo nome nos dois módulos, aquelas regras chegam aqui: o talão
+   inteiro vira texto escuro sobre claro (`--fumaca` sobre `--cal` é 2,7:1, e a
+   tela fica ilegível), e o `align-items: center` encolhe e centraliza o bloco
+   de compartilhar. Nome de classe de página nunca repete nome de classe de
+   componente que ela desenha. */
+.miolo {
   margin: 28px 12px 0;
-  border: 1px solid var(--fio);
-}
-
-.talao {
-  padding: 28px 26px;
-}
-
-.nomeDoEvento {
-  margin: 10px 0 6px;
-  font: 400 32px/1.1 var(--serif);
-  letter-spacing: -0.02em;
-}
-
-.dataDoEvento {
-  font: 400 17px/1.5 var(--serif);
-  color: var(--fumaca);
-}
-
-.casa {
-  margin-top: 2px;
-  font: 400 15px/1.5 var(--serif);
-  color: var(--fumaca);
-}
-
-.dados {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px dashed var(--fio);
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 16px;
-  row-gap: 10px;
-}
-
-.dados dt {
-  font: 600 11px/1.5 var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--fumaca);
-}
-
-.dados dd {
-  font: 400 17px/1.4 var(--serif);
-}
-
-/* O picote: fio tracejado entre o talão e o corpo. */
-.corpo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding: 28px 22px;
-  border-left: 2px dashed var(--fio);
-  background: var(--cal);
-  color: var(--breu);
-}
-
-.qr {
-  line-height: 0;
-}
-
-/* O payload tem ~80 caracteres; espaçado em blocos de 4 (ver o comentário no
-   componente) para o olho ter onde parar ao conferir contra a tela da porta.
-   `overflow-wrap` porque, mesmo em blocos, é uma coluna estreita no celular. */
-.codigo {
-  max-width: 34ch;
-  text-align: center;
-  font: 12px/1.6 var(--mono);
-  letter-spacing: 0.02em;
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 900px) {
-  .canhoto {
-    grid-template-columns: 1fr;
-  }
-
-  .corpo {
-    border-left: none;
-    border-top: 2px dashed var(--fio);
-  }
-
-  .nomeDoEvento {
-    font-size: 27px;
-  }
 }

@@ -1,0 +1,71 @@
+/* O bloco do link compartilhável, embaixo do canhoto (Story 4.3).
+
+   Sem card, sem sombra, sem raio (UX-DR3): um fio no topo separa o bloco do
+   canhoto, como todo corte deste produto. A largura acompanha a do canhoto —
+   a margem lateral é da página, não daqui. */
+
+.bloco {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fio);
+}
+
+.explicacao {
+  max-width: 56ch;
+  margin-top: 10px;
+  font: 400 16px/1.55 var(--serif);
+  color: var(--fumaca);
+}
+
+.acao {
+  width: 210px;
+  margin-top: 16px;
+}
+
+/* O link e o botão de copiar. `wrap` porque o endereço é longo e a coluna
+   aperta no celular — aí o botão desce para a linha de baixo em vez de
+   espremer o link. */
+.linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* Dado de máquina: mono, e selecionável de propósito — é por ele que se copia
+   à mão onde não há `navigator.clipboard`. `overflow-wrap` para o endereço não
+   estourar a coluna. */
+.link {
+  flex: 1 1 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--fio);
+  background: var(--breu2);
+  font: 13px/1.5 var(--mono);
+  color: var(--cal);
+  overflow-wrap: anywhere;
+}
+
+/* Acelerador, não o caminho: secundário por desenho — contorno em fio, texto
+   em fumaça —, para não competir com a ação primária de nenhuma tela. Molde do
+   `.passo` do stepper, que inverte as tintas no hover. */
+.copiar {
+  flex: 0 0 auto;
+  padding: 12px 18px;
+  border: 1px solid var(--fio2);
+  background: none;
+  color: var(--fumaca);
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  /* O único movimento previsto no sistema é mudança de cor em hover, até 120ms
+     (`globals.css`) — e quem pediu menos movimento não recebe nenhum, pelo
+     bloco de `prefers-reduced-motion` de lá. */
+  transition: color 120ms, border-color 120ms;
+}
+
+.copiar:hover {
+  border-color: var(--neon);
+  color: var(--neon);
+}

@@ -66,6 +66,19 @@ class IngressoDetalhe(BaseModel):
     **Sem `from_attributes`**, pelo mesmo motivo do `IngressoNaLista`: nenhum
     dos campos de `Evento`/`Setor` é atributo de `Ingresso`, e `codigo` não é
     coluna nenhuma — quem monta os três é `services/ingresso.py`.
+
+    **`share_token` entrou na Story 4.3**, e é o único campo novo dela. Ele vai
+    junto sempre que houver um — o dono reencontra o próprio link sem precisar
+    compartilhar de novo. Escondê-lo de quem é dono do ingresso não protegeria
+    nada: ele já é público para quem recebeu o link, por construção (AD-8).
+
+    ⚠️ **Este é o schema das três rotas do ingresso**, e a terceira delas é
+    **pública** — `GET /ingressos/compartilhados/{token}`, sem sessão nenhuma.
+    Todo campo que entrar aqui de agora em diante atravessa para quem abriu um
+    link recebido por WhatsApp, e não só para o dono. É de propósito: quem abre
+    o link vai entrar com ele, e um canhoto que escondesse o titular seria um
+    segundo canhoto, diferente do de verdade. Mas o critério para um campo novo
+    passou a ser esse, e não mais "o dono pode ver".
     """
 
     id: UUID
@@ -77,3 +90,6 @@ class IngressoDetalhe(BaseModel):
     titular_nome: str
     codigo: str
     usado_em: datetime | None
+    # `None` é "nunca compartilhado" **ou** "revogado" — os dois são o mesmo
+    # estado, e a tela desenha o botão *Compartilhar* nos dois casos.
+    share_token: str | None

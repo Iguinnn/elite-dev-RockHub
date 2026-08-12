@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.erros import ErroDeDominio
-from app.core.seguranca import montar_codigo
+from app.core.seguranca import gerar_share_token, montar_codigo
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import Reserva
@@ -70,8 +70,10 @@ def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
     ]
 
 
-def obter(sessao: Session, cliente: Usuario, ingresso_id: UUID) -> IngressoDetalhe:
-    """O canhoto cheio de um ingresso de quem está na sessão — a Story 4.2.
+def _carregar_do_cliente(
+    sessao: Session, cliente: Usuario, ingresso_id: UUID
+) -> tuple[Ingresso, Evento, Setor]:
+    """O ingresso de quem está na sessão, com o evento e o setor — ou `404`.
 
     **As duas condições no mesmo `where`**, e não um `get()` seguido de um
     `if`: mesma disciplina do `obter()` de `services/reserva.py`. "Só vejo o
@@ -81,9 +83,15 @@ def obter(sessao: Session, cliente: Usuario, ingresso_id: UUID) -> IngressoDetal
     Distinguir os dois transformaria a rota num oráculo de "esse UUID é
     ingresso de alguém?", a mesma disciplina do `RESERVA_NAO_ENCONTRADA`.
 
-    `codigo` é montado a partir da coluna `assinatura`, **sem recalcular**: a
-    validação da portaria (Epic 5) é quem sempre recalcula (AD-5); esta rota
-    só monta o texto que a tela desenha em QR.
+    ⚠️ **Toda rota do dono passa por aqui**, e é isso que a função protege: a
+    Story 4.3 acrescentou a segunda (`compartilhar`) e a 4.4 acrescenta a
+    terceira. Com o `where` copiado em cada uma, a primeira que esquecesse o
+    `Reserva.cliente_id` deixaria alguém compartilhar — ou revogar — o ingresso
+    de outra pessoa, e o defeito estaria numa linha idêntica a duas que estão
+    certas. Rota nova do dono **usa esta função**; não escreve o `where` de novo.
+
+    Devolve o objeto ORM, e não o schema: quem escreve na linha (`compartilhar`)
+    precisa da entidade viva na sessão, não de uma cópia.
     """
     linha = sessao.execute(
         select(Ingresso, Evento, Setor)
@@ -101,7 +109,23 @@ def obter(sessao: Session, cliente: Usuario, ingresso_id: UUID) -> IngressoDetal
         )
 
     ingresso, evento, setor = linha
+    return ingresso, evento, setor
 
+
+def _montar_detalhe(ingresso: Ingresso, evento: Evento, setor: Setor) -> IngressoDetalhe:
+    """O canhoto cheio, montado a partir das três entidades.
+
+    `codigo` sai da coluna `assinatura`, **sem recalcular**: a validação da
+    portaria (Epic 5) é quem sempre recalcula (AD-5); estas rotas só montam o
+    texto que a tela desenha em QR.
+
+    ⚠️ **Um lugar só monta o canhoto, e ele serve a rota pública também.** As
+    três rotas do ingresso respondem `IngressoDetalhe` pelo mesmo caminho, e é
+    isso que garante que quem abre o link compartilhado vê **o mesmo canhoto**
+    que o dono — que é o requisito da Story 4.3, não um efeito colateral. A
+    consequência é a que o docstring do schema já anuncia: campo novo aqui
+    atravessa para quem não tem conta.
+    """
     return IngressoDetalhe(
         id=ingresso.id,
         evento_nome=evento.nome,
@@ -112,4 +136,81 @@ def obter(sessao: Session, cliente: Usuario, ingresso_id: UUID) -> IngressoDetal
         titular_nome=ingresso.titular_nome,
         codigo=montar_codigo(ingresso.id, ingresso.assinatura),
         usado_em=ingresso.usado_em,
+        share_token=ingresso.share_token,
     )
+
+
+def obter(sessao: Session, cliente: Usuario, ingresso_id: UUID) -> IngressoDetalhe:
+    """O canhoto cheio de um ingresso de quem está na sessão — a Story 4.2.
+
+    **Devolve o `share_token` sempre que houver um** (Story 4.3): o dono
+    reencontra o próprio link ao voltar à tela, sem precisar compartilhar de
+    novo — o que geraria token novo em quem lesse a resposta como um comando.
+    """
+    return _montar_detalhe(*_carregar_do_cliente(sessao, cliente, ingresso_id))
+
+
+def compartilhar(
+    sessao: Session, cliente: Usuario, ingresso_id: UUID
+) -> IngressoDetalhe:
+    """Gera — ou devolve — o link público de um ingresso meu (Story 4.3).
+
+    ⚠️ **Idempotente: com link ativo, devolve o mesmo token e não escreve
+    nada.** Gerar um token novo a cada clique transformaria "compartilhar de
+    novo" numa revogação silenciosa, cortando o acesso de quem já recebeu o
+    link **sem** a confirmação que o AC da Story 4.4 existe justamente para
+    exigir. Revogar é a única ação que invalida link, e é a única que pergunta
+    antes.
+
+    **Responde o `IngressoDetalhe` inteiro**, e não só o token: a ilha da tela
+    troca o estado todo em vez de remendar um campo, e não precisa saber juntar
+    duas respostas.
+
+    O `404` de ingresso inexistente ou de outra pessoa vem do
+    `_carregar_do_cliente`, com o mesmo código e a mesma frase do `obter`.
+    """
+    ingresso, evento, setor = _carregar_do_cliente(sessao, cliente, ingresso_id)
+
+    if ingresso.share_token is None:
+        ingresso.share_token = gerar_share_token()
+        sessao.commit()
+
+    return _montar_detalhe(ingresso, evento, setor)
+
+
+def obter_por_share_token(sessao: Session, token: str) -> IngressoDetalhe:
+    """O canhoto que um link compartilhado abre — **sem sessão nenhuma** (4.3).
+
+    A única leitura de ingresso do projeto que não conhece quem está chamando:
+    o `where` é o `share_token` e nada mais, e é por isso que a rota mora em
+    `publico.py`, cujo critério declarado é a ausência de autenticação.
+
+    ⚠️ **Token revogado e token que nunca existiu são indistinguíveis** — mesmo
+    status, mesmo código, mesma frase. É o que faz a revogação da Story 4.4 ser
+    um corte, e não um aviso de que existiu algo ali.
+
+    ⚠️ **Nada de `conferir_codigo` aqui, e a ausência é a decisão.** O
+    `share_token` **não** autentica coisa alguma e não substitui o HMAC do AD-5:
+    isto é visualização (AD-8), e quem recalcula a assinatura é a portaria, na
+    Epic 5. Validar assinatura neste caminho daria a impressão de que o token
+    prova alguma coisa sobre o ingresso.
+
+    **Sem `join` com `Reserva`**, ao contrário do `_carregar_do_cliente`: não há
+    dono a conferir, e a reserva não tem nada a dizer sobre um canhoto que já
+    existe.
+    """
+    linha = sessao.execute(
+        select(Ingresso, Evento, Setor)
+        .join(Evento, Evento.id == Ingresso.evento_id)
+        .join(Setor, Setor.id == Ingresso.setor_id)
+        .where(Ingresso.share_token == token)
+    ).first()
+
+    if linha is None:
+        raise ErroDeDominio(
+            "LINK_NAO_ENCONTRADO",
+            "Esse link não vale mais.",
+            status_http=404,
+        )
+
+    return _montar_detalhe(*linha)

@@ -184,5 +184,42 @@ def obter_ingresso(
 
     **`ingresso_id: UUID`, e não `str`**: o Pydantic recusa um caminho que não
     seja UUID com `422` antes de a consulta ser montada.
+
+    **`share_token` entra na resposta a partir da Story 4.3** — `null` quando
+    nunca foi compartilhado ou depois de revogado. É o que faz o dono
+    reencontrar o próprio link ao voltar à tela.
     """
     return servico_de_ingresso.obter(sessao, cliente, ingresso_id)
+
+
+@router.post("/ingressos/{ingresso_id}/compartilhamento", response_model=IngressoDetalhe)
+def compartilhar_ingresso(
+    ingresso_id: UUID,
+    cliente: Usuario = Depends(exigir_papel(PapelUsuario.CLIENTE)),
+    sessao: Session = Depends(obter_sessao),
+) -> IngressoDetalhe:
+    """Gera o link público deste ingresso, ou devolve o que já existe (4.3).
+
+    **Subrecurso `compartilhamento`, e não `POST /ingressos/{id}/compartilhar`.**
+    O par de operações é criar e remover um link, e o HTTP já nomeia as duas: o
+    `DELETE` do mesmo endereço revoga (Story 4.4). Um verbo em português na URL
+    esconderia num nome inventado a operação idempotente que o método já diz, e
+    ela teria de ser explicada num comentário em vez de ser lida.
+
+    **Sem corpo.** Não há nada para escolher: o token é gerado pelo servidor, e
+    o endereço do ingresso já diz de qual link se trata.
+
+    ⚠️ **`200` nas duas vezes, e nunca `201`.** Compartilhar é idempotente: com
+    link ativo, a chamada devolve **o mesmo token** e não escreve nada. Um `201`
+    na primeira vez informaria "foi agora" a ninguém que lê, e um token novo a
+    cada clique seria uma revogação silenciosa — cortaria quem já recebeu o
+    link, sem a confirmação que a Story 4.4 existe para exigir.
+
+    **A URL de compartilhamento é montada pelo navegador**, não aqui: a resposta
+    carrega o token, e a tela monta `{origem}/i/{token}`. O backend não conhece
+    — nem deve — o domínio do frontend, que muda a cada Preview da Vercel.
+
+    Erro possível: `404 INGRESSO_NAO_ENCONTRADO` — inexistente **ou** de outra
+    pessoa, com a mesma frase do `GET` acima e pelo mesmo motivo.
+    """
+    return servico_de_ingresso.compartilhar(sessao, cliente, ingresso_id)

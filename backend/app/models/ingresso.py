@@ -89,7 +89,28 @@ class Ingresso(Base):
     # `secrets.token_urlsafe(24)` → 32 caracteres. É o que faz dois ingressos do
     # mesmo evento, do mesmo setor e da mesma reserva terem assinaturas
     # diferentes mesmo com o mesmo segredo.
+    #
+    # ⚠️ **Nunca sai do servidor**, ao contrário do `share_token` logo abaixo,
+    # que sai do mesmo gerador — ver o par de docstrings em `core/seguranca.py`.
     nonce: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    # O endereço do link compartilhável (Story 4.3). `NULL` é "nunca
+    # compartilhado" **ou** "revogado" — os dois casos são o mesmo estado, e é
+    # isso que faz a revogação da 4.4 ser um corte e não um aviso de que algo
+    # existiu ali.
+    #
+    # **Índice único**, e sem índice parcial: no Postgres `NULL` não colide com
+    # `NULL` num índice único, então milhares de ingressos sem link convivem sem
+    # complicação nenhuma. O índice é o `where` da rota pública, que busca por
+    # esta coluna e por mais nada.
+    #
+    # ⚠️ **Coluna pública por construção** (AD-8): ela vira URL, viaja por
+    # WhatsApp e aparece em print. Nada derivado de segredo entra aqui, e ela
+    # **não** participa da assinatura do AD-5 — quem valida na porta recalcula o
+    # HMAC a partir do `nonce`, que é o vizinho de cima e o oposto exato desta.
+    share_token: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, unique=True, index=True
+    )
 
     # Sem `criado_em`: o ingresso nasce na transação do pagamento, e nenhuma
     # story lê a hora de emissão. Mesmo argumento que deixou `setor` e

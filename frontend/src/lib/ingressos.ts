@@ -72,6 +72,12 @@ export async function listarIngressos(): Promise<ResultadoDosIngressos> {
  * QR, e a lista (`IngressoResumo`) não o carrega de propósito (techspec da
  * 4.1). `evento_cidade` também é exclusivo daqui — a ficha do canhoto tem
  * espaço para "casa e cidade" por extenso, a fila da lista não.
+ *
+ * ⚠️ **Este é o tipo das três rotas do ingresso, e a terceira é pública**
+ * (`GET /ingressos/compartilhados/{token}`, Story 4.3). Tudo que está aqui
+ * atravessa também para quem abriu um link recebido por WhatsApp, e não só
+ * para o dono — é de propósito: o canhoto compartilhado é **o mesmo** canhoto,
+ * `titular_nome` e `usado_em` inclusive.
  */
 export type IngressoDetalhe = {
   id: string;
@@ -83,6 +89,13 @@ export type IngressoDetalhe = {
   titular_nome: string;
   codigo: string;
   usado_em: string | null;
+  /**
+   * `null` é "nunca compartilhado" **ou** "revogado" — os dois são o mesmo
+   * estado, e a ilha desenha *Compartilhar* nos dois casos. Ele **não** é o
+   * `codigo`: aquele vale na porta (AD-5), este só endereça a visualização
+   * (AD-8). A URL do link é montada pelo navegador, não pela API.
+   */
+  share_token: string | null;
 };
 
 /**
@@ -134,6 +147,66 @@ export async function obterIngresso(id: string): Promise<ResultadoDoIngresso> {
     unstable_rethrow(erro);
 
     console.error(`[RockHub] Ingresso indisponível em ${API_URL}:`, erro);
+    return { estado: "indisponivel" };
+  }
+}
+
+/**
+ * O canhoto que um link compartilhado abre — **sem sessão nenhuma** (4.3).
+ *
+ * Molde exato do `obterIngresso` acima, com os mesmos três estados e a mesma
+ * disciplina de nunca levantar. Duas diferenças, e as duas são a decisão:
+ *
+ * ⚠️ **Sem `cabecalhoDeSessao()` e sem `headers`, e a ausência é intencional**
+ * — mesmo motivo escrito na `listarProgramacao` do `lib/programacao.ts`: a
+ * rota é pública, e repassar cookie que ninguém lê faria o próximo leitor
+ * tomar a sessão por exigência dela. Quem abre este link pode nunca ter tido
+ * conta, e a tela precisa funcionar exatamente igual para os dois.
+ *
+ * **O `token` vai por `encodeURIComponent`**, como o `id` das funções acima:
+ * ele vem da barra de endereço e pode ser qualquer coisa que alguém digitou. O
+ * backend responde `404` para o que não bate com a coluna — inclusive para
+ * token revogado, que é indistinguível de token que nunca existiu.
+ */
+export async function obterIngressoCompartilhado(
+  token: string,
+): Promise<ResultadoDoIngresso> {
+  try {
+    const resposta = await fetch(
+      `${API_URL}/ingressos/compartilhados/${encodeURIComponent(token)}`,
+      { cache: "no-store" },
+    );
+
+    // ⚠️ **Antes** do `!resposta.ok` genérico, como nas irmãs. Aqui só o `404`
+    // é possível — o token não é UUID e não há `422` de formato —, mas o `422`
+    // fica junto pelo mesmo motivo de sempre: para quem lê, "esse endereço
+    // está errado" e "esse link não vale mais" são a mesma coisa.
+    if (resposta.status === 404 || resposta.status === 422) {
+      return { estado: "nao-encontrado" };
+    }
+
+    if (!resposta.ok) {
+      return { estado: "indisponivel" };
+    }
+
+    const ingresso = (await resposta.json()) as IngressoDetalhe;
+    return { estado: "ok", ingresso };
+  } catch (erro) {
+    // ⚠️ **Primeira linha do `catch`, e aqui ela pesa mais que nas irmãs
+    // acima.** Elas chamam `cabecalhoDeSessao()` — ou seja, `cookies()` — fora
+    // do `try`, e já saem da renderização estática antes de chegar ao `fetch`.
+    // Esta não chama cookie nenhum, porque a rota é pública: o `cache:
+    // "no-store"` é o único sinal que tira a página da renderização estática, e
+    // ele chega **lançando** `DYNAMIC_SERVER_USAGE`. Sem o rethrow, o `catch`
+    // engoliria o sinal e a página do link correria o risco de nascer estática
+    // com a frase de erro impressa dentro. É a mesma armadilha do
+    // `lib/programacao.ts`, onde o comentário longo mora.
+    unstable_rethrow(erro);
+
+    console.error(
+      `[RockHub] Ingresso compartilhado indisponível em ${API_URL}:`,
+      erro,
+    );
     return { estado: "indisponivel" };
   }
 }

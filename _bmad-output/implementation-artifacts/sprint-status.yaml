@@ -250,7 +250,21 @@ development_status:
   # verdade. `bgColor`/`fgColor` do QR via `var(--cal)`/`var(--breu)`, não
   # hex — mesmas cores que a spec pedia em `#e4ebea`/`#0b1618`.
   4-2-ver-o-canhoto-com-o-qr: done
-  4-3-compartilhar-o-ingresso-por-link: backlog
+  # A 4.3 e a 4.4 saem de outra techspec só (docs/techspec-link-compartilhado.md):
+  # um recurso e seu ciclo de vida — o `share_token` nasce na 4.3 e morre na
+  # 4.4, na mesma coluna, no mesmo subrecurso e no mesmo service.
+  # Commit 1: migração `ed0bb0dad2a3` (`share_token`, anulável, índice único),
+  # `gerar_share_token()`, `POST /ingressos/{id}/compartilhamento` (idempotente:
+  # com link ativo devolve o mesmo token, porque um token novo a cada clique
+  # seria revogação silenciosa), a rota pública `GET /ingressos/compartilhados/
+  # {token}` em `publico.py`, o `<Canhoto>` extraído e a tela `/i/{token}`.
+  # ⚠️ Janela consciente de um commit: aqui existe link gerado sem como
+  # revogar — a mesma forma da janela entre a 2.4 e a 2.5, e pelo mesmo motivo.
+  # Fecha no commit da 4.4.
+  # ⚠️ `/ingressos` passou a morar em dois routers, e `cliente.py` é registrado
+  # antes: o que salva a rota pública são os três segmentos do caminho contra os
+  # dois da autenticada. Há teste provando as duas de pé.
+  4-3-compartilhar-o-ingresso-por-link: done
   4-4-revogar-o-link-compartilhado: backlog
   epic-4-retrospective: optional
 

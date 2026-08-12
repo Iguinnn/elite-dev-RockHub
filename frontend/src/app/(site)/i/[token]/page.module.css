@@ -1,0 +1,54 @@
+/* A tela do link compartilhado (Story 4.3).
+
+   Chrome mínimo: a linha de procedência, a faixa de "já utilizado" e a margem
+   que alinha o canhoto com as duas. O canhoto em si é
+   `components/Canhoto.module.css`, o mesmo de `/ingressos/[id]`.
+
+   ⚠️ **Sem link de voltar**, ao contrário da tela do dono: quem chegou aqui
+   pelo WhatsApp não tem para onde voltar dentro do produto, e um "← Meus
+   ingressos" mandaria para uma tela que exige conta. O masthead do `(site)` já
+   oferece o caminho para a programação e para *Entrar*. */
+
+.pagina {
+  padding: 0 0 96px;
+}
+
+/* A primeira coisa da página: quem abre precisa saber que está vendo o
+   ingresso de outra pessoa. Ocupa o lugar do link de voltar da tela do dono. */
+.procedencia {
+  display: block;
+  margin: 28px 12px 0;
+}
+
+/* ⚠️ Gêmea da regra de `(site)/ingressos/[id]/page.module.css`: as duas telas
+   desenham a faixa por fora do `<Canhoto>`, porque ela é chrome de página.
+   Mudou lá, mudou aqui — do contrário o mesmo ingresso passa a dizer coisas
+   diferentes para o dono e para quem recebeu o link. */
+.jaUtilizado {
+  max-width: 52ch;
+  margin: 18px 12px 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--fio2);
+  font: 17px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.jaUtilizado strong {
+  display: block;
+  font-weight: 400;
+  color: var(--cal);
+}
+
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding: 0 12px;
+  font: 19px/1.5 var(--serif);
+}
+
+/* ⚠️ **`miolo`, e nunca `corpo`** — o mesmo motivo escrito por extenso em
+   `(site)/ingressos/[id]/page.module.css`: o `<Canhoto>` tem um `.corpo`, e
+   este `div` é ancestral dele. */
+.miolo {
+  margin: 20px 12px 0;
+}
