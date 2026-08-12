@@ -101,9 +101,7 @@ function Secao({
  * Uma fila de jornal: data à esquerda, nome em serifada, prefixo do id em
  * monoespaçada, estado à direita — molde `fila-listagem` do `Meus eventos`.
  *
- * **Leva ao show (`/eventos/{evento_id}`), não ao canhoto.** O canhoto com o
- * QR (`/ingressos/{id}`) é a Story 4.2; até lá, um link para um endereço que
- * não existe não fica no repositório (precedente do masthead).
+ * **Leva ao canhoto (`/ingressos/{id}`)**, a tela da Story 4.2 com o QR.
  *
  * **O "código" aqui são os 8 primeiros caracteres do `id`, não `codigo`.**
  * `GET /ingressos` nunca devolve `codigo` — ele é o segredo do QR e não tem
@@ -117,7 +115,7 @@ function Fila({ item, utilizada }: { item: IngressoResumo; utilizada: boolean })
 
   return (
     <Link
-      href={`/eventos/${item.evento_id}`}
+      href={`/ingressos/${item.id}`}
       className={
         utilizada ? `${estilos.fila} ${estilos.utilizada}` : estilos.fila
       }
