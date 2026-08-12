@@ -302,6 +302,29 @@ desenhava): caiu porque a interface passaria a ser a única coisa impedindo o qu
 não há tela de editar evento para corrigir depois — um evento com uma pessoa só escalada, e ela
 faltando na noite do show, é um evento sem portaria.
 
+### A programação pública só mostra o que ainda vai acontecer
+
+**Decidi** que `GET /eventos` devolve apenas eventos com `data_hora >= agora`, e que esse corte é
+feito **no backend**, no `where` da consulta. Show que já aconteceu simplesmente não existe para
+quem chega na raiz do site.
+
+**Por quê:** a programação pública é o que está por vir. Quem abre a página inicial quer saber o que
+dá para comprar, e um show que já passou não é nenhuma das duas coisas — não é programação e não é
+compra. O histórico não se perde: ele continua inteiro em `/organizador/eventos`, que é a tela de
+quem publicou, e é lá que ele significa alguma coisa. Foi a primeira vez neste projeto que uma
+decisão de produto minha virou uma condição de `where` em vez de um filtro de tela, e isso é
+proposital: "a programação é o que ainda vai acontecer" não é preferência de layout, é a definição
+do que essa rota devolve.
+
+**O que caiu:** **duas seções na tela, `Em cartaz` e `Já aconteceram`**, que é exatamente o que eu
+fiz em "Meus eventos" duas stories antes. Caiu porque lá o dono da informação é o organizador e o
+histórico é o inventário dele; aqui o visitante veria metade da página inicial ocupada por shows que
+não pode comprar. E caiu também **uma lista só, em ordem crescente, sem filtro nenhum** — menos
+código, menos decisão —, porque ela põe um show de 2001 no topo da primeira tela do produto. A
+consequência que aceito é que um evento que começa daqui a cinco minutos continua na programação e
+continua vendendo: parar de vender X horas antes é regra de produto que ainda não decidi, e ela vale
+mais perto da story da reserva.
+
 ### O catálogo externo é copiado na publicação, não consultado ao vivo
 
 **Decidi** que a Ticketmaster é chamada **apenas** quando o organizador busca uma atração para
@@ -598,8 +621,8 @@ escala** para facilitar a depuração: o ganho é meu, no console, e o custo é 
 ### A interface é um jornal noturno, e não um catálogo de e-commerce
 
 **Decidi** que a listagem de shows não tem card: são filas separadas por fio, com a data na margem
-esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Fundo preto quente,
-âmbar como acento único, raio zero e sombra zero em todo o sistema.
+esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Chão de petróleo, rosa
+neon como acento único, raio zero e sombra zero em todo o sistema.
 
 **Por quê:** ingresso não é produto de prateleira — é o direito de entrar num lugar, numa hora. Card
 com imagem, preço e botão é vocabulário de e-commerce, e carrega junto a promessa errada. A estrutura
@@ -616,6 +639,13 @@ a linha de contexto decorativa no cabeçalho — essa última eu cheguei a monta
 porque soava gerada. Duas direções competiram antes: um jornal de eventos londrino, editorial e
 claro, e uma parede de cartazes noturna. Nenhuma resolvia sozinha; a identidade final é a fusão —
 estrutura de impresso, cor de madrugada.
+
+**A cor mudou depois da Epic 2, e a estrutura não.** O primeiro acento era âmbar `#F2A413` sobre
+preto quente — quase o `amber-500` do Tailwind, que é a receita exata do tema escuro gerado que eu
+tinha acabado de listar como anti-padrão. Troquei pelas duas tintas de um pôster serigrafado:
+petróleo `#0B1618` e rosa neon `#FF4F9A`. **Descartei** vermelho de jornal (é a cor mais fiel ao
+conceito, mas colide com o vermelho de erro e com o `INVÁLIDO` da portaria) e roxo sobre cinza (que
+é o dark mode padrão de metade das ferramentas — trocaria um default por outro pior).
 
 ### CSS escrito à mão, sem biblioteca de componentes
 
@@ -720,7 +750,13 @@ esquecimentos:
 | **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das contas, e o seed continua criando só contas. O impedimento técnico acabou na Story 2.3; o que falta é decidir qual show, com que setores e em qual story isso entra. O fluxo de publicar pela interface existe e funciona, mas não substitui o seed: travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar |
 | **A seção "Já aconteceram" de `Meus eventos` não tem como ser vista** | Decidi no code review da Epic 2 que publicar show com data no passado é recusado (`EVENTO_NO_PASSADO`): errar a data é permanente, porque não existe tela de editar, e na Epic 3 esse evento venderia ingresso para uma noite que já passou. O preço é que a seção do histórico fica vazia na avaliação — só apareceria com evento antigo no seed, que ainda não existe. Preferi assim: seção vazia é menos grave que evento impossível gravado para sempre |
 | **Cancelamento pelo cliente** | O modelo já suporta (a reserva tem estado que devolve estoque); faltam endpoint e tela |
-| **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis |
+| **A página pode dizer "Esgotado" com reservas já vencidas** | A expiração é preguiçosa por decisão de arquitetura (AD-4): quem devolve o estoque é quem precisa dele, no instante em que precisa. Só as rotas de escrita colhem — as de leitura não, senão a programação, que é Server Component, viraria escrita a cada visita. Na prática quem clicar em reservar consegue: no momento em que o estoque importa, ele já está correto |
+| **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis: cartão terminado em `0002` é recusado, qualquer outro aprova |
+| **O Pix é encenação, e o botão "cobrança paga" é o atalho do avaliador** | O QR e o código copia-e-cola são gerados na tela, aleatórios, e não chegam ao servidor — um app de banco recusa aquele código. O backend só recebe "o meio foi Pix" e aprova. Simular cobrança de verdade exigiria provedor, webhook e conciliação; o caminho que o enunciado pontua é a **recusa**, e ela vive no cartão. A tela avisa em letras que a cobrança é fictícia |
+| **Os dados do comprador não são guardados** | O checkout pede nome, e-mail, CPF e telefone porque um checkout sem eles não parece um checkout. Só o **nome** sobrevive à requisição, como titular do ingresso — os outros três são validados no formato e descartados. Guardar CPF de gente é dado sensível sem nenhum consumidor neste sistema. Pelo mesmo motivo o CPF valida só o formato, sem dígito verificador: o algoritmo rejeita `111.111.111-11`, que é exatamente o que se digita quando a tela manda usar dado fictício |
+| **Nada limita quantas reservas uma conta segura ao mesmo tempo** | O teto de 6 ingressos é **por compra**, não por pessoa: uma conta autenticada chamando `POST /reservas` em laço prende o show inteiro por 10 minutos, renováveis — e a colheita preguiçosa devolve o estoque no mesmo `criar()` que o laço está chamando. Apareceu no code review da Epic 3. Fechar exige um limite de reservas `PENDENTE` por cliente e evento, com código de erro e tela próprios; com três dias de prazo e 13 stories de código pela frente, escolhi declarar em vez de implementar. Não afeta o roteiro de avaliação, que é um comprador de cada vez |
+| **Nenhuma rota tem limite de chamadas** | Vale para todas, não só para a reserva acima: não há rate limit por IP nem por conta em lugar nenhum. É a mesma razão do limite de tentativas de login logo abaixo — contador com expiração compartilhado entre instâncias é infraestrutura que não se paga no prazo |
+| **A programação devolve no máximo 200 shows** | Teto fixo em vez de paginação, decidido no code review da Epic 3. A rota não tinha teto nenhum e é a da tela mais visitada; paginar seria rota, schema, tela e testes para um contrato que nenhuma tela consome. Duzentos está muito acima de qualquer catálogo que este projeto vá ver, e o corte é no fim da fila ordenada por data. Quando apertar, o conserto é a paginação — não aumentar o número |
 | **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
 | **Limite de tentativas de login** | Não há bloqueio por IP nem por conta. É a defesa direta contra força bruta e exige contador com expiração compartilhado entre instâncias — infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
 | **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail. É por não existir que o cadastro tem confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |

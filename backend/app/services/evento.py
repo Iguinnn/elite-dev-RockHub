@@ -50,16 +50,57 @@ trava nada, então uma conta apagada entre ele e o `COMMIT` daria
 apagar usuário; quem escrever essa rota precisa voltar aqui.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor
 from app.models.usuario import PapelUsuario, Usuario
-from app.schemas.evento import EventoEntrada, EventoResumo
+from app.schemas.evento import (
+    DisponibilidadeDoSetor,
+    EventoEmDestaque,
+    EventoEntrada,
+    EventoNaProgramacao,
+    EventoPublico,
+    EventoResumo,
+    PeriodoDaProgramacao,
+    SetorPublico,
+)
+
+# Quantos ingressos uma pessoa leva numa compra só (Story 3.4, decisão do Igor).
+#
+# **Teto fixo, e não `min(disponivel, 6)`**: é o que dá ao stepper um limite sem
+# que o contrato revele quanto resta em estoque (UX-DR7). Quem recusa o pedido
+# maior do que existe é o `UPDATE` condicional do AD-3, na Story 3.6 — e ele
+# recusa por concorrência, que é a garantia que o desafio mais pontua.
+#
+# **Seis não vem de regra de negócio nenhuma** — não existe uma neste produto, e
+# Sympla e Eventim usam entre 4 e 10. Ele está aqui, numa constante e no
+# contrato, porque é o único jeito de a tela e a futura rota de reserva não
+# discordarem sobre qual é o teto: trocá-lo é uma linha e um teste.
+MAXIMO_POR_COMPRA = 6
+
+# Teto de linhas da programação pública (code review da Epic 3, decisão do Igor).
+#
+# **A rota não tinha teto nenhum**, e ela é a da tela mais visitada do produto:
+# `GET /eventos` sem filtro devolvia todo evento publicado e futuro, com o
+# `selectinload` trazendo os setores de todos eles. O docstring de
+# `listar_programacao` descarta filtrar no cliente porque "a programação inteira
+# atravessaria a rede a cada visita" — que era exatamente o que a rota fazia no
+# estado inicial da raiz, sem filtro nenhum.
+#
+# **Teto fixo, e não paginação** (alternativa descartada): `?pagina=`/`?limite=`
+# seria rota, schema, tela e testes para um contrato que nenhuma tela consome
+# hoje, com três dias de prazo. Duzentos shows futuros é muito acima de qualquer
+# catálogo que este projeto vá ver, e o corte é no fim da lista — a fila já sai
+# ordenada por data, então o que cai fora é o mais distante.
+#
+# ⚠️ Quando este número apertar, o conserto **não** é aumentá-lo: é a paginação
+# que ficou de fora aqui.
+TETO_DA_PROGRAMACAO = 200
 
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
@@ -280,6 +321,504 @@ def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoR
         )
         for evento in eventos
     ]
+
+
+def _escapar_curingas(termo: str) -> str:
+    r"""Neutraliza `%`, `_` e `\` antes de o termo virar padrão de `LIKE`.
+
+    ⚠️ **A armadilha mais silenciosa desta rota.** `%` e `_` são curingas do
+    `LIKE`, e o termo vem digitado por gente: sem isto, `?q=%` devolve a
+    programação inteira e `?q=_` devolve quase tudo — os dois com `200` e com
+    cara de resultado. Ninguém descobre pela tela, porque a tela funciona.
+
+    **A contrabarra é escapada primeiro**, e a ordem não é estética: fazendo
+    `%` antes, a contrabarra que acabou de ser inserida como escape seria
+    escapada de novo no passo seguinte, e o padrão sairia com `\\%` — que casa
+    uma contrabarra literal seguida de qualquer coisa, não um `%` literal.
+
+    Quem informa ao Postgres que a contrabarra é o caractere de escape é o
+    `escape="\\"` declarado no `ilike` de quem chama. Sem ele o padrão continua
+    errado, só que de outro jeito.
+
+    ⚠️ **Este helper sozinho não basta, e por isso ele não é chamado direto.**
+    Ver `_padrao_de_busca` logo abaixo: escapar em Python e só então aplicar
+    `unaccent` no Postgres deixa passar o curinga que o próprio `unaccent`
+    fabrica.
+    """
+    return termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _padrao_de_busca(palavra: str) -> ColumnElement[str]:
+    r"""O `%palavra%` do `ILIKE`, sem acento e com os curingas neutralizados.
+
+    ⚠️ **A ordem é `unaccent` primeiro, escape depois — e a ordem é o conserto**
+    (code review da Epic 3). Antes o padrão era
+    `func.unaccent(f"%{_escapar_curingas(termo)}%")`, ou seja: escapava em Python
+    e **então** mandava o Postgres tirar os acentos. Só que `unaccent` também
+    normaliza as formas *fullwidth* — `unaccent('％')` (U+FF05) devolve `'%'`,
+    e `unaccent('＿')` devolve `'_'`. O escape via Python nunca via esses
+    caracteres, e o `unaccent` os convertia em curingas **depois** que a
+    proteção já tinha passado.
+
+    O resultado era exatamente a falha que o `_escapar_curingas` existe para
+    impedir, por uma porta que ele não cobria: `?q=％` virava o padrão `%%%` e
+    devolvia a programação inteira, com `200` e cara de resultado. Confirmado
+    contra o Postgres do `docker-compose`:
+
+    ```sql
+    SELECT unaccent(U&'\FF05');                                  -- %
+    SELECT unaccent('Show Secreto') ILIKE unaccent('%'||U&'\FF05'||'%');  -- t
+    ```
+
+    Escapando **em SQL, sobre o resultado do `unaccent`**, não sobra caractere
+    que vire curinga depois da proteção. O `_escapar_curingas` continua existindo
+    porque a ordem interna dele (contrabarra primeiro) é a mesma que estes três
+    `replace` aninhados precisam ter — e o motivo está escrito lá.
+    """
+    sem_acento = func.unaccent(palavra)
+    escapado = func.replace(
+        func.replace(func.replace(sem_acento, "\\", "\\\\"), "%", "\\%"),
+        "_",
+        "\\_",
+    )
+    return func.concat("%", escapado, "%")
+
+
+def listar_programacao(
+    sessao: Session,
+    termo: str = "",
+    cidade: str = "",
+    periodo: PeriodoDaProgramacao = PeriodoDaProgramacao.TODOS,
+) -> list[EventoNaProgramacao]:
+    """A programação pública: o que está publicado e ainda vai acontecer.
+
+    **Quatro decisões moram nesta função.**
+
+    *Por que a peneira é do banco, e não da tela* (decisão do Igor, Story 3.2).
+    Os três filtros entram no `where` do Postgres, e o estado deles mora na URL
+    (`?q=&cidade=&periodo=`). A alternativa — devolver a lista inteira e
+    filtrá-la em JavaScript — daria uma busca instantânea ao digitar, e custaria
+    três coisas: a raiz viraria uma ilha `"use client"` (hoje ela não tem uma
+    linha), o filtro não sobreviveria a recarregar nem a compartilhar o link, e
+    a programação inteira atravessaria a rede a cada visita. Filtrar em Python
+    **aqui dentro** teria o mesmo defeito por outra porta: traria a tabela
+    inteira para a memória e desfaria o motivo de a condição existir. Se uma
+    condição não couber no `where`, ela está errada.
+
+    *Por que só publicado.* `publicado_em IS NULL` é rascunho (Story 2.3), e o
+    comentário do modelo diz, com todas as letras, que esse estado existe para
+    tornar verificável o AC desta story. Não há tela que produza um rascunho
+    hoje; a condição está no `where` — e não num filtro em Python — porque o
+    dia em que houver, ela já vale, e vale para qualquer volume.
+    ⚠️ `listar_do_organizador` **continua sem esse filtro**, de propósito: o
+    rascunho de alguém é dele, e a entrada do `deferred-work.md` sobre a rota do
+    organizador permanece aberta.
+
+    *Por que só futuro, e por que no backend* (decisão do Igor). A programação
+    pública é o que está por vir: quem chega na raiz quer saber o que dá para
+    comprar, e show que já aconteceu não é nenhuma das duas coisas. O histórico
+    não se perde — ele continua inteiro em `/organizador/eventos`, que é de
+    quem publicou. O corte ficou aqui, e não na tela como em "Meus eventos",
+    porque lá o dono da informação é o organizador e o histórico é o inventário
+    dele; aqui o visitante veria metade da página inicial ocupada por shows que
+    não pode comprar.
+
+    *Por que o estoque não atravessa o contrato.* `EventoNaProgramacao` não tem
+    `capacidade`, `vendidos` nem `setores` — UX-DR7 se garante no
+    `response_model`, não na tela. Os dois campos derivados daqui existem
+    justamente para dizer o que interessa sem revelar número nenhum.
+    """
+    # Lido **uma vez**, antes da consulta, e ele serve aos **dois** cortes de
+    # tempo: o de eventos passados e o teto do `?periodo=`. Duas leituras do
+    # relógio na mesma requisição podem discordar sobre o evento que começa
+    # agora — é a mesma disciplina que o `cache()` da tela de "Meus eventos"
+    # impôs no frontend. Um `datetime` com fuso, nunca texto: comparar strings
+    # ISO funciona por acidente enquanto todo offset for `Z`.
+    agora = datetime.now(timezone.utc)
+
+    # As condições se acumulam numa lista e entram num `where` só. As duas da
+    # Story 3.1 vêm primeiro, e **não têm exceção**: rascunho e evento passado
+    # continuam fora mesmo quando o termo casa perfeitamente com o nome deles.
+    # Um filtro novo nunca abre porta num corte antigo.
+    condicoes: list[ColumnElement[bool]] = [
+        Evento.publicado_em.is_not(None),
+        Evento.data_hora >= agora,
+    ]
+
+    # `.strip()` antes de qualquer coisa: `?q=` vazio e `?q=%20%20` são a mesma
+    # intenção — "não filtrei" —, e `?q=%20marina%20` é uma busca por "marina".
+    termo_limpo = termo.strip()
+    if termo_limpo:
+        # ⚠️ **Uma condição por palavra, todas exigidas** (code review da Epic 3,
+        # decisão do Igor). Antes o termo inteiro era um substring só, testado
+        # contra as três colunas com `OR` — e `?q=marina sena são paulo` devolvia
+        # vazio, porque nenhuma coluna sozinha contém a string inteira. Artista +
+        # cidade é a primeira coisa que alguém digita, e o desfecho era
+        # indistinguível de "esse show não existe".
+        #
+        # Agora cada palavra precisa aparecer em **alguma** das três colunas
+        # (`AND` de `OR`s): "marina" casa o nome, "paulo" casa a cidade, e o
+        # evento entra. Buscar uma palavra só continua exatamente como era.
+        for palavra in termo_limpo.split():
+            condicoes.append(
+                or_(
+                    *(
+                        # `escape="\\"` é o que faz o escape valer: sem ele o
+                        # Postgres lê a contrabarra como caractere comum.
+                        func.unaccent(coluna).ilike(
+                            _padrao_de_busca(palavra), escape="\\"
+                        )
+                        # ⚠️ `Evento.cidade` é anulável (Story 2.3), e isso está
+                        # certo assim: `unaccent(NULL) ILIKE …` é `NULL`, e
+                        # `TRUE OR NULL` é `TRUE` — o evento sem cidade continua
+                        # achável pelo nome e pelo local. Não "conserte" com
+                        # `coalesce`: não há nada quebrado.
+                        for coluna in (Evento.nome, Evento.local, Evento.cidade)
+                    )
+                )
+            )
+
+    # **Igualdade exata, e não `ilike`** (decisão do Igor): o valor vem dos
+    # nossos próprios chips, que vêm de `listar_cidades_em_cartaz` — ou seja, do
+    # banco. Este parâmetro não é campo de digitação, e tratá-lo como se fosse
+    # daria a `?cidade=sao` um resultado que nenhum chip produz. Quem quer
+    # digitar tem o `?q=`, que casa cidade também.
+    if cidade.strip():
+        condicoes.append(Evento.cidade == cidade.strip())
+
+    # Janelas **corridas** a partir de agora, não semana e mês do calendário —
+    # o motivo inteiro está no docstring do `PeriodoDaProgramacao`. `TODOS` não
+    # acrescenta condição nenhuma: "sem filtro" é a ausência de um `where`, não
+    # um teto infinito escrito em SQL.
+    if periodo == PeriodoDaProgramacao.SEMANA:
+        condicoes.append(Evento.data_hora < agora + timedelta(days=7))
+    elif periodo == PeriodoDaProgramacao.MES:
+        condicoes.append(Evento.data_hora < agora + timedelta(days=30))
+
+    eventos = sessao.scalars(
+        select(Evento)
+        .where(*condicoes)
+        # `Evento.id` como desempate, pelo mesmo motivo escrito na
+        # `listar_do_organizador`: sem critério total, dois shows no mesmo
+        # horário trocam de lugar entre requisições.
+        .order_by(Evento.data_hora, Evento.id)
+        # Sem ele, ler `evento.setores` no laço abaixo emite uma consulta por
+        # evento. É a raiz do produto: a tela mais visitada que existe aqui.
+        # ⚠️ Filtrar não pode reintroduzir o N+1 que a Story 3.1 fechou.
+        .options(selectinload(Evento.setores))
+        .limit(TETO_DA_PROGRAMACAO)
+    )
+
+    programacao: list[EventoNaProgramacao] = []
+    for evento in eventos:
+        # ⚠️ **AD-13**: disponível é `setor.vendidos < setor.capacidade`, lido
+        # do próprio setor. É **proibido** derivar disponibilidade com `COUNT`
+        # sobre reserva ou ingresso, em qualquer camada — as duas tabelas
+        # nascem nas Stories 3.5 e 3.9, e é agora que o hábito se forma.
+        precos = [
+            setor.preco_centavos
+            for setor in evento.setores
+            if setor.vendidos < setor.capacidade
+        ]
+
+        # ⚠️ `min()` sobre sequência vazia levanta `ValueError`, e dois casos
+        # caem aqui: o evento com todos os setores esgotados e o evento sem
+        # setor nenhum (impossível pela rota de publicação, possível por
+        # `psql` — e existe no banco de desenvolvimento). O `if` trata os dois
+        # antes; um `try/except ValueError` esconderia a regra dentro de um
+        # tratamento de exceção.
+        #
+        # O evento esgotado **continua na lista**: ele é informação (o show
+        # existe e acabou), não ruído.
+        programacao.append(
+            EventoNaProgramacao(
+                id=evento.id,
+                nome=evento.nome,
+                data_hora=evento.data_hora,
+                local=evento.local,
+                cidade=evento.cidade,
+                # O menor preço **entre os setores que ainda têm ingresso**
+                # (decisão do Igor). Se a Pista, que é a mais barata, esgotou,
+                # a fila passa a anunciar o preço do que dá para comprar:
+                # anunciar um preço que não existe mais é a única forma de a
+                # listagem mentir com número.
+                preco_minimo_centavos=min(precos) if precos else None,
+                esgotado=not precos,
+            )
+        )
+
+    return programacao
+
+
+def obter_destaque(sessao: Session) -> EventoEmDestaque | None:
+    """O próximo show da programação — a chamada principal da raiz (Story 3.3).
+
+    **Mesmo recorte da `listar_programacao`**: publicado (`publicado_em IS NOT
+    NULL`) e ainda por acontecer (`data_hora >= agora`). Não é "parecido" — é o
+    mesmo, e por isso as duas condições estão escritas na mesma ordem: um
+    destaque que aparecesse fora do recorte da lista seria um show na capa que
+    não existe na programação logo abaixo.
+
+    **Por que uma consulta própria, e não `listar_programacao(sessao)[0]`.** A
+    de cima monta três filtros opcionais e roda um laço de derivação de preço
+    sobre a programação **inteira** para descartar tudo menos a primeira linha.
+    O `LIMIT 1` daqui é a diferença entre ler um evento e ler todos para jogar
+    quase todos fora — e essa distância cresce com o catálogo, na rota da tela
+    mais visitada do produto. A duplicação das duas condições é real e é o preço
+    consciente: extrair um helper `_em_cartaz()` economizaria duas linhas e
+    espalharia o recorte por um terceiro lugar, sem que nenhum dos dois
+    chamadores ficasse mais fácil de ler.
+
+    **Por que o esgotado continua sendo destaque** (decisão do Igor). Mesma
+    regra da fila da Story 3.1: show esgotado é informação, não ruído. A
+    alternativa — pular para o próximo com ingresso — desperdiçaria menos o
+    bloco grande da tela, e em troca faria "o próximo show" deixar de ser
+    verdade: a capa esconderia do visitante justamente o show mais próximo. Quem
+    trata o esgotado é a tela, com selo e sem link.
+
+    **`None` quando não há nada em cartaz**, e o router devolve isso como `200`
+    com corpo `null` — nunca `404`. O motivo está lá.
+    """
+    # Lido **uma vez**, como na `listar_programacao` e pelo mesmo motivo: duas
+    # leituras do relógio na mesma requisição podem discordar sobre o evento que
+    # começa agora. Aqui só há um corte de tempo, mas a disciplina é a mesma —
+    # e um `datetime` com fuso, nunca texto.
+    agora = datetime.now(timezone.utc)
+
+    evento = sessao.scalars(
+        select(Evento)
+        .where(
+            Evento.publicado_em.is_not(None),
+            Evento.data_hora >= agora,
+        )
+        # ⚠️ `Evento.id` como desempate, o **mesmo** da `listar_programacao`.
+        # Sem ele, dois shows no mesmo horário fariam a capa alternar entre um e
+        # outro a cada recarregar: com `LIMIT 1`, qual das duas linhas volta
+        # passa a ser escolha do planejador, não do código.
+        .order_by(Evento.data_hora, Evento.id)
+        .limit(1)
+        # Uma consulta a mais para os setores, e não uma por setor: sem ele, ler
+        # `evento.setores` duas linhas abaixo emitiria o `SELECT` preguiçoso no
+        # meio da montagem do schema.
+        .options(selectinload(Evento.setores))
+    ).first()
+
+    if evento is None:
+        return None
+
+    # ⚠️ **AD-13**: disponível é `setor.vendidos < setor.capacidade`, lido do
+    # próprio setor. É **proibido** derivar disponibilidade com `COUNT` sobre
+    # reserva ou ingresso, em qualquer camada — as duas tabelas nascem nas
+    # Stories 3.5 e 3.9, e é agora que o hábito se forma. Uma lista só serve aos
+    # dois campos derivados abaixo, como na `listar_programacao`.
+    precos = [
+        setor.preco_centavos
+        for setor in evento.setores
+        if setor.vendidos < setor.capacidade
+    ]
+
+    return EventoEmDestaque(
+        id=evento.id,
+        nome=evento.nome,
+        data_hora=evento.data_hora,
+        local=evento.local,
+        cidade=evento.cidade,
+        imagem_url=evento.imagem_url,
+        # **Todos os setores, inclusive o esgotado** (suposição declarada na
+        # story): a ficha diz o que o show tem, não o que sobrou. Filtrar por
+        # disponibilidade aqui faria a lista mudar sozinha conforme as vendas,
+        # sem nenhuma pista do porquê. A ordem alfabética já vem do
+        # `order_by="Setor.nome"` do `relationship` — não há `sorted()` aqui, e
+        # não deve haver: duas fontes para a mesma ordem é uma chance de elas
+        # discordarem.
+        setores=[setor.nome for setor in evento.setores],
+        # ⚠️ `min()` sobre sequência vazia levanta `ValueError`, e dois casos
+        # caem aqui: o evento com todos os setores esgotados e o evento sem setor
+        # nenhum (possível por `psql`, e existe no banco de desenvolvimento). O
+        # `if` trata os dois antes, como na `listar_programacao`.
+        preco_minimo_centavos=min(precos) if precos else None,
+        esgotado=not precos,
+    )
+
+
+def listar_cidades_em_cartaz(sessao: Session) -> list[str]:
+    """As cidades que têm show na programação — o universo dos chips `ONDE`.
+
+    **Mesmo recorte da `listar_programacao`**: publicado e ainda por acontecer.
+    Chip que oferece uma cidade sem show em cartaz é um filtro que só sabe
+    devolver lista vazia — e quem clicou concluiria que a busca está quebrada,
+    não que a cidade não tem nada marcado. Ela vem do banco pelo mesmo motivo:
+    uma lista fixa no código (`São Paulo`, `Rio`, como no protótipo) é barata e
+    mente no dia em que houver um show em Belo Horizonte.
+
+    ⚠️ **Ela não recebe o termo nem a cidade escolhida, de propósito** — e não é
+    esquecimento. A lista de escolhas é o **universo**, não o resultado:
+    encolhê-la conforme a pessoa filtra faz o chip sumir debaixo do cursor de
+    quem ia clicar, e tira o caminho de volta de quem filtrou errado. É o mesmo
+    raciocínio que mantém a barra de busca na tela quando a busca não achou
+    nada.
+
+    `NULL` fica fora: a cidade é anulável desde a Story 2.3, e um chip em branco
+    não é uma escolha. O evento sem cidade continua na programação — ele só não
+    gera chip nem aparece em filtro de cidade nenhum.
+    """
+    agora = datetime.now(timezone.utc)
+
+    return list(
+        sessao.scalars(
+            select(Evento.cidade)
+            .where(
+                Evento.publicado_em.is_not(None),
+                Evento.data_hora >= agora,
+                Evento.cidade.is_not(None),
+            )
+            .distinct()
+            # Alfabética, e não por quantidade de shows: a ordem precisa ser
+            # estável entre visitas para o chip não trocar de lugar debaixo do
+            # cursor a cada evento publicado.
+            .order_by(Evento.cidade)
+        )
+    )
+
+
+def _disponibilidade_do_setor(setor: Setor) -> DisponibilidadeDoSetor:
+    """Quanto resta de um setor, em palavra (Story 3.4).
+
+    **Função própria para a regra do limiar existir num lugar só** e ser lida por
+    um teste. Ela é uma linha e meia; inline no laço de `obter_publico` ela
+    ficaria igual de curta e sem nome — e "por que 20% e não 10?" é uma pergunta
+    que precisa de um lugar para ser respondida.
+
+    ⚠️ **`ESGOTADO` é conferido primeiro, e a ordem é a regra.** Zero restante
+    também é "20% ou menos": com as condições trocadas, o setor esgotado sairia
+    como `ULTIMOS` — barra cheia e a palavra errada, dizendo "corre" sobre o que
+    já acabou.
+
+    ⚠️ **A conta é em inteiros — `(capacidade - vendidos) * 5 <= capacidade` —, e
+    não com `0.2` em ponto flutuante.** As duas formas dizem a mesma coisa em
+    álgebra e discordam na borda: um setor de 15 lugares com 12 vendidos deixa
+    exatamente 20%, e `3 <= 15 * 0.2` depende de arredondamento binário. É
+    justamente na borda que o `float` decide sozinho, e é a borda que o teste
+    exercita.
+
+    **`capacidade > 0` é `CHECK` no banco desde a Story 2.3**, então não há
+    divisão por zero possível aqui — nem nesta função, que não divide, nem no
+    `round()` de quem a chama.
+    """
+    restam = setor.capacidade - setor.vendidos
+
+    if restam <= 0:
+        return DisponibilidadeDoSetor.ESGOTADO
+    if restam * 5 <= setor.capacidade:
+        return DisponibilidadeDoSetor.ULTIMOS
+    return DisponibilidadeDoSetor.DISPONIVEL
+
+
+def obter_publico(sessao: Session, evento_id: UUID) -> EventoPublico:
+    """Um evento em cartaz com seus setores — a tela da escolha (Story 3.4).
+
+    **Mesmo recorte das outras três rotas públicas**: publicado (`publicado_em IS
+    NOT NULL`) e ainda por acontecer (`data_hora >= agora`). Não é "parecido" — é
+    o mesmo, escrito na mesma ordem, e um evento que abrisse aqui fora do recorte
+    da programação seria um show que existe pelo link e não existe na lista.
+
+    **Uma consulta com as três condições no mesmo `where`, e não um
+    `sessao.get()` seguido de dois `if`.** Mesmo motivo escrito no
+    `obter_do_organizador`: com tudo no `where`, "só vejo o que está em cartaz" é
+    verdade **por construção**, não por disciplina de quem escrever a próxima
+    rota. Dois `if` depois do `get()` criam dois caminhos para a mesma decisão, e
+    o segundo é o que alguém esquece.
+
+    ⚠️ **Os três casos recebem o mesmo `404`, com o mesmo código e a mesma
+    mensagem** (decisão do Igor): `id` que não é evento nenhum, evento em
+    rascunho e evento cuja data já passou. Distinguir "não existe" de "é rascunho
+    de alguém" transformaria esta rota num oráculo — daria para varrer UUIDs e
+    descobrir o que um organizador ainda não publicou. É a mesma disciplina do
+    `EVENTO_NAO_ENCONTRADO` do organizador (Story 2.6) e do login da 1.4, que não
+    diz se o e-mail existe. E é por isso que o "evento passado" também não ganha
+    resposta própria: ela custaria um estado de tela ("este show já aconteceu")
+    para uma informação que quem guardou o link de ontem não vai fazer nada com.
+
+    **O estoque não atravessa, e é esta a rota em que isso mais importa.** O
+    `EventoPublico` não tem `capacidade` nem `vendidos`; o que sai é o par
+    derivado do `SetorPublico` — a proporção que desenha a barra e a palavra que
+    diz o estado (AD-13, UX-DR7). O `response_model` da rota é quem garante isso,
+    não a tela.
+    """
+    # Lido **uma vez**, como na `listar_programacao` e no `obter_destaque`, e pelo
+    # mesmo motivo: duas leituras do relógio na mesma requisição podem discordar
+    # sobre o evento que começa agora. Um `datetime` com fuso, nunca texto.
+    agora = datetime.now(timezone.utc)
+
+    evento = sessao.scalars(
+        select(Evento)
+        .where(
+            Evento.id == evento_id,
+            Evento.publicado_em.is_not(None),
+            Evento.data_hora >= agora,
+        )
+        # Uma consulta a mais para os setores, e não uma por setor: sem ele, ler
+        # `evento.setores` no laço abaixo emitiria o `SELECT` preguiçoso no meio
+        # da montagem do schema.
+        .options(selectinload(Evento.setores))
+    ).first()
+
+    if evento is None:
+        raise ErroDeDominio(
+            "EVENTO_NAO_ENCONTRADO",
+            "Esse show não está em cartaz.",
+            status_http=404,
+        )
+
+    return EventoPublico(
+        id=evento.id,
+        nome=evento.nome,
+        data_hora=evento.data_hora,
+        local=evento.local,
+        cidade=evento.cidade,
+        imagem_url=evento.imagem_url,
+        maximo_por_compra=MAXIMO_POR_COMPRA,
+        # **Todos os setores, inclusive o esgotado**, e sem `sorted()`: a ordem
+        # alfabética já vem do `order_by="Setor.nome"` do `relationship` (Story
+        # 2.3). Duas fontes para a mesma ordem é uma chance de elas discordarem.
+        #
+        # Evento **sem setor nenhum** cai aqui como lista vazia e não quebra —
+        # ele é impossível pela rota de publicação, possível por `psql`, e existe
+        # no banco de desenvolvimento. Ao contrário da `listar_programacao`, não
+        # há `min()` nenhum para proteger: a compreensão sobre lista vazia é
+        # lista vazia.
+        setores=[
+            SetorPublico(
+                id=setor.id,
+                nome=setor.nome,
+                preco_centavos=setor.preco_centavos,
+                disponibilidade=_disponibilidade_do_setor(setor),
+                # ⚠️ **AD-13**: a proporção nasce de `setor.vendidos` e
+                # `setor.capacidade`, lidos do próprio setor — é **proibido**
+                # derivá-la com `COUNT` sobre reserva ou ingresso, em qualquer
+                # camada. As duas tabelas nascem nas Stories 3.5 e 3.9.
+                #
+                # Duas casas: a barra tem 5px de altura e não mostra mais que 1%,
+                # e menos dígitos é menos superfície para alguém tentar
+                # reconstruir a capacidade a partir da proporção.
+                #
+                # ⚠️ **O teto de `0.99` não é estético** (code review da Epic 3).
+                # `round(999/1000, 2)` é `1.0`, e nesse ponto a disponibilidade
+                # ainda é `ULTIMOS`: a tela mostrava a barra cheia ao lado da
+                # palavra "últimos ingressos", com o stepper ativo — indistinguível
+                # de esgotado. É o mesmo sintoma que o `_disponibilidade_do_setor`
+                # previne pela ordem das condições ("barra cheia e a palavra
+                # errada"), reintroduzido pelo arredondamento em capacidade
+                # grande. Barra cheia fica reservada a quem de fato esgotou.
+                proporcao_vendida=(
+                    1.0
+                    if setor.vendidos >= setor.capacidade
+                    else min(round(setor.vendidos / setor.capacidade, 2), 0.99)
+                ),
+            )
+            for setor in evento.setores
+        ],
+    )
 
 
 def obter_do_organizador(

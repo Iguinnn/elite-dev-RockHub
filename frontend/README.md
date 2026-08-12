@@ -384,11 +384,19 @@ frontend/
       not-found.module.css
       (site)/                 # casca com masthead: tudo que é navegável
         layout.tsx
-        page.tsx              # raiz
-        page.module.css
+        page.tsx              # raiz — a programação, com busca e chips na URL (3.1 e 3.2)
+        page.module.css       # a barra de busca, os chips, e a fila de jornal em quatro colunas
         conta/
           page.tsx            # Server Component com a guarda de sessão
           page.module.css
+        eventos/
+          [id]/
+            page.tsx          # a página pública do evento (3.4); lê a sessão só para saber se há botão
+            page.module.css   # compartilhado com a ilha EscolhaDeIngressos
+        reservas/
+          [id]/
+            page.tsx          # a reserva: itens, total e cronômetro (3.6) — sem botão de pagar
+            page.module.css
         organizador/
           publicar/
             page.tsx          # Server Component — passos 1 (2.2), 2 (2.4) e 3 (2.5); a escolha vem da URL
@@ -419,10 +427,15 @@ frontend/
       Botao.module.css
       AvisoDeErro.tsx         # a região role="alert" e a regra que a faz funcionar
       AvisoDeErro.module.css
+      Toast.tsx               # o mesmo role="alert", flutuando no canto inferior direito (3.6)
+      Toast.module.css
       FormularioLogin.tsx     # "use client"
       FormularioCadastro.tsx  # "use client"
       FormularioPublicacao.tsx # "use client" — a primeira ilha fora das telas de acesso (2.4/2.5)
       BotaoSair.tsx           # "use client" — logout + router.refresh()
+      EscolhaDeIngressos.tsx  # "use client" — o stepper (3.4) e o botão de reservar com o 409 (3.6)
+      Cronometro.tsx          # "use client" — os 10 minutos da reserva; informa, não pressiona (3.6)
+      Cronometro.module.css
     lib/
       api.ts                  # chamarApi + ErroDaApi — o caminho do navegador
       servidor.ts             # API_URL + cabecalhoDeSessao() — o que os três módulos de servidor compartilham
@@ -430,6 +443,9 @@ frontend/
       catalogo.ts             # buscarNoCatalogo() — só servidor (Story 2.2)
       portarias.ts            # listarPortarias() — só servidor (Story 2.5)
       eventos.ts              # listarMeusEventos() e obterMeuEvento() — só servidor (Story 2.6)
+      programacao.ts          # listarProgramacao(filtros), listarCidadesEmCartaz(), obterDestaque()
+                              # e obterEvento(id) — as quatro leituras públicas, sem cookie (3.1 a 3.4)
+      reservas.ts             # obterReserva(id) — só servidor; o POST sai da ilha, por chamarApi (3.6)
       formato.ts              # data, hora e dinheiro em pt-BR — módulo puro, os dois lados o usam (2.6)
       caminho.ts              # caminhoInternoSeguro() — função pura
 ```
@@ -440,7 +456,7 @@ O layout raiz é só `<html><body>`. A casca visível vem de dois grupos de rota
 
 | Grupo | O que mostra | O que mora nele |
 |---|---|---|
-| `(site)` | Masthead: logotipo, navegação, fio duplo | A raiz, e daqui em diante tudo que exige sessão ou é navegável |
+| `(site)` | Masthead: logotipo, navegação, fio | A raiz, e daqui em diante tudo que exige sessão ou é navegável |
 | `(entrada)` | Só o logotipo, centrado | `/login` e `/cadastro` |
 
 **Quem está tentando entrar não pode ver "Minha conta".** É um link que ele não consegue abrir. A
@@ -533,6 +549,20 @@ O `Botao` tem **só a variante primária**. O `DESIGN.md` descreve também um se
 destrutivo, e nenhum dos dois tem consumidor — uma prop `variante` com um valor só é abstração
 inventada. Quando o segundo aparecer, ela nasce ali.
 
+⚠️ **Ele passou da Story 1.4 à 3.6 com uma borda clara em volta, e ninguém tinha reparado.** Não
+existe reset de `<button>` no `globals.css` — o `*` cuida de `box-sizing`, `margin` e `padding`, e o
+resto fica com o padrão do navegador, que é `2px outset ButtonBorder`: clara, e gritante sobre o breu.
+O `.passo` do stepper e o `.remover` do formulário de publicação já escreviam `border: none` com o
+aviso ao lado; o `Botao`, que é o primário do produto, não — e a borda estava em toda tela com botão,
+inclusive nos dois `Buscar`. Entrou junto o que faltava para o botão parecer clicável: `cursor:
+pointer`, `:hover` e `:active`. O hover é `filter: brightness(1.12)` e **não** um segundo tom de rosa:
+o `globals.css` é o único lugar do frontend onde cor é declarada por valor, e um `#ff6aab` num arquivo
+de componente seria a nona cor do sistema, nascida para um estado. Inverter as tintas como o `.passo`
+faz também não servia — ele é transparente e ganha fundo neon no hover; este já **é** neon, e inverter
+o apagaria contra o fundo da página. Considerei pôr o reset de `<button>` no `globals.css` e deixei de
+fora: ele mudaria todo botão do projeto de uma vez, inclusive os três que já se defendem sozinhos, e
+é decisão de sistema visual — não de conserto de componente.
+
 **O `AvisoDeErro` foi extraído por um critério diferente dos outros dois.** `Campo` e `Botao` saíram
 porque se repetem. Este saiu porque a regra que o faz funcionar é *invisível*: a região `role="alert"`
 precisa existir no DOM desde o primeiro render, vazia, e receber só o texto depois. Escrita como
@@ -594,7 +624,7 @@ ou portaria o link **não existe no HTML**, nem escondido por CSS — a decisão
 qualquer coisa chegar ao navegador.
 
 **E o nome de quem entrou não aparece ali**, mesmo agora que o componente o conhece. O
-`DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio duplo, e nada mais —, e o
+`DESIGN.md#Components/masthead` é literal — logotipo, fio, navegação, fio, e nada mais —, e o
 UX-DR10 já tinha derrubado a linha de contexto pelo mesmo motivo. Os dados da pessoa são o conteúdo
 da `/conta`.
 
@@ -1150,19 +1180,44 @@ um hex dentro de um `.module.css`, está errado.
 
 | Token | Uso |
 |---|---|
-| `--breu` `#0E0D0C` | Fundo de toda a aplicação |
-| `--breu2` `#151311` | Superfície elevada: resumo, campo, fila em hover |
-| `--cal` `#EDE8DC` | Texto principal |
-| `--fumaca` `#8F877A` | Texto secundário, etiquetas, kickers |
-| `--ambar` `#F2A413` | Acento único: ação primária, item ativo, escassez |
-| `--brasa` `#D93B2B` | Erro, esgotado, pagamento recusado, ingresso inválido |
-| `--verde` `#3FA96B` | Só o veredito `VÁLIDO` e a confirmação de pagamento |
-| `--fio` `#2A2622` | Todos os fios, filetes e bordas |
-| `--fio2` `#3A352F` | Fio sobre superfície elevada; medidor esgotado |
+| `--breu` `#0B1618` | Fundo de toda a aplicação |
+| `--breu2` `#112124` | Superfície elevada: resumo, campo, fila em hover |
+| `--cal` `#E4EBEA` | Texto principal |
+| `--fumaca` `#7E9295` | Texto secundário, etiquetas, kickers |
+| `--neon` `#FF4F9A` | Acento único: ação primária, item ativo, escassez |
+| `--brasa` `#E4574A` | Erro, esgotado, pagamento recusado, ingresso inválido |
+| `--verde` `#9BE04A` | Só o veredito `VÁLIDO` e a confirmação de pagamento |
+| `--fio` `#1E3134` | Todos os fios, filetes e bordas |
+| `--fio2` `#2B4247` | Fio sobre superfície elevada; medidor esgotado |
 
-Preto quente de tinta, **nunca `#000`**. Branco quente de papel, **nunca `#FFF`**. E o âmbar é o
-acento único: se algo precisa de destaque e não é erro nem sucesso, é âmbar. Não introduza um
-segundo acento decorativo, nem "só para esta tela".
+Chão de petróleo, **nunca `#000`**. Papel frio, **nunca `#FFF`**. E o neon é o acento único: se algo
+precisa de destaque e não é erro nem sucesso, é neon. Não introduza um segundo acento decorativo,
+nem "só para esta tela".
+
+**O fio duplo do masthead virou simples em 2026-08-12**, e é a segunda vez que a tela desmente o
+`DESIGN.md`. Ele pedia `3px double` fechando o cabeçalho — convenção de jornal impresso, onde o fio
+duplo é largo e inconfundível. Na tela, `3px double` são dois filetes de 1px colados, na mesma cor
+dos fios simples do resto da página: eu olhei e li "está duplicado", não "é um fio duplo". Fio duplo
+que ninguém reconhece como duplo é só um fio errado, e a hierarquia que ele deveria criar já vem do
+espaço em volta do masthead. Considerei engrossá-lo para 4px e clareá-lo para `--fio2`, que faria a
+convenção aparecer de verdade — caiu porque um cabeçalho que se separa por peso de tinta contraria o
+resto da identidade, onde tudo se separa por espaço e por tipografia. ⚠️ O `DESIGN.md` continua
+descrevendo o duplo e **não foi atualizado**: ele é artefato de planejamento congelado, e registra o
+plano como ele foi feito. Quem quiser o porquê, encontra no `Masthead.module.css`, ao lado da linha.
+
+**Troquei a paleta em 2026-08-11**, depois da Epic 2: o âmbar `#F2A413` era quase o `amber-500` do
+Tailwind sobre preto quente, e essa combinação é a receita de todo tema escuro gerado — o
+`brainstorm-intent.md` chama isso de AI slop, e ele estava na minha própria tela. As duas tintas de
+hoje são as de um pôster serigrafado. Três coisas vieram junto e não são cosméticas: o `--brasa`
+subiu porque `#D93B2B` dava **4,26:1**, abaixo do piso de 4,5:1, na cor de toda mensagem de erro; o
+`--verde` virou limão porque o verde-mata era vizinho de matiz do chão novo e o bloco `VÁLIDO`
+deixava de saltar; e `--ambar` virou `--neon` porque o nome ficaria mentindo em quinze arquivos.
+
+⚠️ **A marca e o favicon carregam a paleta assada em pixel**, e são o único lugar do frontend fora do
+`globals.css` onde isso acontece — imagem não lê `var(--token)`. Trocar a paleta obriga a rodar
+`uv run --with pillow python scripts/gerar-marca.py`, que regera `public/logotipo-rockhub.png` e
+`src/app/icon.png` a partir do JPEG do lettering; um `grep` por `var(--` não encontra nenhum dos
+dois. As constantes ficam no topo do script, e o porquê de cada decisão está no docstring dele.
 
 ### Tipografia
 
@@ -1273,9 +1328,13 @@ horizontal em formulário, e ela está desarmada na origem.
   `prefers-color-scheme`. Tudo isso foi arrancado — se você regerar o template algum dia, arranque
   de novo. **O que sobreviveu escondido até o code review da Epic 1 foi o `favicon.ico`**: o
   triângulo da Vercel, 25.931 bytes, na aba do navegador de um projeto que está sendo avaliado.
-  Trocado por `src/app/icon.svg`, próprio. Convenção do App Router: `icon.svg` em `app/` vira o
-  ícone da aba sozinho, e o `favicon.ico` **tem precedência sobre ele** — por isso o arquivo antigo
-  precisou ser apagado, não só acompanhado
+  Trocado por um ícone próprio. Convenção do App Router: um `icon.*` em `app/` vira o ícone da aba
+  sozinho, e o `favicon.ico` **tem precedência sobre ele** — por isso o arquivo antigo precisou ser
+  apagado, não só acompanhado. Hoje o arquivo é `src/app/icon.png`, com o "R" recortado do próprio
+  lettering da marca; ele substituiu um `icon.svg` que desenhava um "R" em Georgia, quando o
+  logotipo virou imagem em 2026-08-12 e ícone e marca passariam a contar histórias diferentes.
+  **Um `icon.*` só na pasta**: com `.svg` e `.png` juntos o Next emite as duas tags e quem escolhe
+  é o navegador
 - **`.gitignore` só existe na raiz.** O que o `create-next-app` cria aqui é redundante; a única
   regra que ele tinha a mais (`next-env.d.ts`) eu movi para o arquivo da raiz
 
@@ -1288,6 +1347,269 @@ telas de acesso ficaram dinâmicas por lerem `searchParams`.
 **É o comportamento correto**, não uma regressão: uma página cujo cabeçalho depende de quem pediu não
 pode ser pré-renderizada — a versão em cache mostraria `Entrar` para quem está logado. Não tente
 consertar com `export const dynamic` nem tirando o masthead do layout.
+
+## A raiz: a programação
+
+A raiz deixou de ser o estado vazio provisório da Story 1.2 e passou a ser a programação — e é a
+primeira tela deste projeto que **não tem dono**. Todas as outras ou são de quem entra (login,
+cadastro) ou de quem publica (`/organizador/*`), e todas começam por `obterUsuarioDaSessao()`. Esta
+não tem guarda, não tem `redirect` e não lê sessão nenhuma: qualquer um dos três aqui seria uma
+exigência que o backend não faz. Continua Server Component, sem uma linha de `"use client"`, porque
+não há interação — só leitura e navegação. O corte de "só o que ainda vai acontecer" vem pronto da
+API, ao contrário de "Meus eventos", onde ele mora na tela; o motivo dessa inversão está no README da
+raiz.
+
+**`src/lib/programacao.ts` é o primeiro módulo daqui que fala com a API sem repassar cookie**, e a
+ausência do `cabecalhoDeSessao()` está comentada no código de propósito. Ele está a um import de
+distância e não faria mal nenhum — é exatamente por isso que entraria sem ninguém notar, e o próximo
+leitor tomaria a sessão por exigência da rota. São dois estados, e não três como no `eventos.ts`:
+não há `404` nem `401` possíveis numa rota que responde `200 []` para banco vazio e não conhece
+sessão. Como todos os outros, ele **nunca levanta** — só que aqui a página é a raiz do produto, e o
+custo de esquecer isso seria a aplicação inteira caindo porque o backend piscou.
+
+⚠️ **E é justamente por não ler cookie que ele precisou de `unstable_rethrow`.** O `cache: "no-store"`
+é uma das APIs que o Next interrompe *lançando* um erro interno (`DYNAMIC_SERVER_USAGE`) para tirar a
+rota da renderização estática, e o meu `try/catch` engolia esse sinal: o build registrava
+"Programação indisponível" mesmo com a API no ar, e a raiz corria o risco de nascer estática com a
+frase de erro impressa dentro. Os outros três módulos de `lib/` nunca tiveram esse problema porque
+chamam `cookies()` **fora** do `try`, e já saem do modo estático antes de chegar ao `fetch`. Aqui não
+há cookie, e o `fetch` é o único sinal que resta — daí a chamada ser a primeira linha do `catch`.
+
+`partesDaFilaPublica` entrou no `formato.ts` em vez de nascer dentro do `page.tsx`, e não é a
+`partesDaData` com outro nome. As duas filas do produto são primas, não gêmeas: a do organizador é um
+inventário e mostra `15 ago 2026` em três blocos de mono do mesmo tamanho; a pública é uma linha de
+jornal, e a tipografia separa o que decide de o que situa — o dia em serifada de 30px, com dia da
+semana, mês, ano e hora em mono versalete ao redor dele. Essa é a assinatura visual da listagem e a
+primeira coisa da Story 3.1 a sair do protótipo. O `FUSO` continua num lugar só: foram as três
+formatações inline da fila de "Meus eventos" que ficaram sem `timeZone` e fizeram a mesma publicação
+aparecer com duas datas.
+
+⚠️ **O mês e o ano faltavam, e isso era um defeito, não um recorte.** Eu tinha escrito que a
+programação pública "só mostra o que ainda vai acontecer, então o ano é sempre o mesmo ou o próximo,
+e o que interessa é o dia da semana e a hora". A primeira tela com quatro eventos reais desmentiu as
+duas metades: a coluna mostrava `14`, `12` e `23` — agosto, setembro e novembro —, e a âncora de
+leitura da lista não dizia qual show vinha antes; e "o mesmo ou o próximo" ainda são **dois** anos,
+com um show de setembro de 2026 e outro de setembro de 2027 idênticos na tela. Agora vem `AGO 2026`
+entre o dia e a hora, e o ano vem **sempre**, não só quando difere do atual: uma regra que muda com o
+relógio daria duas formas para a mesma coluna, e ninguém saberia qual está certa olhando uma captura
+de tela. Abaixo de 900px a coluna foi de 68px para 76px, que é o que impede o ano de quebrar para
+baixo do mês.
+
+**A fila esgotada é um `<div>`, e a com ingresso é um `<Link>`** — a troca é do elemento, não do CSS.
+Um `<Link>` com `pointer-events: none` continua no Tab e continua sendo anunciado como link por
+leitor de tela, e o padrão pede que a fila esgotada **não** seja clicável: a ausência de resposta ao
+hover é a informação. A palavra "Esgotado" está escrita no selo, então a informação não depende de
+enxergar o vermelho da brasa. O `href` aponta para `/eventos/{id}`, e **essa janela fechou na Story
+3.4**: o endereço existe, e o clique chega na página do evento. Ela ficou aberta três stories — da 3.1
+até a 3.4 —, contrariando o precedente que eu mesmo escrevi no `Masthead.tsx` ("link que cai no 404
+não fica no repositório"), e a diferença que aceitei era de alcance: lá é navegação permanente,
+visível em toda tela; aqui era um `href` dentro da branch da epic, que só eu publico. Deixo o registro
+porque a aposta era essa — janela consciente com prazo, do mesmo tipo da que o AD-7 teve entre a 2.4 e
+a 2.5 — e ela venceu no prazo.
+
+**A busca é a URL, não estado** (Story 3.2), e é isso que mantém a raiz inteira no servidor depois de
+ela ganhar um campo de texto, dois grupos de chips e um botão. A barra é um `<form method="get"
+action="/">` e submeter troca o endereço para `/?q=marina` — recarregável, compartilhável, e com o
+botão voltar funcionando. É a mesma escolha que a tela de publicar fez na 2.4 ("a escolha é
+navegação, não estado"), agora na tela mais visitada do produto. Descartei filtrar em JavaScript a
+lista já carregada: seria instantâneo ao digitar e transformaria a raiz numa ilha `"use client"`, com
+o filtro morrendo a cada recarga. Não há `onChange`, `useState`, `useRouter` nem debounce em lugar
+nenhum aqui — basta um deles para o `npm run build` deixar de marcar `/` como `ƒ`, que é o sintoma a
+vigiar. A programação e as cidades saem em `Promise.all`, porque uma não depende da outra e
+encadeá-las custaria uma ida à rede em série na tela de entrada.
+
+**O período é chip e a cidade é `<select>`, e a diferença não é arbitrária: um conjunto é fechado e o
+outro é aberto.** O período sempre terá três opções, hoje e no fim do projeto — chip é o elemento
+certo, e cada um é um `<Link>`, porque clicar nele troca a URL e isso é navegação (o mesmo raciocínio
+que fez a fila esgotada ser um `<div>` acima). Diferente do `NavLink`, eles não precisam de
+`"use client"`: quem sabe qual filtro está ativo é a própria página, que já leu a URL no servidor. O
+ativo é preenchido em `var(--neon)` com texto em `var(--breu)`, os outros ficam vazados, e todos levam
+`aria-current` — a informação não é dada só por matiz (UX-DR9). A cidade cresce com o catálogo, e eu
+cheguei a fazê-la de chips também: com duas cidades aquilo parecia um filtro que não filtra, e com
+quinze seriam três linhas de botões empurrando a programação para baixo da dobra. Virou um
+`<select name="cidade">` **dentro do form que já existe**, então ele não custa uma linha de
+JavaScript — escolher e apertar `Buscar` manda termo e cidade juntos, e ele só aparece com duas
+cidades ou mais. O preço é real e é um só: a cidade deixou de filtrar num clique. Devolvê-lo exigiria
+um `onChange` com `useRouter().push()`, que é a decisão desta tela ao contrário. E o detalhe que um
+teste de tela não pegaria: o `periodo` viaja como `<input type="hidden">` no form e o termo entra no
+`href` de cada chip — sem isso, buscar apaga o filtro e filtrar apaga a busca.
+
+**A raiz tem agora três frases de lista vazia, e elas não se misturam.** *Nenhum show em cartaz* é
+verdade sobre o produto — não há evento publicado e futuro; *Nenhum show encontrado para essa busca*
+é verdade sobre o que a pessoa digitou, e vem com um link de texto `Ver toda a programação`; *Não foi
+possível carregar* é falha temporária. Cada uma pede um conserto diferente — esperar, corrigir a
+busca, ou desistir —, e uma frase só para os três mandaria a pessoa fazer a coisa errada em dois
+casos. Duas decisões pequenas fecham isso: a barra de busca **não some** quando a busca não achou
+nada, porque ela é a única ferramenta de corrigir o que foi digitado; e o `periodo` da URL é
+normalizado contra os três valores conhecidos **antes** da chamada, para `/?periodo=xyz` digitado à
+mão mostrar a programação inteira em vez de "não foi possível carregar" — que seria uma mentira sobre
+um backend que está no ar. `listarCidadesEmCartaz` é a única função do `lib/` que engole a falha e
+devolve `[]`, e é de propósito: sem os chips a tela continua inteira, e um resultado discriminado
+criaria um ramo que ela renderiza igual ao caso feliz.
+
+**A chamada principal é o bloco que faz a tela parecer jornal** (Story 3.3) — sem ela a listagem é só
+uma tabela. É arte à esquerda e kicker, manchete e ficha de três dados à direita, uma só por tela
+(UX-DR4), e o `ChamadaPrincipal` mora no próprio `page.tsx` ao lado do `Chip` e da `Fila`, pelo mesmo
+motivo que a barra de busca não foi para `components/`: ele lê o `estilos` deste módulo e não tem
+segundo consumidor. Duas ausências são decisão, não esquecimento. **Não há standfirst**, que é a linha
+em itálico que o protótipo põe entre a manchete e a ficha: o `Evento` não tem campo de texto livre —
+nem coluna, nem entrada no formulário de publicação, nem nada que a Ticketmaster devolva —, e uma
+frase montada com os mesmos dados que o kicker e a ficha já mostram é o anti-padrão nº 5 do
+`DESIGN.md`, a linha de contexto que soa gerada. E **não há botão "Ver setores"**: o bloco inteiro é o
+alvo, como a fila, e dois alvos para o mesmo destino no mesmo bloco é uma escolha falsa. O
+`<Link>`/`<div>` conforme `esgotado` é o mesmo padrão da fila, e pelo mesmo motivo. **O preço não
+estava na ficha e voltou depois de eu ver a tela montada**: ele fica numa linha própria **abaixo**
+dela, e não como um quarto par dentro — os três de cima descrevem o show (onde, em que cidade, com
+que setores) e o preço é a única linha que fala de comprar. Como o destaque sai da fila, sem essa
+linha ele seria o único show da raiz sem "a partir de" em lugar nenhum. Também tirei o fio de 1px que
+fechava o bloco embaixo: ele ficava solto entre a base da arte e o `.secTitulo`, que já traz o
+próprio fio logo abaixo de "Programação" — dois filetes quase paralelos, sem nada entre eles, leem
+como sobra de grade.
+
+**O destaque sai da fila, e o corte é por `id`.** Nenhum show aparece duas vezes na mesma tela, e eu
+tinha escrito `slice(1)` primeiro: funciona hoje por coincidência, porque as duas rotas são consultas
+independentes e "o primeiro item da lista é o destaque" é uma propriedade do `order_by` de agora — o
+dia em que a ordenação mudar, a tela passaria a esconder o segundo show e a mostrar o primeiro duas
+vezes, sem erro nenhum. Com **um** evento no banco a fila fica vazia depois do corte, e aí somem o
+título `Programação` e a lista inteira: "nenhum show em cartaz" embaixo de uma capa que mostra um show
+seria a tela se contradizendo em duas linhas. Com filtro ativo (`?q=`, `?cidade=` ou `?periodo=`) a
+capa não aparece, e — a parte que é fácil esquecer — ela nem é **buscada**: o `filtrando` subiu para
+antes do `Promise.all`, e a terceira promessa é `filtrando ? null : obterDestaque()`. Renderizar
+condicionalmente é a metade fácil; a outra é não pagar uma ida à rede por um resultado que a tela vai
+jogar fora. As alternativas eram a capa refletir o resultado filtrado — com um resultado só, o mesmo
+show em cima e embaixo — ou ela ignorar o filtro, mostrando um show de São Paulo acima de "nenhum show
+encontrado" numa busca por Rio.
+
+**A arte é um `<img>` comum, e não `next/image`**, com o mesmo `eslint-disable` da miniatura do
+catálogo. O motivo é concreto: não existe `images.remotePatterns` no `next.config.ts`, e o componente
+do Next estoura **em tempo de execução** com host não declarado — em produção, não em build. O host
+vem da Ticketmaster e não é meu para prometer; declarar `s1.ticketm.net` hoje é configuração que
+quebra calada no dia em que a Discovery servir de outro domínio. O `alt` é vazio porque a arte é
+decorativa: o nome do artista está escrito ao lado dela em serifada de 46px, e um `alt` repetido faria
+o leitor de tela anunciar o show duas vezes. Sem `imagem_url` — a coluna é anulável desde a 2.3 — o
+lugar fica com um bloco em `var(--breu2)` do mesmo tamanho, para a grade não dançar conforme o evento
+tem ou não tem foto. ⚠️ **E a arte que quebra cai no mesmo bloco cinza, por CSS.** Na conferência da
+3.3 um dos eventos apareceu com o ícone de imagem faltando no meio da capa — a URL é da Ticketmaster,
+servida direto do domínio deles, e some quando eles quiserem. O conserto é `.imagemDaArte::after`
+cobrindo o quadro com o cinza: pseudo-elemento em `<img>` **só ganha caixa quando a imagem falha**,
+então a regra é invisível no caso feliz. Descartei o `onError`, que é o caminho óbvio: ele obrigaria
+a capa a virar ilha `"use client"`, com hidratação e `useState`, na tela mais visitada do produto —
+para tratar uma imagem. No Safari, que não gera pseudo-elemento em imagem nenhuma, o resultado é o
+mesmo por outro caminho: ele não desenha placeholder para `alt` vazio, e o fundo do `.arte` aparece
+sozinho. O kicker ganhou `dataDaChamada` no `formato.ts`, e ela **não** é a
+`dataPorExtenso` com um parâmetro a mais: um booleano naquela função lhe daria duas saídas e obrigaria
+as quatro telas do organizador a declarar qual delas querem. Data formatada inline na tela é o defeito
+que o code review da Epic 2 achou, e o `FUSO` continua num lugar só.
+
+**A página do evento (`/eventos/[id]`, Story 3.4) é a primeira rota dinâmica pública do frontend, e a
+metade de cima dela continua Server Component.** Cabeçalho, ficha e arte são renderizados no servidor;
+o que precisa de navegador é o seletor de quantidade, e ele é a **primeira ilha `"use client"` do lado
+público** — `components/EscolhaDeIngressos.tsx`. Ele mora em `components/` e não dentro da tela, ao
+contrário do `ChamadaPrincipal` da 3.3, porque a diretiva é do **módulo**: um `"use client"` no
+`page.tsx` arrastaria o cabeçalho inteiro para o cliente, e a página deixaria de ser servidor sem que
+nada avisasse além do relatório de rotas do `npm run build`. O precedente é o `FormularioPublicacao`, e
+o que atravessa a fronteira são dados serializáveis — a lista de setores e o teto por compra —, nunca
+funções. Dinheiro é o `centavosParaReais` do `formato.ts`, que é módulo puro e atravessa de propósito:
+nada de `Intl` dentro da ilha.
+
+**Nenhum número de estoque existe do lado de cá da rede**, e não é disciplina desta tela: o contrato
+não os tem (UX-DR7). Cada setor chega com uma proporção — a largura da barra do medidor — e uma
+palavra. A barra é `aria-hidden` e a palavra está **escrita** (`Disponível`, `Últimos ingressos`,
+`Esgotado`): quem usa leitor de tela ouve o estado, não uma porcentagem sem contexto, e a informação
+não é dada só por cor (UX-DR9). O setor esgotado fica esmaecido e **sem stepper no DOM** — não são
+botões desabilitados por CSS, pelo mesmo motivo já escrito na fila da 3.1: opacidade sem o atributo
+deixa o elemento clicável e no Tab, anunciado como ativo. E o mesmo vale para os `+` no teto e os `−`
+no zero, que são `disabled` de verdade; cada botão tem nome acessível próprio (`Mais um ingresso da
+Pista`), porque `+` sozinho não diz de que setor é, e a quantidade fica num `aria-live="polite"` para
+a mudança ser anunciada sem a pessoa precisar reler a tela.
+
+**O teto de 6 é da compra, não do setor.** Com 4 na Pista e 2 no Camarote, **todos** os `+` da tela
+travam — é o que a palavra "por compra" diz, e é o mesmo teto que o `POST /reservas` cobra do servidor
+desde a 3.6, da mesma constante. O rodapé é `position: sticky; bottom: 0`, recalcula sem confirmação,
+mostra `2 ingressos · Pista` com um setor e `3 ingressos · 2 setores` com mais, e **não aparece** com
+zero escolhido: `R$ 0,00` grudado na base é ruído, e ele existe para responder "quanto vou pagar" —
+pergunta que ainda não foi feita. Na 3.4 o botão `Reservar e pagar` ficou fora de propósito, porque
+reservar era a story seguinte: descartei tanto o botão apontando para o que viesse — um botão primário
+que cai na 404 é pior que um link de fila que cai — quanto o botão presente e desabilitado, que leria
+como defeito e não como escopo. **A 3.6 é quem o acrescentou**, e está na seção logo abaixo.
+
+**A ficha mostra `DATA`, `CASA` e `CIDADE`, e mais nada.** O protótipo desenha `ENDEREÇO`,
+`CLASSIFICAÇÃO` e `FONTE`, e nenhum dos três existe: o `Evento` não tem coluna de endereço, o
+formulário de publicação não pede uma, e `origem_externa_id` é assunto de quem publica. Criar a coluna
+cumpriria o AC ao pé da letra e arrastaria migração, campo no schema de entrada e um `<input>` na tela
+de publicar — que é tela já revisada da Epic 2 — para dentro de uma story de leitura, e o dado só
+existiria para o que fosse publicado dali em diante. Rotular `local · cidade` como "endereço" cumpriria
+a palavra sem cumprir a coisa: quem lê espera rua e número. **A data desceu do kicker para dentro da
+ficha depois de eu ver a tela montada**, e o kicker saiu junto em vez de ficar: os dois diriam a mesma
+frase com dois tamanhos de fonte a três centímetros de distância, que era a razão de eu ter deixado a
+data de fora dali. Com isso a ficha passou de dois pares para três, e aí ela trocou a versão **em
+linha** da capa pelas **linhas verticais do protótipo** — o desenho vertical parecia dois rótulos
+soltos num vazio com dois pares e volta a ler como ficha de jornal com três, além de ser ele que
+preenche a coluna de texto ao lado da arte. Os três estados do `lib/` são discriminados (`ok`,
+`nao-encontrado`,
+`indisponivel`) no molde do `obterMeuEvento`, e aqui a distinção vale mais que na tela do organizador:
+quem chega por esta URL nunca fez login e não tem como saber, sozinho, se o show saiu de cartaz ou se a
+API caiu. `404` e `422` caem no mesmo `nao-encontrado` e viram `notFound()`; falha de rede vira uma
+frase e o link de volta.
+
+## A reserva: `/reservas/[id]`
+
+**O botão `Reservar e pagar` só existe para quem está logado como cliente, e quem decide isso é a
+página — não a ilha.** `/eventos/[id]` é Server Component e já sabe quem está do outro lado, então
+`podeReservar` desce pronto por prop: visitante, organizador e portaria veem no lugar do botão um
+link para `/login?voltar=/eventos/{id}`. Descartei o botão para todo mundo com o `401` virando aviso:
+seria uma ida à rede para descobrir o que a página sabia antes de renderizar, e um erro exibido para
+um caso que não é erro nenhum. **A escolha do stepper se perde nessa ida ao login, de propósito** — o
+destino é `/eventos/{id}` limpo. Carregar as quantidades na URL (`?setor=2&…`) daria menos atrito e
+faria a URL carregar estado de compra, o componente ler `searchParams` e a tela restaurar uma escolha
+que pode não ser mais possível: o estoque muda nesses segundos, e reescolher é ver o preço e a
+disponibilidade de agora. O `?voltar=` é o que já existe desde a Story 1.4, sanitizado por
+`caminhoInternoSeguro` — não inventei um `?destino=`.
+
+**O `409 ESTOQUE_INSUFICIENTE` se resolve relendo `GET /eventos/{id}`, e não com um corpo de erro
+maior.** A tela chama o evento de novo, troca a lista de setores pela fresca, zera a quantidade dos
+que esgotaram e monta a frase do UX-DR8 com dados de agora: *"**Esgotou enquanto você decidia.** A
+Pista acabou de esgotar. Ainda há ingressos no setor Área VIP."* Ela aparece num **`Toast` no canto
+inferior direito**, acima do rodapé fixo — dentro do rodapé, uma frase que nomeia dois setores
+empurraria o total e o botão para baixo justamente no instante em que a pessoa precisa que a tela
+fique parada. Ele **não some sozinho**: toast com temporizador é o padrão da internet e está errado
+aqui, porque esta mensagem explica uma mudança que acabou de acontecer na lista atrás dela — quem
+fecha é quem leu, ou a tentativa seguinte. A região `role="alert"` fica no DOM desde o primeiro
+render, vazia e com `pointer-events: none`, pela mesma regra invisível que fez o `AvisoDeErro` virar
+componente. Se nada sobrou, a frase é "Este show esgotou enquanto você decidia", sem oferecer nada. A
+alternativa era o erro carregar
+`setor_esgotado_id` e `setor_sugerido_id`: uma ida à rede a menos, e o `core/erros.py` — que existe
+desde a Story 1.1 para a API ter **uma** forma de erro — ganharia a primeira exceção, que é a que abre
+a segunda. E a releitura não é só para a frase: é ela que deixa o stepper utilizável para a próxima
+tentativa, que era o problema real. Escrevo "no setor X" e não "na X" porque o nome é digitado pelo
+organizador e não dá para saber o gênero — "na Camarote" é pior que a frase um pouco mais longa.
+
+**No sucesso, `router.refresh()` antes do `router.push`.** Não é o mesmo `refresh` do login: aquele
+existia por causa do masthead, e este existe porque o estoque **desta** página acabou de mudar — sem
+ele, o botão "voltar" do navegador mostraria o medidor de antes da compra. O `mensagemParaCodigo`
+nasceu já cobrindo `NAO_AUTENTICADO` e `SEM_PERMISSAO`, que foi exatamente o buraco que o code review
+da Epic 2 achou no formulário de publicação: a sessão dura 8 horas e pode cair com a tela aberta, e
+sem tradução o `401` cairia em "tente de novo em instantes" — e tentar de novo daria `401` outra vez.
+
+**A reserva ganhou endereço próprio porque ela existe no servidor.** Uma reserva é uma linha no banco
+com prazo, não um estado desta tela: ela sobrevive a fechar a aba, e recarregar `/reservas/{id}`
+continua mostrando o mesmo tempo correndo. Um recibo no rodapé da própria página do evento seria mais
+barato e perderia o caminho de volta na primeira recarga. A página é Server Component, com a guarda de
+sessão de `/conta` e `/organizador/eventos` (`redirect` para o login com o `?voltar=`), e o `lib/
+reservas.ts` discrimina os três estados no molde do `obterMeuEvento` — `404` e `422` viram
+`notFound()`, falha de rede vira frase. **Não há botão de pagar aqui**: pagar é a 3.8, e é nesta
+página que ele entra.
+
+**O cronômetro informa, não pressiona.** Ele não pisca, não muda de cor e não acelera no fim
+(`EXPERIENCE.md#cronômetro de reserva`) — é mono versalete com `tabular-nums`, para a linha não dançar
+a cada segundo. Ele conta contra o `expira_em` do servidor e o relógio do navegador é só a régua: **ao
+chegar a zero ele diz que expirou e não navega para lugar nenhum**, porque quem decide a transição é o
+banco, na Story 3.7. Um `POST` disparado pelo navegador ao zerar seria uma segunda autoridade sobre a
+mesma coisa. Ele é a única ilha `"use client"` desta tela, com estado inicial `null` e o cálculo no
+`useEffect` — `useState(() => calcular())` roda no servidor e de novo no cliente, em instantes
+diferentes, e um segundo de diferença é erro de hidratação. O `aria-live` é `polite`, nunca
+`assertive`: um número anunciado a cada segundo em `assertive` interromperia a leitura da página
+inteira.
 
 ## Sobre não ter teste automatizado aqui
 
@@ -1305,8 +1627,8 @@ npx tsc --noEmit   # sem erro
 npm run lint       # limpo
 ```
 
-mais a conferência no navegador: fundo escuro, fio duplo fechando o masthead e `Tab` desenhando o
-contorno âmbar em todo link.
+mais a conferência no navegador: fundo escuro, fio fechando o masthead e `Tab` desenhando o contorno
+neon em todo link.
 
 O preço disso é que **a reescrita de um formulário já entregue não tem rede de proteção** — foi
 exatamente o caso da Story 1.5, ao extrair `Campo` e `Botao` do login. Os 73 testes do backend não

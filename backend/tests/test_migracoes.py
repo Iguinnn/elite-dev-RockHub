@@ -151,6 +151,126 @@ def test_os_dois_ondelete_de_evento_portaria_sao_diferentes(
     assert "ondelete" not in chaves["usuario"]["options"]
 
 
+def test_upgrade_cria_tabelas_reserva_e_item_reserva(engine_teste: Engine) -> None:
+    """As duas tabelas da Story 3.5, criadas juntas por uma revisão só.
+
+    Nada na aplicação as lê ou escreve ainda — o critério de pronto daquela
+    story é o schema, como foi o da 2.3 com `evento` e `setor`.
+    """
+    inspetor = inspect(engine_teste)
+    tabelas = inspetor.get_table_names()
+
+    assert "reserva" in tabelas
+    assert "item_reserva" in tabelas
+
+    colunas_reserva = {c["name"]: c for c in inspetor.get_columns("reserva")}
+    colunas_item = {c["name"]: c for c in inspetor.get_columns("item_reserva")}
+
+    assert set(colunas_reserva) == {
+        "id",
+        "cliente_id",
+        "evento_id",
+        "estado",
+        "expira_em",
+        "total_centavos",
+        "criado_em",
+    }
+    assert set(colunas_item) == {
+        "id",
+        "reserva_id",
+        "setor_id",
+        "quantidade",
+        "preco_unitario_centavos",
+    }
+
+    assert "UUID" in str(colunas_reserva["id"]["type"]).upper()
+    assert "UUID" in str(colunas_item["id"]["type"]).upper()
+
+
+def test_dinheiro_da_reserva_e_bigint_e_datas_carregam_fuso(
+    engine_teste: Engine,
+) -> None:
+    """AD-11 de novo, agora nas duas tabelas da compra.
+
+    `expira_em` com fuso é o que permite compará-lo com o `now()` do Postgres
+    na colheita preguiçosa da Story 3.7 sem conversão pelo caminho.
+    """
+    inspetor = inspect(engine_teste)
+    colunas_reserva = {c["name"]: c for c in inspetor.get_columns("reserva")}
+    colunas_item = {c["name"]: c for c in inspetor.get_columns("item_reserva")}
+
+    assert "BIGINT" in str(colunas_reserva["total_centavos"]["type"]).upper()
+    assert "BIGINT" in str(colunas_item["preco_unitario_centavos"]["type"]).upper()
+
+    for coluna in ("expira_em", "criado_em"):
+        assert colunas_reserva[coluna]["type"].timezone is True
+
+    assert colunas_reserva["expira_em"]["nullable"] is False
+
+
+def test_das_quatro_chaves_estrangeiras_da_compra_so_uma_tem_cascade(
+    engine_teste: Engine,
+) -> None:
+    """Item some junto com a reserva; show, setor e conta vendidos, não.
+
+    Lido do banco, não do modelo, pelo mesmo motivo do
+    `test_os_dois_ondelete_de_evento_portaria_sao_diferentes`: o
+    `--autogenerate` tem histórico de emitir chave estrangeira sem `ondelete`,
+    e aqui são três que **devem** sair sem e uma que **deve** sair com.
+    """
+    inspetor = inspect(engine_teste)
+    da_reserva = {
+        chave["referred_table"]: chave
+        for chave in inspetor.get_foreign_keys("reserva")
+    }
+    do_item = {
+        chave["referred_table"]: chave
+        for chave in inspetor.get_foreign_keys("item_reserva")
+    }
+
+    # A única com CASCADE: item de reserva apagada não significa nada.
+    assert do_item["reserva"]["constrained_columns"] == ["reserva_id"]
+    assert do_item["reserva"]["options"]["ondelete"] == "CASCADE"
+
+    # As três que o Postgres recusa apagar — apagar venda tem que doer.
+    assert do_item["setor"]["constrained_columns"] == ["setor_id"]
+    assert "ondelete" not in do_item["setor"]["options"]
+
+    assert da_reserva["usuario"]["constrained_columns"] == ["cliente_id"]
+    assert "ondelete" not in da_reserva["usuario"]["options"]
+
+    assert da_reserva["evento"]["constrained_columns"] == ["evento_id"]
+    assert "ondelete" not in da_reserva["evento"]["options"]
+
+
+def test_so_as_chaves_estrangeiras_lidas_da_compra_tem_indice(
+    engine_teste: Engine,
+) -> None:
+    """Três com índice, uma sem — e a que fica sem é decisão, não esquecimento.
+
+    `reserva.cliente_id` é o `where` de "minhas compras" (Epic 4),
+    `item_reserva.reserva_id` é lido em todo carregamento de reserva e varrido
+    a cada DELETE em cascata, e `item_reserva.setor_id` é o `where` da colheita
+    da Story 3.7. `reserva.evento_id` não é lido por nenhuma story planejada:
+    índice preventivo é peso sem gargalo demonstrado.
+    """
+    inspetor = inspect(engine_teste)
+
+    indices_de_reserva = {i["name"] for i in inspetor.get_indexes("reserva")}
+    indices_do_item = {i["name"] for i in inspetor.get_indexes("item_reserva")}
+
+    assert "ix_reserva_cliente_id" in indices_de_reserva
+    assert "ix_item_reserva_reserva_id" in indices_do_item
+    assert "ix_item_reserva_setor_id" in indices_do_item
+
+    colunas_indexadas = {
+        coluna
+        for indice in inspetor.get_indexes("reserva")
+        for coluna in indice["column_names"]
+    }
+    assert "evento_id" not in colunas_indexadas
+
+
 def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
     engine_teste: Engine,
 ) -> None:
@@ -160,7 +280,20 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
     `downgrade()` quebrado passaria despercebida aqui.
     """
     cfg = _config_alembic()
-    tabelas_do_projeto = ("usuario", "evento", "setor", "evento_portaria")
+    tabelas_do_projeto = (
+        "usuario",
+        "evento",
+        "setor",
+        "evento_portaria",
+        "reserva",
+        "item_reserva",
+        # ⚠️ **A sétima, e a que faltava** (code review da Epic 3). O AC12 da
+        # Story 3.5 avisou por escrito que sem manter esta tupla em dia "uma
+        # migração nova com o `downgrade()` quebrado passaria por ele sem ser
+        # notada" — e a `e43874e0cf3a`, da 3.9, foi exatamente essa migração
+        # nova. Quem acrescentar a oitava tabela acrescenta a linha aqui.
+        "ingresso",
+    )
 
     command.downgrade(cfg, "base")
     try:
@@ -176,3 +309,78 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
     tabelas = inspetor.get_table_names()
     for tabela in tabelas_do_projeto:
         assert tabela in tabelas
+
+
+def test_upgrade_cria_a_tabela_ingresso_com_as_sete_colunas(
+    engine_teste: Engine,
+) -> None:
+    """A sétima tabela do schema, e o AC1 da Story 3.9 lido do banco.
+
+    ⚠️ **Não existia asserção nenhuma sobre `ingresso`** (code review da Epic 3):
+    `test_ingresso.py` exercita comportamento pela rota e nunca chama
+    `inspect()`. As três decisões que a migração declara no docstring — as sete
+    colunas, as FKs sem `CASCADE` e o `setor_id` deliberadamente sem índice —
+    eram reversíveis por um `--autogenerate` distraído sem quebrar nada.
+
+    Mesmo formato dos quatro testes de schema que a Story 3.5 ganhou para as
+    tabelas dela, e pelo mesmo motivo.
+    """
+    inspetor = inspect(engine_teste)
+
+    colunas = {coluna["name"] for coluna in inspetor.get_columns("ingresso")}
+    assert colunas == {
+        "id",
+        "reserva_id",
+        "evento_id",
+        "setor_id",
+        "titular_nome",
+        "assinatura",
+        "nonce",
+    }
+
+
+def test_nenhuma_chave_estrangeira_do_ingresso_tem_cascade(
+    engine_teste: Engine,
+) -> None:
+    """Apagar show, setor ou reserva com ingresso emitido é recusado pelo banco.
+
+    As três **sem** `ondelete`, e as três de propósito: um ingresso emitido é o
+    passe de entrada de alguém que pagou, e nenhuma remoção de linha vizinha pode
+    fazê-lo desaparecer em silêncio. É o mesmo argumento das três FKs da compra,
+    um degrau acima — lá o que se perde é a intenção de comprar, aqui é a compra.
+    """
+    inspetor = inspect(engine_teste)
+    do_ingresso = {
+        chave["referred_table"]: chave
+        for chave in inspetor.get_foreign_keys("ingresso")
+    }
+
+    assert set(do_ingresso) == {"reserva", "evento", "setor"}
+    for tabela in ("reserva", "evento", "setor"):
+        assert "ondelete" not in do_ingresso[tabela]["options"], (
+            f"a FK de ingresso para {tabela} ganhou ondelete — "
+            "apagar venda tem que doer"
+        )
+
+
+def test_so_as_chaves_estrangeiras_lidas_do_ingresso_tem_indice(
+    engine_teste: Engine,
+) -> None:
+    """Duas com índice, uma sem — e a que fica sem é decisão, não esquecimento.
+
+    `reserva_id` é o `where` de "os canhotos desta reserva" e `evento_id` é o da
+    portaria na Epic 5. `setor_id` não é lido por nenhuma story planejada:
+    índice preventivo é peso sem gargalo demonstrado, como em `reserva.evento_id`.
+    """
+    inspetor = inspect(engine_teste)
+
+    indices = {i["name"] for i in inspetor.get_indexes("ingresso")}
+    assert "ix_ingresso_reserva_id" in indices
+    assert "ix_ingresso_evento_id" in indices
+
+    colunas_indexadas = {
+        coluna
+        for indice in inspetor.get_indexes("ingresso")
+        for coluna in indice["column_names"]
+    }
+    assert "setor_id" not in colunas_indexadas

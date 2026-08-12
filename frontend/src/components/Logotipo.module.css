@@ -1,11 +1,19 @@
-/* DESIGN.md#Components/masthead — serifada 44px, "Hub" em itálico âmbar. */
+/* DESIGN.md#Components/masthead — a marca do projeto, em lettering próprio.
+   Era serifada 44px com "Hub" em itálico neon; virou imagem em 2026-08-12, e o
+   motivo da troca está no docstring do `Logotipo.tsx`. */
 
+/* `inline-flex` e não `block`: o link precisa envolver exatamente a imagem, sem
+   a faixa de descida que o `inline` padrão deixa embaixo — ela desalinharia o
+   `:focus-visible` (UX-DR9) e abriria um vão no topo do masthead. */
 .logo {
-  font: 400 44px/0.86 var(--serif);
-  letter-spacing: -0.035em;
+  display: inline-flex;
 }
 
-.logo em {
-  font-style: italic;
-  color: var(--ambar);
+/* **Altura fixa, largura calculada** — o `next/image` sai com `width` e
+   `height` do arquivo, e sem o `width: auto` o navegador respeita os dois e
+   achata o lettering. A altura casa a caixa da serifada de 44px que estava aqui
+   antes, para o masthead não mudar de altura com a troca. */
+.marca {
+  height: 44px;
+  width: auto;
 }

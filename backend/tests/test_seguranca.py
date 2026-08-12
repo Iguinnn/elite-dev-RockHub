@@ -56,10 +56,27 @@ def test_token_criado_e_lido_de_volta_traz_sub_e_papel_e_expira_em_8h() -> None:
 
 
 def test_token_com_assinatura_alterada_e_recusado() -> None:
-    token = criar_token_sessao(_usuario_teste())
-    token_adulterado = token[:-1] + ("A" if token[-1] != "A" else "B")
+    """⚠️ **A adulteração é no PRIMEIRO caractere da assinatura, nunca no último.**
 
-    assert ler_token_sessao(token_adulterado) is None
+    Trocar o último era o que este teste fazia, e o tornava intermitente (code
+    review da Epic 3). A assinatura HS256 tem 32 bytes, que em base64url sem
+    padding dão 43 caracteres: 258 bits para 256 de dado. Os **2 bits sobrando
+    ficam no último caractere**, então `A`, `B`, `C` e `D` decodificam para os
+    mesmos bytes — e a troca por `"A"` era invisível sempre que o token terminava
+    em `B`, `C` ou `D`. Nesses ~4,7% dos casos a assinatura continuava válida, o
+    token era aceito, e o teste falhava dizendo que o sistema aceita token
+    adulterado. O contrário — um teste verde afirmando que a recusa funciona
+    quando o byte nem mudou — é o que aconteceria se a asserção fosse `is not
+    None`.
+
+    O primeiro caractere carrega 6 bits significativos: trocá-lo muda o byte
+    sempre.
+    """
+    token = criar_token_sessao(_usuario_teste())
+    cabecalho, payload, assinatura = token.rsplit(".", 2)
+    adulterada = ("A" if assinatura[0] != "A" else "B") + assinatura[1:]
+
+    assert ler_token_sessao(f"{cabecalho}.{payload}.{adulterada}") is None
 
 
 def test_token_assinado_com_outro_segredo_e_recusado() -> None:

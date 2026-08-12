@@ -228,22 +228,29 @@ backend/
     api/             # routers: HTTP puro — entrada, autenticação, status
       saude.py
       auth.py         # POST /auth/cadastro, /auth/login, /auth/logout · GET /auth/eu
+      cliente.py      # POST /reservas e GET /reservas/{id} — exige papel CLIENTE (3.6)
       organizador.py  # GET /organizador/catalogo (exceção ao paradigma) · GET /organizador/portarias
                       # · POST /organizador/eventos · GET /organizador/eventos e /eventos/{id} (2.6)
+      publico.py      # GET /eventos (com ?q=, ?cidade=, ?periodo=) e /eventos/cidades — sem conta
     services/        # regra de negócio, transações e acesso ao banco
       autenticacao.py # autenticar() e obter_usuario() (só leem) · cadastrar() (grava e commita)
-      evento.py       # publicar() — evento, setores e escala na mesma transação (2.4/2.5)
+      evento.py       # publicar() (2.4/2.5) · listar_programacao() com os filtros no where (3.2)
                       # · listar_portarias() — quem pode ser escalado (2.5)
                       # · listar_do_organizador() e obter_do_organizador() — as leituras da 2.6
+                      # · listar_programacao() — a leitura pública da 3.1
+      reserva.py      # criar() — o UPDATE condicional do AD-3 e a transação · obter() (3.6)
     models/          # SQLAlchemy
       base.py        # Base declarativa + convenção de nomes de constraint
       usuario.py      # PapelUsuario + Usuario
       evento.py       # Evento + Setor + a Table evento_portaria (a escala, Story 2.5)
+      reserva.py      # EstadoReserva + Reserva + ItemReserva (o schema da compra, Story 3.5)
     schemas/         # Pydantic de entrada e saída
       auth.py         # CadastroEntrada, LoginEntrada, UsuarioSaida, EmailNormalizado
       catalogo.py     # ItemDoCatalogo — o formato do catálogo, não o da Ticketmaster
-      evento.py       # EventoEntrada, SetorEntrada, EventoSaida, SetorSaida, PortariaSaida
+      evento.py       # EventoEntrada/Saida, EventoResumo, EventoNaProgramacao, PeriodoDaProgramacao
                       # · EventoResumo — a vista de lista, com os dois totais somados (2.6)
+                      # · EventoNaProgramacao — a vista pública, sem estoque nenhum (3.1)
+      reserva.py      # ReservaEntrada/Saida e os dois de item — o contrato da compra (3.6)
     integrations/    # clientes de serviço externo — a única pasta que sai da rede
       ticketmaster.py # buscar_eventos() — cliente da Discovery API (Story 2.1)
     core/
@@ -254,16 +261,20 @@ backend/
       seguranca.py    # hash Argon2id e token de sessão (JWT)
   migrations/         # Alembic
     env.py
-    versions/
+    versions/         # 5: usuario · evento+setor · evento_portaria · a extensão unaccent,
+                      #    a única que não cria tabela (Story 3.2) · reserva+item_reserva (3.5)
   seeds/              # dados exigidos pelo desafio — não sobe com o uvicorn
     semear.py          # as cinco contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
     test_evento.py     # invariantes de evento e setor que o banco garante
+    test_reserva.py    # idem, para reserva e item_reserva (Story 3.5)
     test_organizador_catalogo.py  # GET /organizador/catalogo — precisa do Compose no ar
     test_organizador_eventos.py   # POST /organizador/eventos — idem, e com zero rede
     test_organizador_portarias.py # GET /organizador/portarias (Story 2.5)
     test_organizador_meus_eventos.py # GET /organizador/eventos e /eventos/{id} (Story 2.6)
+    test_programacao.py # as quatro rotas públicas, com busca e filtros (Stories 3.1 a 3.4)
+    test_reservar.py    # POST /reservas e GET /reservas/{id} — e a corrida do AD-3 (3.6)
   alembic.ini
   pyproject.toml
   uv.lock
@@ -1146,6 +1157,297 @@ dois exemplos de cada lado — duas leituras com service (`/portarias` e as duas
 sem service (`/catalogo`, que fala com integração e não com banco), uma escrita com service
 (`POST /eventos`). Se o arquivo crescer na Epic 3, parti-lo por assunto passa a valer a discussão.
 
+## Programação pública
+
+`GET /eventos` é a primeira rota deste projeto que responde **sem conta**, e por isso ela nasceu num
+router próprio, `app/api/publico.py`. O critério de entrada ali é literalmente "não exige conta" — o
+que é diferente do critério do `organizador.py`, que é por papel. Fiz questão de escrever isso no
+docstring do módulo porque a Story 3.4 vai pendurar `/eventos/{id}` no mesmo arquivo e as seguintes
+vão criar um `cliente.py`, que é o oposto: exige conta, e é onde a reserva mora. "Público" e
+"cliente" não são a mesma coisa, e misturá-los faria a próxima pessoa procurar a guarda de sessão em
+dois lugares. A rota é pública **por assinatura**: não há `Depends(exigir_papel(...))` nem nenhuma
+outra dependência de sessão na lista de parâmetros, e um dos testes lê o OpenAPI justamente para
+falhar no dia em que alguém acrescentar uma.
+
+**O `EventoNaProgramacao` recusa o estoque, e é esse o ponto da story inteira.** Ele devolve sete
+campos — `id`, `nome`, `data_hora`, `local`, `cidade`, `preco_minimo_centavos` e `esgotado` — e
+nenhum deles é `capacidade`, `vendidos` ou `setores`. O UX-DR7 proíbe contagem exata de ingresso em
+tela de cliente, e eu não quis que essa garantia dependesse da tela: o que a API devolve, o devtools
+mostra. Quem garante é o `response_model` declarado na rota — sem ele o FastAPI serializaria o que o
+service devolvesse. O teste correspondente procura as palavras `capacidade` e `vendidos` no **texto
+inteiro** da resposta, e não nas chaves de topo, porque um `setores` aninhado escaparia de uma
+conferência de chaves. `imagem_url` também ficou de fora, por outro motivo: a fila de quatro colunas
+não tem imagem, e o campo entra na 3.3, junto com a tela que o consome.
+
+Os dois campos derivados existem para dizer o que interessa **sem** revelar número nenhum.
+`esgotado` é "nenhum setor com `vendidos < capacidade`", e `preco_minimo_centavos` é o menor preço
+**entre os setores que ainda têm ingresso** — não entre todos. Se a Pista, que costuma ser a mais
+barata, esgotou, a fila passa a anunciar o preço do camarote, porque anunciar um preço que ninguém
+mais consegue pagar é a única forma de a listagem mentir com número. Os dois saem de `setor.vendidos`
+e `setor.capacidade` (AD-13); derivar disponibilidade com `COUNT` sobre reserva ou ingresso continua
+proibido em qualquer camada, e é agora que o hábito se forma — as duas tabelas só nascem nas Stories
+3.5 e 3.9. Evento com **todos** os setores esgotados, e evento sem setor nenhum, caem os dois em
+`esgotado: true` com preço `null`: `min()` sobre lista vazia levantaria `ValueError`, e um `if` antes
+resolve sem esconder a regra dentro de um `try`.
+
+O filtro é `publicado_em IS NOT NULL` **e** `data_hora >= agora`, os dois no `where`. O primeiro é o
+rascunho, cujo teste o code review da Epic 2 tinha adiado esperando esta epic — ele cobre a rota
+pública, e a `listar_do_organizador` continua sem o filtro de propósito, porque o rascunho de alguém
+é dele. O segundo é decisão de produto minha, e o motivo está no README da raiz. `agora` é lido uma
+vez, antes da consulta: duas leituras do relógio na mesma requisição podem discordar sobre o evento
+que começa neste instante. A ordem é `data_hora` com `Evento.id` de desempate, pelo mesmo motivo da
+lista do organizador, e os setores vêm por `selectinload` — esta é a raiz do produto, a tela mais
+visitada que existe aqui, e uma consulta por evento seria o custo crescendo junto com o catálogo.
+
+**A peneira roda no `where` do Postgres, e não na tela** (Story 3.2). A mesma rota ganhou
+`?q=`, `?cidade=` e `?periodo=`: o termo casa `nome`, `local` **ou** `cidade` por trecho; a cidade é
+igualdade exata, porque o valor vem sempre dos nossos próprios chips e não de um campo de digitação;
+e o período é um `str, Enum` com `todos`, `semana` (7 dias corridos) e `mes` (30 dias corridos) — o
+teto usa o **mesmo** `agora` do corte de eventos passados, nunca um segundo relógio. Os três se
+somam com `AND` **sobre** as duas condições que já existiam, e há um teste para cada um dos dois
+provando que rascunho e evento passado continuam fora mesmo quando o termo casa perfeitamente com o
+nome deles: um `WHERE` novo não abre porta num corte antigo. A alternativa — devolver a lista
+inteira e filtrá-la em JavaScript — daria busca instantânea ao digitar e custaria três coisas: a
+raiz viraria uma ilha de cliente, o filtro não sobreviveria a recarregar nem a compartilhar o link,
+e a programação inteira atravessaria a rede a cada visita. Filtrar em Python dentro do próprio
+service teria o mesmo defeito por outra porta, trazendo a tabela toda para a memória.
+
+**A busca ignora acento, e isso obrigou a primeira migração deste projeto que não cria tabela.**
+`sao paulo` precisa achar `São Paulo` porque é assim que as pessoas digitam no celular, e quem
+avalia vai digitar assim. Uso a extensão `unaccent` do Postgres nos **dois** lados da comparação —
+`unaccent(coluna) ILIKE unaccent(padrão)` —, e ela é habilitada por `06c1ad5ac276`, escrita à mão,
+com `CREATE EXTENSION IF NOT EXISTS unaccent` no `upgrade` e o `DROP` no `downgrade`. Descartei um
+`translate()` com mapa de letras na consulta: resolveria a mesma tela sem tocar o banco, e é um mapa
+de trinta caracteres que ninguém revisa de novo e que esquece `ü` e `ñ` em silêncio. Duas
+consequências valem lembrar: sem rodar `alembic upgrade head` no banco de desenvolvimento a suíte
+passa e a tela quebra com `function unaccent(text) does not exist`, porque o `conftest.py` migra
+sozinho só o `rockhub_teste`; e `unaccent()` não é `IMMUTABLE`, então ela não entra em índice sem
+uma função wrapper — com este volume não há índice para criar.
+
+**O termo é escapado antes de virar padrão de `LIKE`, e essa é a linha mais fácil de esquecer da
+story.** `%` e `_` são curingas, e o termo vem digitado por gente: sem escape, `?q=%` devolve a
+programação inteira com `200` e cara de resultado, e ninguém descobre porque a tela funciona. Escapo
+`\`, `%` e `_` nessa ordem — a contrabarra primeiro, ou ela escapa as próprias escapadas — e declaro
+`escape="\\"` no `ilike`. Há três testes só sobre isso: `%`, `_` e a contrabarra sozinha, que sem
+tratamento derruba a consulta com `invalid escape sequence`, ou seja, `500` para uma busca digitada
+por engano. O teto do termo é `Query("", max_length=120)`, o mesmo de `GET /organizador/catalogo`, e
+o `<input>` da tela leva o `maxLength` gêmeo.
+
+**`GET /eventos/cidades` existe para os chips não mentirem.** Ela devolve as cidades distintas, em
+ordem alfabética, sem `null`, e usando o **mesmo** recorte de publicado e futuro — chip que oferece
+uma cidade sem show em cartaz é um filtro que só sabe devolver lista vazia, e quem clicasse
+concluiria que a busca está quebrada. Ela **não** recebe parâmetro nenhum, de propósito: a lista de
+escolhas é o universo, não o resultado, e encolhê-la conforme se filtra faz o chip sumir debaixo do
+cursor de quem ia clicar. Declarei-a **antes** de qualquer rota com path param no `publico.py`, com
+comentário explicando: a Story 3.4 pendura `/eventos/{id}` no mesmo router, e com ela em cima o
+FastAPI tentaria ler `"cidades"` como UUID e devolveria `422` para um endereço que existe.
+
+**`GET /eventos/destaque` é uma rota própria, e não dois campos a mais na lista** (Story 3.3). A
+chamada principal da raiz precisa de duas coisas que a fila não desenha: a arte do evento e os nomes
+dos setores. A alternativa era pôr `imagem_url` no `EventoNaProgramacao` e a tela usar `itens[0]`
+como capa — uma linha de schema e zero rota nova. Descartei porque **todo** item da programação
+passaria a carregar uma URL que só um deles usa, que é exatamente o que eu tinha recusado na 3.1
+("campo que nenhuma tela lê é campo que ninguém sabe se está certo"); e pior no caso dos setores,
+porque a ficha exigiria `setores` na lista, que é o campo que o UX-DR7 mantém fora dela. Dois
+contratos independentes custam uma classe; um contrato que serve às duas telas custa a disciplina de
+todas as próximas. O `EventoEmDestaque` devolve nove campos: os sete da fila mais `imagem_url` e
+`setores`. **O preço eu tinha deixado de fora e voltei atrás com a tela montada** — a ficha nasceu
+como `CASA · CIDADE · SETORES`, e ao ver a capa pronta percebi a consequência de o destaque **sair**
+da programação: ele passava a ser o único show da raiz sem "a partir de" em lugar nenhum. Ele voltou
+como **um campo derivado**, e não como a lista de setores com preço dentro — que é a diferença entre
+devolver um número e devolver o estoque que o produziu.
+
+**`setores` é `list[str]`, e não `list[SetorSaida]`.** A ficha quer três nomes — `Pista, VIP e
+Camarote` —, e o `SetorSaida` que já existe carrega `capacidade`, `vendidos` e `preco_centavos`:
+reusá-lo "porque já existe um schema de setor" seria o UX-DR7 caindo por reuso, com o estoque inteiro
+atravessando a rede para a tela desenhar três palavras. É a primeira vez que um schema deste projeto
+devolve uma **projeção** de um relacionamento, e o schema novo é a fronteira que impede o atalho.
+Nome de setor não é estoque; contagem é — e essa distinção tem uma consequência no teste que eu quase
+deixei passar: a varredura de palavras proibidas desta rota **não pode** ser a mesma de `GET
+/eventos`, porque ali `setores` e `imagem_url` são palavras proibidas e aqui são chaves legítimas.
+Tirei as duas da lista e escrevi o motivo dentro do teste, ou a próxima pessoa "conserta" apagando a
+asserção inteira.
+
+Banco sem show em cartaz responde **`200` com corpo `null`, nunca `404`** — a mesma decisão do `200
+[]` da lista, e `204` ficou fora por um motivo concreto do outro lado da rede: ele não tem corpo, e o
+`resposta.json()` da tela estouraria num `catch` que existe para falha, transformando "não há show em
+cartaz" em "não foi possível carregar". A consulta é própria, com `LIMIT 1`, em vez de
+`listar_programacao()[0]`: aquela monta três filtros e roda um laço de derivação de preço sobre a
+programação inteira para descartar tudo menos a primeira linha. O recorte é **idêntico** ao da lista
+(`publicado_em IS NOT NULL` e `data_hora >= agora`, com `Evento.id` de desempate), e o evento
+esgotado **continua sendo o destaque**, com selo e sem link: pular para o próximo com ingresso faria
+"o próximo show" deixar de ser verdade, e a capa esconderia justamente o show mais próximo. A rota
+não recebe parâmetro nenhum, e está declarada no mesmo bloco de path fixo da `/eventos/cidades` —
+agora com um aviso só cobrindo as duas. `preco_minimo_centavos` segue a mesma regra da fila: é o
+menor preço **entre os setores que ainda têm ingresso**, `null` quando não há nenhum, e há um teste
+com a Pista esgotada a R$ 120,00 ao lado do Camarote a R$ 420,00 provando que ele pula o esgotado —
+os setores, esses, continuam os dois na ficha. A suíte foi de 231 para 263 e depois para 279 testes.
+
+**`GET /eventos/{id}` fecha a programação pública** (Story 3.4), e é a rota que chega mais perto do
+estoque em todo o lado do cliente — é nela que a pessoa escolhe *quantos* ingressos quer. Por isso o
+`EventoPublico` continua sem `capacidade` e sem `vendidos`: o que sai por setor é um par derivado,
+`proporcao_vendida` (a largura da barra do medidor) e `disponibilidade` (`DISPONIVEL`, `ULTIMOS` ou
+`ESGOTADO`). A alternativa era devolver `disponivel` cru e deixar a tela desenhar barra, palavra e
+teto do seletor — uma linha de schema e zero derivação aqui. Descartei porque é o UX-DR7 caindo no
+contrato, a mesma linha que as Stories 3.1 e 3.3 defenderam com `response_model` e teste de
+varredura: proporção não é contagem, e é essa a diferença entre desenhar uma barra pela metade e
+dizer "restam 61". `preco_centavos` **entra**, e é a primeira vez em rota de cliente — preço não é
+contagem, e ninguém escolhe entre Pista e Camarote sem saber quanto custa cada um. A consequência
+disso é a terceira lista de palavras proibidas do mesmo arquivo de teste, com o motivo escrito
+dentro dela: na 3.1 `setores` e `imagem_url` eram proibidas, na 3.3 viraram legítimas, e aqui
+`preco_centavos` também. Foi por isso que o campo derivado se chama `proporcao_vendida`, no feminino:
+`proporcao_vendidos` casaria a palavra `vendidos` na varredura e me obrigaria a afrouxar a asserção
+que existe justamente para não ser afrouxada.
+
+**`maximo_por_compra` é teto fixo — `6`, e não `min(disponivel, 6)`.** Ele vem do contrato porque é
+o que dá ao seletor de quantidade um limite **sem que a resposta revele quanto resta em estoque**: um
+teto que acompanhasse o estoque diria "restam 2" pela tela e pelo devtools toda vez que restassem
+poucos. Descartei o teto dinâmico por isso, mesmo sendo o mais honesto dos dois — quem recusa o
+pedido maior do que existe é o `UPDATE` condicional do AD-3, na Story 3.6, e é ele a garantia que o
+desafio mais pontua. E ele vem do contrato em vez de ser constante do frontend porque a mesma 3.6 vai
+cobrar o teto do lado do servidor: com o número em dois lugares, o dia em que a regra mudar é o dia
+em que a tela e a rota de reserva passam a discordar. O limiar de `ULTIMOS` é **20% ou menos da
+capacidade**, calculado em inteiros (`restam * 5 <= capacidade`) e não com `0.2` em ponto flutuante —
+um setor de 15 lugares com 12 vendidos deixa exatamente 20%, e é na borda que o `float` decide
+sozinho. `ESGOTADO` é conferido primeiro, senão zero restante cairia em `ULTIMOS`.
+
+**Os três casos fora de cartaz recebem o mesmo `404`**: `id` que não é evento nenhum, evento em
+rascunho e evento cuja data já passou, todos com `EVENTO_NAO_ENCONTRADO` e a mesma mensagem. A
+alternativa — abrir o evento passado, ou distinguir rascunho de inexistente — deixaria o recorte de
+ser um só entre as quatro rotas públicas e transformaria a rota num oráculo: daria para varrer UUIDs
+e descobrir o que um organizador ainda não publicou. É a mesma disciplina do login da 1.4, que não
+diz se o e-mail existe. O recorte é idêntico ao das outras três (`publicado_em IS NOT NULL` e
+`data_hora >= agora`, com `agora` lido uma vez), e as três condições vão no mesmo `where` de uma
+consulta só — não um `sessao.get()` seguido de dois `if` —, pelo motivo já escrito no
+`obter_do_organizador`: com tudo no `where`, "só vejo o que está em cartaz" é verdade por construção.
+Declarei a rota **no fim do `publico.py`**, depois das duas de path fixo, e há um teste provando
+`/eventos/cidades` e `/eventos/destaque` de pé depois dela existir: com o path param em cima, o
+FastAPI leria `"cidades"` como UUID e devolveria `422`, e o sintoma apareceria longe da causa — a raiz
+perderia os chips e a capa sumiria, sem que nada ligasse isso a uma rota nova de detalhe. A suíte foi
+de 279 para **293 testes**.
+
+## Reserva e item de reserva
+
+Duas tabelas, criadas juntas na Story 3.5 pela migração `6448866ff965` — a quinta do projeto, e a
+primeira desde a `unaccent` que cria tabela. `reserva` é a compra enquanto ela ainda não é uma
+compra: quem comprou, de que show, em que estado, até quando o lugar fica preso, quanto custou e
+quando nasceu. `item_reserva` é o que foi escolhido: uma linha por setor, com a quantidade e o
+**preço congelado** no ato — não uma cópia viva do `setor.preco_centavos`, porque o dia em que o
+organizador mudar o preço, a reserva paga tem que continuar dizendo quanto custou. **Nada na
+aplicação lê ou escreve nessas tabelas ainda**, e isso é o recorte, não uma falta: reservar é a
+3.6, colher o que expirou é a 3.7, pagar é a 3.8 e emitir o ingresso é a 3.9. Fiz igual à Story
+2.3, que criou `evento` e `setor` uma epic antes de alguém as ler — o formato do banco nasce antes
+do comportamento que o consome.
+
+O `estado` tem cinco valores (`PENDENTE`, `PAGA`, `RECUSADA`, `EXPIRADA`, `CANCELADA`) e é
+`varchar(20)` com um `CHECK` da lista literal, com o enum vivendo em Python como `EstadoReserva`.
+Descartei o tipo `ENUM` nativo do Postgres, que seria o mais expressivo dos dois: ele quebraria o
+precedente do `usuario.papel`, deixando duas formas de dizer a mesma coisa no mesmo schema, e
+acrescentar um estado viraria `ALTER TYPE` dentro de migração Alembic, que é o ponto de atrito
+conhecido dessa escolha. Com `CHECK`, acrescentar um valor é um `DROP`/`CREATE` de constraint que o
+`downgrade()` desfaz sem cerimônia. `estado` também é a única coluna do projeto que eu deixei de
+propósito **sem `server_default`**, ao contrário do `setor.vendidos`: zero é o começo natural de um
+contador, mas `PENDENTE` é uma *transição*, e com default um `INSERT` que esquecesse o estado
+passaria em silêncio como se tivesse decidido. `CANCELADA` nasce sem ninguém que a escreva — o
+cancelamento pelo cliente é corte consciente registrado no [README da raiz](../README.md), e o
+valor existe porque é ele que torna esse corte reversível sem migração.
+
+**Toda transição é condicionada ao estado anterior**, e testei as duas na story em que a tabela
+nasceu, antes de existir service para executá-las — o mesmo raciocínio do `UPDATE` do AD-3 na 2.3:
+
+```sql
+UPDATE reserva SET estado = 'PAGA'     WHERE id = :id AND estado = 'PENDENTE'
+UPDATE reserva SET estado = 'EXPIRADA' WHERE id = :id AND estado = 'PENDENTE' AND expira_em < now()
+```
+
+**Zero linhas afetadas é o sinal de "alguém chegou primeiro"**, não uma exceção. É esse zero que
+faz *reprocessar um pagamento aprovado não gerar ingresso novo* ser verdade por construção, e não
+por um `if` em algum lugar. O segundo é a forma da expiração preguiçosa da Story 3.7 — não há
+worker nem cron, `expira_em` é lido por quem toca a reserva — e ele prova de quebra que a coluna é
+comparável com o `now()` do **Postgres** sem conversão de fuso pelo caminho.
+
+São quatro chaves estrangeiras e **só uma tem `CASCADE`**: `item_reserva.reserva_id`, porque item
+sem reserva não significa nada. As outras três — `reserva.cliente_id`, `reserva.evento_id` e
+`item_reserva.setor_id` — vão sem `ondelete`, que é o `RESTRICT` do Postgres: apagar um show
+vendido, um setor vendido ou a conta de quem comprou é **recusado pelo banco**, do mesmo jeito que
+apagar quem publicou e quem foi escalado já era. Descartei o `CASCADE` em tudo, que seria coerente
+com a composição já declarada em `setor`, porque aqui o rastro é dinheiro: um `DELETE` distraído no
+`psql` apagaria reserva paga sem uma linha de aviso, e não existe rota nenhuma que apague evento
+para justificar a facilidade. A consequência é assumida e vale saber antes de estranhar: **o `ON
+DELETE CASCADE` de `setor` continua valendo para evento sem venda e deixa de valer no instante da
+primeira reserva.** Os dois comportamentos são desejados, cada um com o seu teste — composição some
+junto, dinheiro não some.
+
+`item_reserva` tem `id` próprio em vez da chave primária composta da `evento_portaria`, e um
+`UNIQUE (reserva_id, setor_id)` com nome escrito à mão. O `id` porque, ao contrário daquela, esta
+tabela **carrega dado próprio**, e o dia em que algo precisar apontar para um item — uma devolução
+parcial, um ingresso por item — a chave composta viraria migração. A unicidade porque ela dá ao
+`UPDATE` de estoque da 3.6 um alvo só por setor, e faz a soma que a página do evento já mostra ("3
+ingressos · 2 setores") virar uma linha por setor, sem ambiguidade; o nome vai explícito porque o
+template `uq` usaria só a primeira coluna e sairia `uq_item_reserva_reserva_id`, que lido em voz
+alta diz "um item por reserva" — o oposto. É a mesma armadilha do `uq_setor_evento_id_nome`. Uma
+última coisa, e é a que mais importa: **é proibido derivar estoque destas tabelas.** Assim que a
+`item_reserva` passou a existir, `SELECT sum(quantidade) ... WHERE setor_id = ...` virou a resposta
+mais óbvia para "quantos foram vendidos", e ela está errada — a resposta é `setor.vendidos`,
+sempre. Escrevi a proibição no docstring de `app/models/reserva.py`, que é o arquivo que mais
+convida a desobedecê-la.
+
+## Reservar
+
+Duas rotas novas, num router novo — `app/api/cliente.py`, o quinto. **`POST /reservas`** recebe
+`{evento_id, itens: [{setor_id, quantidade}]}` e devolve `201` com a reserva `PENDENTE`, o prazo e
+o total; **`GET /reservas/{id}`** devolve o mesmo corpo. As duas exigem
+`Depends(exigir_papel(PapelUsuario.CLIENTE))` na assinatura, e o `cliente_id` vem sempre da sessão:
+não há parâmetro de corpo, de query ou de caminho por onde outro id pudesse entrar. Pus as duas num
+arquivo próprio porque o critério do `publico.py` é a **ausência** de autenticação e o do
+`organizador.py` é outro papel — misturar faria alguém procurar a guarda de sessão em dois lugares.
+Sem `prefix`, como o `publico.py`: o recurso é a reserva, e a URL dela é `/reservas`.
+
+**O estoque muda por um `UPDATE` condicional e nada mais** — é o AD-3, e é a garantia mais pontuada
+do desafio: `UPDATE setor SET vendidos = vendidos + :q WHERE id = :id AND vendidos + :q <=
+capacidade`, um por item, e a decisão é o `rowcount`. Zero linhas afetadas é `409
+ESTOQUE_INSUFICIENTE`. **`setor.vendidos` nunca é lido para dentro do Python** — nem para conferir
+antes, nem para logar, nem para montar mensagem. A alternativa confortável (`if setor.vendidos + q >
+setor.capacidade`) tem os `Setor` já carregados a uma linha de distância, passa em todo teste
+sequencial e **perde a corrida**: entre ler e escrever cabe outra transação inteira. O Postgres
+bloqueia a linha para a segunda tentativa e reavalia o `WHERE` contra a versão nova ao liberá-la, e
+é só isso que faz duas pessoas comprando o último ingresso terminarem com uma levando. Pelo mesmo
+motivo o `.values()` usa a **coluna** (`Setor.vendidos + q`) e não um número calculado antes, e não
+existe `SELECT ... FOR UPDATE` em lugar nenhum — ele seria um segundo mecanismo para a mesma
+garantia. Há um teste com duas `Session` em conexões distintas e commit de verdade provando isso; ele
+é o único do arquivo que não passa pelo `TestClient`, porque a fixture amarra o app a uma sessão só e
+a corrida nunca aconteceria lá dentro.
+
+**A ordem das quatro recusas é o que impede rastro pela metade**, e é a mesma disciplina da
+publicação: `RESERVA_SEM_ITEM` (itens vazio ou ausente), `ITEM_DUPLICADO` (o mesmo setor duas vezes
+no corpo), `ACIMA_DO_MAXIMO_POR_COMPRA` (a **soma** das quantidades passa de seis) e `SETOR_INVALIDO`
+(setor que não existe ou é de outro show) — as três primeiras sem tocar o banco, e só então o
+`UPDATE`. O `ITEM_DUPLICADO` existe pelo mesmo motivo do `SETOR_DUPLICADO` da 2.4: sem ele o `UNIQUE`
+de `item_reserva` estouraria no `commit` e viraria `500`, erro de cliente lido como erro de servidor.
+E o teto de seis é `MAXIMO_POR_COMPRA` **importado de `services/evento.py`**, a mesma constante que o
+`EventoPublico` já entrega ao stepper: com o número em dois lugares, o dia em que a regra mudar é o
+dia em que a tela e a rota discordam.
+
+**Um pedido com dois setores é tudo ou nada.** Dois na Pista (que tem) e três no Camarote (que não
+tem) não podem deixar a Pista com dois vendidos e a pessoa sem reserva: o `409` sobe como
+`ErroDeDominio` de dentro da transação, sem `commit`, e o `finally: sessao.close()` de `obter_sessao`
+descarta o `UPDATE` que já tinha acontecido. Não há `sessao.rollback()` explícito no service de
+propósito — ele seria um segundo dono da mesma garantia —, e não há `try/except IntegrityError`,
+pelo mesmo argumento escrito no topo de `services/evento.py`. O evento é recortado exatamente como
+nas quatro rotas públicas (`publicado_em IS NOT NULL` e `data_hora >= agora`), com o mesmo `404` e a
+mesma mensagem: sem a condição de data, um link guardado venderia ingresso para uma noite que já
+passou.
+
+Duas coisas que o contrato **não** carrega e uma que ele carrega. Não carrega estoque — nem
+`capacidade`, nem `vendidos`, nem disponibilidade de setor (UX-DR7, AD-13); `quantidade`,
+`preco_unitario_centavos` e `total_centavos` são a compra, não o inventário. Não carrega `criado_em`
+nem nada que a tela não desenhe. E carrega o **preço congelado** no ato da reserva: ler
+`setor.preco_centavos` para gravá-lo em `item_reserva` não contradiz a regra do parágrafo acima —
+preço não é estoque, e a reserva paga precisa continuar dizendo quanto custou depois de o organizador
+mudar a tabela. O prazo de dez minutos do AD-4 é `PRAZO_DE_RESERVA_MINUTOS`, constante do service ao
+lado do precedente `MAXIMO_POR_COMPRA`: não é coluna, não é variável de ambiente e não é parâmetro do
+corpo.
+
 ## Convenções que nascem aqui
 
 Estas valem para o projeto inteiro daqui para a frente:
@@ -1216,15 +1518,35 @@ cd backend
 uv run pytest
 ```
 
-São **203 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
+São **340 testes** em `tests/`, espelhando `app/`. Cobrem a rota de saúde, o `/docs`, as quatro
 origens de erro, a leitura de configuração do ambiente, a migração Alembic, os modelos `Usuario`,
-`Evento` e `Setor`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
+`Evento`, `Setor`, `Reserva` e `ItemReserva`, o hash e o token de sessão, as quatro rotas de autenticação, a dependência de
 papel, o seed de avaliação, o cliente da Ticketmaster (`test_ticketmaster.py`, todo offline — ver
 [Catálogo da Ticketmaster](#catálogo-da-ticketmaster), incluindo os quatro do filtro de
 classificação), a rota `GET /organizador/catalogo` (`test_organizador_catalogo.py`, Story 2.2,
 também offline), a rota `POST /organizador/eventos` (`test_organizador_eventos.py`, Stories 2.4 e
 2.5), a rota `GET /organizador/portarias` (`test_organizador_portarias.py`, Story 2.5) e as duas
-rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6).
+rotas de leitura do organizador (`test_organizador_meus_eventos.py`, Story 2.6) e as quatro rotas
+públicas, `GET /eventos`, `GET /eventos/cidades`, `GET /eventos/destaque` e `GET /eventos/{id}`
+(`test_programacao.py`, Stories 3.1 a 3.4 — incluindo os três testes do escape do `LIKE`, os dois da
+busca sem acento nos dois sentidos e o da borda dos 20% no limiar de "últimos ingressos") e as duas
+rotas de reserva (`test_reservar.py`, Story 3.6).
+
+`test_reservar.py` tem o único teste do projeto que **sai da transação revertida do `conftest.py`**:
+o da corrida do AD-3, com duas `Session` em conexões distintas, `threading.Barrier(2)` e commit de
+verdade — pelo `TestClient` a corrida nunca aconteceria, porque a fixture amarra o app a uma sessão
+só. Ele asserta `sum(rowcounts) == 1`, nunca "a primeira venceu" (a ordem é do escalonador do sistema
+operacional), e limpa num `finally` o que comitou. O teste do "tudo ou nada" tem `commit`/`rollback`
+explícitos ao redor da chamada pelo motivo inverso: `dependency_overrides` entrega a sessão do teste
+e **não a fecha**, então o `rollback` faz aqui o papel do `finally: sessao.close()` de
+`obter_sessao`.
+
+`test_programacao.py` é o único arquivo cujos testes começam por `cliente.cookies.clear()` em vez de
+um login: o `TestClient` guarda cookie entre chamadas, e um teste que "prova" acesso anônimo depois
+de outro ter feito login não prova nada. As datas ali são relativas (`datetime.now() + timedelta`),
+e não constantes como `2026-08-15` — o corte da rota é `data_hora >= agora`, então uma data fixa no
+futuro vira passado assim que o calendário a alcança, e o teste passaria a falhar sozinho meses
+depois sem ninguém ter mexido em nada.
 
 `test_organizador_portarias.py` prova a ordenação por nome com contas de **nomes diferentes**, criadas
 no próprio arquivo: a `fabricar_usuario` do `conftest.py` grava todo mundo como "Alguém" e parametriza
@@ -1258,7 +1580,11 @@ Ticketmaster" vira um teste em vez de uma promessa.
 constraints do `setor` recusando cada estado proibido com `IntegrityError`, o `CASCADE` levando os
 setores junto quando o evento é apagado pela sessão, o rascunho com `publicado_em` em `NULL`, e o
 `UPDATE` condicional do AD-3 afetando zero linhas quando se pede mais do que resta. Precisa do
-Compose no ar — é Postgres real, não um dublê.
+Compose no ar — é Postgres real, não um dublê. `test_reserva.py` (Story 3.5) é o irmão dele para
+[Reserva e item de reserva](#reserva-e-item-de-reserva): o `CHECK` dos cinco estados, as três
+constraints de quantidade e dinheiro, a unicidade por reserva, os quatro `ondelete` — os três que
+recusam apagar venda e o que leva os itens junto — e as **duas transições condicionais** do
+`PENDENTE`, afetando uma linha na primeira vez e zero na segunda.
 
 ### O que `test_seed.py` prova
 

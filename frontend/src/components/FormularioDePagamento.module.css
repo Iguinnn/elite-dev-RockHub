@@ -1,0 +1,317 @@
+/* O checkout da reserva (Story 3.8).
+
+   ⚠️ **Nenhum hex aqui — só `var(--token)`.** Sem card, sem sombra, sem raio
+   (UX-DR3): quem separa os blocos é o fio de 1px, como em toda tela do produto.
+   O recuo lateral de 12px é o mesmo da página, e é ele que faz os fios correrem
+   de ponta a ponta da coluna. */
+
+.formulario {
+  padding: 0 12px;
+  border-top: 1px solid var(--fio);
+  margin-top: 8px;
+  padding-top: 26px;
+}
+
+.titulo {
+  margin: 0 0 4px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* ---- o aviso de ambiente ------------------------------------------------- */
+
+/* ⚠️ **Fio à esquerda, não caixa amarela.** O produto não tem card nem cor de
+   alerta de painel administrativo; o que marca o bloco é o mesmo filete de 1px
+   de todo o resto, em `--neon` para ele não se perder no meio do formulário. */
+.aviso {
+  margin: 0 0 26px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--neon);
+  max-width: 60ch;
+  font: 15px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.aviso strong {
+  color: var(--cal);
+  font-weight: 400;
+}
+
+/* ---- os dois campos por linha -------------------------------------------- */
+
+.dupla {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+
+/* ---- a escolha do meio --------------------------------------------------- */
+
+.meios {
+  margin: 12px 0 24px;
+  padding: 0;
+  border: 0;
+}
+
+/* `<legend>` com a mesma anatomia do rótulo do `Campo`: a pergunta não pode
+   parecer de outro sistema que o resto do formulário. */
+.legenda {
+  margin-bottom: 10px;
+  padding: 0;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.opcoes {
+  display: flex;
+  gap: 10px;
+}
+
+/* O rótulo inteiro é o alvo — o `<input type="radio">` fica visualmente
+   escondido, mas **presente e focável** (nada de `display: none`, que o tiraria
+   do Tab e do leitor de tela). */
+.opcao {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px 12px;
+  border: 1px solid var(--fio);
+  background: var(--breu2);
+  color: var(--fumaca);
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.opcao:hover {
+  border-color: var(--fumaca);
+}
+
+/* O estado escolhido **não é dado só por cor** (UX-DR9): a borda muda junto, e
+   o `aria-checked` do rádio é o que atravessa para quem não vê nenhum dos dois. */
+.opcaoAtiva {
+  border-color: var(--neon);
+  color: var(--neon);
+}
+
+/* `clip` em vez de `display: none`/`visibility: hidden`: o rádio continua
+   focável pelo teclado e anunciado pelo leitor de tela. */
+.radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- a área que expande -------------------------------------------------- */
+
+.expansao {
+  padding-top: 4px;
+  border-top: 1px solid var(--fio);
+  margin-bottom: 8px;
+}
+
+.dicaDoCartao {
+  margin: 0 0 20px;
+  padding-top: 16px;
+  font: 14px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+.dicaDoCartao code {
+  font: 600 13px/1 var(--mono);
+  color: var(--cal);
+}
+
+/* ---- o Pix --------------------------------------------------------------- */
+
+.pix {
+  display: flex;
+  gap: 26px;
+  align-items: flex-start;
+  padding: 22px 0 4px;
+}
+
+/* Fundo claro atrás do QR, e é a única superfície clara do produto: leitor de QR
+   precisa de contraste na direção certa, e código escuro sobre breu não lê. */
+.qr {
+  flex-shrink: 0;
+  padding: 12px;
+  background: var(--cal);
+  line-height: 0;
+}
+
+.pixTexto {
+  min-width: 0;
+}
+
+.rotuloDoCodigo {
+  display: block;
+  margin-bottom: 8px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* `overflow-wrap` porque o código é uma palavra só de 60 caracteres: sem ele,
+   ele estoura a coluna no celular. */
+.codigo {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--fio);
+  background: var(--breu2);
+  font: 13px/1.5 var(--mono);
+  color: var(--cal);
+  overflow-wrap: anywhere;
+}
+
+/* ---- a ação -------------------------------------------------------------- */
+
+.acao {
+  padding: 22px 0 0;
+  border-top: 1px solid var(--fio);
+  margin-top: 22px;
+}
+
+@media (max-width: 700px) {
+  /* Um campo por linha: dois campos de 16px num celular espremem o rótulo em
+     duas linhas e o valor em três. */
+  .dupla {
+    grid-template-columns: 1fr;
+  }
+
+  /* O QR desce para cima do código — lado a lado sobra menos de 10ch para o
+     código copia-e-cola. */
+  .pix {
+    flex-direction: column;
+    gap: 18px;
+  }
+}
+
+/* ---- a espera da confirmação --------------------------------------------- */
+
+/* O bloco tem a anatomia de qualquer outro da tela: o mesmo recuo de 12px, o
+   mesmo fio de topo de 1px, o mesmo respiro. Ele **ocupa o lugar** do formulário
+   em vez de flutuar sobre ele — sobreposição pediria fundo semitransparente e
+   camada, que é o vocabulário de modal, e este produto não tem modal.
+
+   ⚠️ **O `min-height` é o que impede o salto de scroll.** Sem ele a página perde
+   de uma vez toda a altura do formulário, o navegador grampeia a rolagem no novo
+   limite e a viewport pula — quem clicou em "Pagar" rolado até o rodapé ficava
+   olhando para o total, com esta seção fora de vista. O `scrollIntoView` do
+   `.tsx` é a segunda garantia; esta é a primeira, e a que não mexe na rolagem de
+   quem já estava vendo o bloco. */
+.confirmando {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 260px;
+  padding: 26px 12px;
+  border-top: 1px solid var(--fio);
+  margin-top: 8px;
+}
+
+/* Serifada grande, como a confirmação de pagamento aprovado que vem logo depois:
+   as duas frases ocupam o mesmo lugar na tela e falam com a mesma voz, então a
+   troca de uma pela outra não é um salto. */
+.confirmandoFrase {
+  margin: 4px 0 0;
+  font: 26px/1.3 var(--serif);
+  color: var(--cal);
+}
+
+.confirmandoDetalhe {
+  margin: 8px 0 0;
+  max-width: 52ch;
+  font: 15px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+/* O formulário continua montado por baixo — o motivo está no `.tsx`, e é que
+   metade dos campos é não-controlada e desmontar apagaria o que foi digitado. */
+.oculto {
+  display: none;
+}
+
+/* ---- os pontinhos ---------------------------------------------------------
+
+   ⚠️ **A única animação do produto, e ela é exceção pedida pelo Igor**
+   (2026-08-12). O `EXPERIENCE.md#Carregando` diz *"Sem spinner. (…) Nada gira,
+   nada pulsa"*, e até aqui não havia um `@keyframes` sequer em nenhum CSS deste
+   repositório. A primeira versão desta tela saiu sem movimento, por causa da
+   regra; ele pediu com, e o pedido dele vence o documento.
+
+   **O que a exceção não abriu:** nada desliza de uma lateral à outra — esse é o
+   primeiro anti-padrão nomeado no `DESIGN.md`, e continua valendo. Nada gira.
+   Nenhuma outra tela ganhou transição. Se aparecer um segundo `@keyframes` neste
+   projeto, ele precisa da mesma conversa que este teve.
+
+   ⚠️ **`border-radius` também é exceção**, e é a menor delas: o UX-DR3 recusa
+   raio em todo o sistema, mas "pontinho" quadrado não é pontinho. Sete pixels
+   arredondados numa tela que dura seis segundos não constroem precedente para
+   card com canto redondo — e o comentário existe para que ninguém os cite como
+   se construíssem. */
+.pontos {
+  display: inline-flex;
+  gap: 7px;
+  margin-left: 12px;
+  vertical-align: middle;
+}
+
+.pontos span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neon);
+  animation: pular 1.1s ease-in-out infinite;
+}
+
+/* O atraso em cascata é o que faz os três lerem como uma onda em vez de três
+   coisas piscando juntas. */
+.pontos span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.pontos span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+/* A opacidade acompanha o salto: só o deslocamento, num ponto de 8px, é
+   movimento pequeno demais para ser percebido a uma distância normal de leitura. */
+@keyframes pular {
+  0%,
+  65%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  32% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+/* ⚠️ **`prefers-reduced-motion` não é opcional, e não é a mesma discussão.**
+   A regra de cima é gosto do produto e o Igor pode passar por cima dela; esta é
+   o sistema operacional dizendo que animação causa desconforto ou enjoo em quem
+   está usando. Os pontos ficam parados e visíveis — a informação continua lá,
+   só sem o salto. */
+@media (prefers-reduced-motion: reduce) {
+  .pontos span {
+    animation: none;
+    opacity: 1;
+  }
+}

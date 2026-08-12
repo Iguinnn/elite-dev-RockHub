@@ -37,10 +37,12 @@
 # - O epic vira 'in-progress' automaticamente quando a primeira story dele é criada
 # - Stories podem correr em paralelo se houver capacidade
 # - Neste projeto: uma branch por epic, um commit por story, code review ao fim de cada epic
-# - Os três READMEs são atualizados ao fim de toda story, em primeira pessoa
+# - Da 3.7 em diante: techspec por grupo de stories em docs/, sem arquivo de story.
+#   Os READMEs deixam de ser escritos a cada commit e vão inteiros para a Epic 6 —
+#   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-11 (code review da Epic 2 concluído; as seis stories em 'done')
+last_updated: 2026-08-12 (3.7-3.9 passam a techspec agrupada — ver CLAUDE.md)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -73,7 +75,7 @@ development_status:
   # 4 decisões do Igor, 16 patches aplicados, 7 adiados, 11 descartados. Achados
   # e triagem em code-review-epic-2.md; adiados em deferred-work.md. A suíte foi
   # de 203 para 218 testes. Fica 'in-progress' até o merge na main, como a Epic 1.
-  epic-2: in-progress
+  epic-2: done
   2-1-cliente-da-ticketmaster-com-a-chave-protegida: done
   2-2-buscar-a-atracao-no-catalogo: done
   2-3-modelo-de-evento-e-setor: done
@@ -97,16 +99,111 @@ development_status:
   epic-2-retrospective: optional
 
   # ---------- Epic 3: Descoberta e compra ----------
-  epic-3: backlog
-  3-1-ver-a-programacao: backlog
-  3-2-buscar-e-filtrar-a-programacao: backlog
-  3-3-chamada-principal-na-programacao: backlog
-  3-4-ver-o-evento-e-seus-setores: backlog
-  3-5-modelo-de-reserva: backlog
-  3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: backlog
-  3-7-reserva-abandonada-devolve-o-estoque: backlog
-  3-8-pagar-com-aprovacao-e-com-recusa: backlog
-  3-9-receber-ingressos-com-codigo-nao-forjavel: backlog
+  epic-3: in-progress
+  # A primeira rota pública do projeto (`GET /eventos`, no primeiro
+  # `app/api/publico.py`) e a raiz deixando de ser o estado vazio da 1.2.
+  # Decisões do Igor: eventos passados somem, com o corte no backend; o "a
+  # partir de" conta só setor com ingresso; a fila já linka para `/eventos/{id}`,
+  # abrindo uma janela de três stories até a 3.4 fechá-la; e `imagem_url` fica
+  # fora do contrato até a 3.3. O AC7 é o que mais importa: `capacidade`,
+  # `vendidos` e `setores` não atravessam o `response_model` — UX-DR7 se garante
+  # no contrato, não na tela.
+  3-1-ver-a-programacao: review
+  # Três decisões do Igor: a peneira roda no `where` do Postgres com a busca na
+  # URL (nada de filtrar em JavaScript — a raiz continua Server Component);
+  # período e cidade vindos do banco, com `GET /eventos/cidades` alimentando os
+  # chips; e a busca ignorando acento pela extensão `unaccent`, o que traz a
+  # primeira migração deste projeto que não cria tabela. ✅ RESOLVIDO em
+  # 2026-08-11: o risco de o Postgres da Railway recusar `CREATE EXTENSION` foi
+  # conferido no painel — usuário `postgres` com `usesuper = true`, extensão
+  # 1.1 disponível e já criada à mão, então a migração é no-op lá. O registro
+  # está no docstring da migração `06c1ad5ac276`. Nada pendente.
+  3-2-buscar-e-filtrar-a-programacao: review
+  # Seis decisões do Igor: a arte chega por **rota própria** (`GET /eventos/destaque`,
+  # com `EventoEmDestaque`) em vez de `imagem_url` entrar no `EventoNaProgramacao`
+  # — a fila continua sem carregar campo que não lê; **o standfirst não existe**,
+  # porque o `Evento` não tem texto livre e frase montada com os dados do kicker é o
+  # anti-padrão nº 5 do DESIGN.md (registrado só na story, sem ir a README, por
+  # instrução dele); a capa **some com filtro ativo**, e nem é buscada; o destaque
+  # **sai da fila**, cortado por `id`; a ficha é `CASA · CIDADE · SETORES`, com os
+  # nomes dos setores; e o destaque **esgotado continua na capa**, com selo e sem
+  # link. ⚠️ A armadilha da story é o teste de varredura de palavras proibidas da
+  # 3.1: `setores` e `imagem_url` viram chaves legítimas nesta resposta.
+  3-3-chamada-principal-na-programacao: review
+  # Sete decisões do Igor: **o endereço não existe** (o `Evento` não tem a coluna,
+  # e a ficha mostra `CASA` e `CIDADE`); **o teto do stepper é fixo por compra**
+  # (`maximo_por_compra: 6` no contrato, e não `min(disponivel, 6)`) — é o que
+  # permite o stepper ter teto sem o contrato revelar estoque, com a recusa do
+  # excesso ficando para o `UPDATE` condicional do AD-3 na 3.6; **o rodapé não tem
+  # botão**, porque reservar é a 3.6; **"Últimos ingressos" é 20% ou menos**;
+  # **a arte fica ao lado do cabeçalho**; **o recorte é o mesmo das outras três
+  # rotas públicas**, com rascunho, passado e inexistente no mesmo `404`; e
+  # **vários setores somam** na mesma escolha. ⚠️ Duas armadilhas: a lista de
+  # palavras proibidas do teste é a **terceira** diferente do arquivo (agora
+  # `preco_centavos` é chave legítima), e `/eventos/{id}` precisa ser declarada
+  # **depois** de `/eventos/cidades` e `/eventos/destaque` — é esta a story que
+  # exercita o comentário de ordem escrito na 3.2.
+  3-4-ver-o-evento-e-seus-setores: review
+  # A story gêmea da 2.3, e a primeira migração desde a 3.2 que cria tabela:
+  # duas tabelas, nenhum consumidor, o critério de pronto é o schema. Quatro
+  # decisões do Igor: `item_reserva` com `id` UUID próprio + `UNIQUE (reserva_id,
+  # setor_id)`, e não a PK composta da `evento_portaria`; apagar evento, setor ou
+  # conta com reserva é **recusado pelo banco** (as três FKs sem `ondelete`), o
+  # que faz o `CASCADE` de `setor` deixar de valer na primeira venda; só
+  # `criado_em` além do `expira_em`; e `estado` como `String(20)` + `CHECK`, no
+  # precedente do `usuario.papel`, nunca `ENUM` nativo. ⚠️ Os ACs 3 e 4 repetem
+  # de propósito o AC9 da 2.3: as duas transições condicionais do AD-4 provadas
+  # por `.rowcount` antes de existir service. `frontend/` e o README da raiz não
+  # são tocados.
+  3-5-modelo-de-reserva: review
+  # A garantia mais pontuada do desafio, e a primeira escrita do lado do cliente:
+  # `setor.vendidos` sai de zero pela primeira vez. Cinco decisões do Igor: **a
+  # tela vai até `/reservas/{id}`**, com botão na página do evento e o cronômetro
+  # ali, ficando o pagamento para a 3.8; **o visitante vai ao login e volta** pelo
+  # `?voltar=` que já existe desde a 1.4, e **a escolha do stepper se perde** de
+  # propósito (o estoque pode ter mudado nesses segundos); **o `409` se resolve
+  # relendo `GET /eventos/{id}`** e montando a frase do UX-DR8 com dados frescos —
+  # o corpo do erro continua `{codigo, mensagem}`, sem exceção ao formato único do
+  # `core/erros.py`; e **os 10 minutos são constante do service**, no precedente do
+  # `MAXIMO_POR_COMPRA`, não variável de ambiente. ⚠️ Duas armadilhas: ler
+  # `setor.vendidos` para dentro do Python "só para conferir antes" é o AD-3
+  # quebrado com o resultado certo em 99% dos casos; e a corrida **não** se prova
+  # pelo `TestClient` — a fixture `cliente` amarra o app a uma sessão só, então o
+  # teste precisa de duas `Session` em conexões distintas, com commit e limpeza.
+  3-6-reservar-sem-vender-o-mesmo-lugar-duas-vezes: review
+  # ⚠️ MUDANÇA DE FORMATO, 2026-08-12. Daqui em diante não existe mais arquivo de
+  # story: as três são especificadas juntas numa techspec em docs/, e o README
+  # deixa de ser escrito a cada commit (passa inteiro para a Epic 6). O motivo e
+  # as regras estão em CLAUDE.md, seção "Techspec no lugar de story".
+  # As três viram uma spec só porque os próprios ACs as costuram na mesma função
+  # `pagar_reserva`: a expiração da 3.7 dispara dentro da rota que a 3.8 cria, e a
+  # emissão da 3.9 acontece na mesma transação da transição para PAGA (AD-14).
+  # O commit continua um por story — a spec agrupa, o histórico não.
+  3-7-reserva-abandonada-devolve-o-estoque: review
+  # Commit 2: `PaymentGateway` (Protocol) + `PagamentoSimulado`, a rota
+  # `POST /reservas/{id}/pagamento` e o checkout. Fecha o AC1 da 3.7, que o
+  # commit da 3.7 deixou aberto de propósito. Decisões do Igor: `402` para a
+  # recusa (não é conflito de estado, é resposta do gateway); checkout com
+  # nome/e-mail/CPF/telefone mais escolha entre cartão e Pix, com o Pix gerando
+  # QR e código falsos na tela e um botão "cobrança paga" como atalho do
+  # avaliador; nada persistido além do nome; e CPF só de formato — o dígito
+  # verificador recusaria o dado fictício que a própria tela manda usar.
+  # ⚠️ A armadilha da story: os dois caminhos de recusa dão `commit` **antes**
+  # do `raise`, o oposto do `criar()` da 3.6. A reserva precisa ficar
+  # `RECUSADA`/`EXPIRADA` com o estoque devolvido; sem o commit, o status sai
+  # idêntico e o estoque nunca volta — falha invisível fora do banco.
+  3-8-pagar-com-aprovacao-e-com-recusa: review
+  # Commit 3, e o fim da techspec: tabela `ingresso` (sétima do schema), emissão
+  # de um ingresso por unidade dentro da transação que marca `PAGA` (AD-14), e o
+  # código `ID.ASSINATURA` com HMAC-SHA256 (AD-5). Decisões do Igor:
+  # `TICKET_SIGNING_SECRET` como variável própria — girar a de sessão passaria a
+  # invalidar ingresso emitido; a coluna `assinatura` guardada só para montar o
+  # QR, com a validação sempre recalculando; e `titular_nome` vindo do campo do
+  # checkout, não de `usuario.nome`. ⚠️ Duas armadilhas: a emissão tem que ficar
+  # **dentro** do ramo que vence o `_transicionar`, senão reprocessar emite em
+  # dobro sem quebrar nenhum teste sequencial; e `hmac.compare_digest`, nunca
+  # `==`. O QR desenhado é da Story 4.2 — aqui nasce o código, não a imagem.
+  3-9-receber-ingressos-com-codigo-nao-forjavel: review
   epic-3-retrospective: optional
 
   # ---------- Epic 4: Meus ingressos e compartilhamento ----------
