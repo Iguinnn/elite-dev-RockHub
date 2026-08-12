@@ -28,8 +28,11 @@ função wrapper. Com o volume deste projeto não existe índice para criar — 
 alguém tentar, o Postgres recusa, e o motivo é este.
 
 ⚠️ `CREATE EXTENSION` exige superusuário ou o papel `rds_superuser`/equivalente.
-Se o Postgres gerenciado recusar, **o deploy inteiro falha** aqui, não só a
+Num Postgres gerenciado que recuse, **o deploy inteiro falha** aqui, não só a
 busca — o `Pre-deploy Command` roda `alembic upgrade head` antes de subir a API.
+**Conferido na Railway em 2026-08-11**, antes do merge da Epic 3: lá o usuário
+da conexão é `postgres` com `usesuper = true`, a extensão está disponível na
+versão 1.1, e ela já foi criada à mão pelo painel — então aqui ela é no-op.
 """
 from typing import Sequence, Union
 

@@ -807,6 +807,12 @@ Claude Opus 5 (1M context) — `claude-opus-5[1m]`.
   traz as 4 filas, sem frase de erro, com o chip `Todos` marcado apontando para `/`; e com o
   `uvicorn` derrubado, `/?q=rio` traz "Não foi possível carregar a programação agora.", a barra
   intacta, zero chips de cidade e os 3 de período.
+- ✅ **A extensão foi confirmada no Postgres da Railway pelo Igor**, no query runner do painel
+  (2026-08-11), o que fecha a *Pergunta em aberto* nº 3: `pg_available_extensions` traz `unaccent`
+  na versão `1.1`; `current_user` é `postgres` com `usesuper = true`; `CREATE EXTENSION IF NOT
+  EXISTS unaccent` passou; `pg_extension` passou a trazê-la; e `SELECT unaccent('São Paulo')`
+  devolveu `Sao Paulo`. Como ela **já existe** em produção, a migração vira no-op no deploy e não
+  tem como derrubar o `Pre-deploy Command`.
 - ⚠️ **Duas conferências ficaram para o Igor**, a pedido dele durante esta sessão: o comportamento
   abaixo de 900px e a ordem do Tab com o contorno de foco. Elas são visuais, e ele testa mais rápido
   com a tela já aberta. A terceira que continua dele é a de sempre: conferir que os arquivos novos
