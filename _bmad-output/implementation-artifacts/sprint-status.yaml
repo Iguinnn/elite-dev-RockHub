@@ -42,7 +42,7 @@
 #   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (Story 5.3 implementada; suíte em 498)
+last_updated: 2026-08-13 (Story 5.5 implementada; suíte em 498)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -469,7 +469,47 @@ development_status:
   # existe. Eram dois commits, a mesma forma da janela entre a 2.4 e a 2.5.
   5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: done
   5-4-ver-o-resultado-a-tres-metros: backlog
-  5-5-ler-o-qr-pela-camera: backlog
+  # Commit 3 e último da techspec da validação na porta. `@zxing/browser` no
+  # `package.json`, o botão *Ler pela câmera* na ilha `<Leitor>` e os estados de
+  # permissão. **Sem migração e sem uma linha de backend** — a rota da 5.2 já
+  # atende: a câmera é só uma segunda forma de preencher o mesmo campo.
+  # Decisões do Igor: câmera **opt-in por botão**, nunca pedida ao abrir a página
+  # — negada uma vez, o navegador lembra, e recuperar exige mexer nas
+  # configurações do site.
+  # ⚠️ **`import()` dinâmico em vez de `next/dynamic`, e a spec pedia
+  # `next/dynamic`.** Aquele embrulha **componente**, e `@zxing/browser` é
+  # biblioteca; o mecanismo que entrega o mesmo efeito é o `import()` dentro do
+  # efeito, que já é só do navegador por construção. O corte foi conferido no
+  # build, não suposto: os dois chunks com o zxing (**473 KB**, bem acima dos
+  # ~200 kB que a spec estimava) **não** aparecem no `build-manifest.json` da
+  # rota. Descartada a `BarcodeDetector` nativa — zero bytes, e inexistente no
+  # Safari do iPhone, que é metade da fila.
+  # ⚠️ **`decodeFromConstraints` com `facingMode: environment`, e não
+  # `decodeFromVideoDevice(undefined)`** como a spec escreveu. O segundo pega o
+  # primeiro dispositivo da lista, que no celular costuma ser a câmera
+  # **frontal**: a portaria apontaria o telefone para o próprio rosto. `ideal` e
+  # não `exact`, senão um notebook de webcam única falharia como "câmera ausente"
+  # e a tela mentiria.
+  # ⚠️ **A trava do "mesmo QR duas vezes" é `useRef`, não `useState`.** O zxing
+  # chama o callback a cada quadro decodificado, e um `setState` só chegaria no
+  # render seguinte — depois de duas ou três leituras já terem passado. Sem timer
+  # nenhum: o scanner para na primeira leitura e só reabre no próximo pedido.
+  # ⚠️ **Existe corrida entre o primeiro quadro e a resolução da promessa do
+  # `decodeFromConstraints`**: um QR já enquadrado quando a câmera abre é
+  # decodificado antes de os controles existirem, e aí o `stop()` do callback não
+  # tem o que parar. Tratada no ramo que confere a trava depois do `await`.
+  # ⚠️ **O `stop()` na desmontagem tem efeito próprio com `[]`.** Sem ele o
+  # `MediaStream` fica preso e a luz da câmera continua acesa depois de navegar,
+  # o que na porta lê como aplicativo travado.
+  # ⚠️ **O `autoFocus` do campo saiu**, e ele foi posto na 5.3: com a câmera como
+  # caminho primário, o teclado subindo sozinho cobria metade da tela — botão e
+  # mira inclusive. O foco continua sendo devolvido ao campo depois de cada
+  # validação **digitada**, e não depois das lidas pela câmera, pelo mesmo motivo.
+  # ⚠️ A câmera vem **antes** do campo na tela, seguindo a jornada 2 do
+  # EXPERIENCE.md: Ana aponta a câmera e só digita quando a leitura falha.
+  # ✅ `README.md#o-que-não-está-pronto` ganhou a linha do `getUserMedia` em
+  # contexto seguro, escrita neste commit — a exceção do CLAUDE.md.
+  5-5-ler-o-qr-pela-camera: done
   5-6-acompanhar-as-entradas-do-turno: backlog
   epic-5-retrospective: optional
 

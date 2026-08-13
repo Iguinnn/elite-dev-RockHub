@@ -1,6 +1,15 @@
-/* O leitor da porta (Story 5.3).
+/* O leitor da porta: câmera (Story 5.5) e campo manual (5.3).
 
    ┌──────────────────────────────────────────┐
+   │ ┌──────────────────────────────────────┐ │
+   │ │          LER PELA CÂMERA             │ │  ← secundário, fio + fumaça
+   │ └──────────────────────────────────────┘ │
+   │ ┌──────────────────────────────────────┐ │
+   │ │                                      │ │
+   │ │            (a mira)                  │ │  ← só existe com a câmera no ar
+   │ │                                      │ │
+   │ └──────────────────────────────────────┘ │
+   │ ─────────────────────────────────────────│
    │ CÓDIGO DO INGRESSO                       │  ← rótulo visível, mono versalete
    │ ┌──────────────────────────────────────┐ │
    │ │ 9K4M7QX2                             │ │  ← mono grande, alvo de 56px
@@ -45,6 +54,79 @@
 .leitor {
   max-width: 420px;
   margin-top: 28px;
+}
+
+/* O bloco da câmera (Story 5.5). Ele vem **antes** do campo porque é o caminho
+   primário da jornada 2 do EXPERIENCE.md — Ana aponta a câmera e só digita
+   quando a leitura falha. */
+.bloco {
+  margin-bottom: 26px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Secundário: fio e fumaça, no molde exato do `.copiar` do compartilhamento e do
+   `.cancelar` da confirmação — o neon é do `<Botao>` primário, e são dois
+   primários na mesma tela que fariam a portaria escolher entre duas ações do
+   mesmo peso. Aqui há hierarquia: a câmera abre, o *Validar* decide.
+
+   `padding` de 17px pelo mesmo motivo do campo: passa dos 44px do UX-DR6 com
+   folga, e este é o alvo que se acerta com o polegar antes de levantar o
+   telefone. */
+.botaoCamera {
+  width: 100%;
+  padding: 17px;
+  border: 1px solid var(--fio2);
+  background: none;
+  color: var(--fumaca);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  /* O único movimento previsto no sistema é mudança de cor em hover, até 120ms
+     (`globals.css`) — e quem pediu menos movimento não recebe nenhum. */
+  transition: color 120ms, border-color 120ms;
+}
+
+.botaoCamera:hover:not(:disabled) {
+  border-color: var(--cal);
+  color: var(--cal);
+}
+
+/* `cursor: default` junto com a opacidade: o cursor não pode prometer um clique
+   que o atributo `disabled` já recusou. Mesmo par do `<Botao>`. */
+.botaoCamera:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A mira. **Quadrada e ocupando a largura**, que é literalmente o que o
+   `EXPERIENCE.md#Responsive` pede para esta superfície.
+
+   `object-fit: cover` porque o quadro da câmera não é quadrado: sem ele o vídeo
+   estica e o QR chega deformado ao decodificador. O fundo `--breu2` é o que
+   aparece no intervalo entre o elemento existir e o primeiro quadro chegar —
+   sem ele o retângulo nasce transparente e o layout pisca. */
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-top: 16px;
+  background: var(--breu2);
+  border: 1px solid var(--fio);
+  object-fit: cover;
+}
+
+/* ⚠️ **`--fumaca`, e não `--brasa`.** Câmera negada ou ausente não é falha da
+   aplicação nem erro de quem está na porta: é uma condição do aparelho, e o
+   campo logo abaixo continua sendo um caminho inteiro. Pintar de vermelho diria
+   que o turno parou — e é o mesmo argumento que deixa o `JA_UTILIZADO` neutro
+   no EXPERIENCE.md. */
+.avisoCamera {
+  max-width: 46ch;
+  margin-top: 14px;
+  font: 15px/1.5 var(--serif);
+  color: var(--fumaca);
 }
 
 .formulario {
