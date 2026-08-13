@@ -1,12 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { ComponentProps } from "react";
 
 import marca from "../../public/logotipo-rockhub.png";
 
 import estilos from "./Logotipo.module.css";
 
 /**
- * A marca, num lugar só — e sempre o caminho de volta para a raiz.
+ * A marca, num lugar só — e sempre o caminho de volta para a **casa de quem
+ * está lendo**.
  *
  * Aqui eu abri exceção à regra de não abstrair antes do terceiro uso (a mesma
  * que mantém o CSS do estado vazio repetido): aquilo era estilo, e estilo
@@ -20,6 +22,18 @@ import estilos from "./Logotipo.module.css";
  * `/login` ↔ `/cadastro`. Levar a marca de volta para a raiz é a convenção que
  * todo site cumpre e não reintroduz navegação nenhuma — é a mesma marca, agora
  * clicável.
+ *
+ * ⚠️ **`href` virou prop na Story 5.1, e o motivo é o mesmo beco, de novo.** O
+ * destino era fixo em `/`, e a casca da portaria herdou isso: clicar na marca
+ * mandava quem está na porta para a programação pública — de onde o masthead do
+ * `(site)`, que não tem e não vai ter item de portaria, não oferece nenhum
+ * caminho de volta. A marca só cumpre a convenção que a torna um `Link` se ela
+ * levar para a **casa de quem está lendo**, e a casa da portaria é `/portaria`.
+ * O padrão continua `/`, então `(site)` e `(entrada)` não mudaram uma linha.
+ *
+ * O `rotulo` acompanha o `href` e não é enfeite: quem navega por leitor de tela
+ * ouve o destino, e "página inicial" apontando para a lista de turnos é a marca
+ * mentindo sobre para onde leva.
  *
  * O `className` fica no `<a>`, não num elemento por dentro: o `globals.css` já
  * zera cor e sublinhado de link, e o `:focus-visible` neon (UX-DR9) precisa
@@ -49,9 +63,17 @@ import estilos from "./Logotipo.module.css";
  * e o destino, e um `alt="RockHub"` faria o leitor de tela dizer o nome duas
  * vezes — a mesma disciplina da arte da chamada principal.
  */
-export default function Logotipo() {
+type Props = {
+  href?: ComponentProps<typeof Link>["href"];
+  rotulo?: string;
+};
+
+export default function Logotipo({
+  href = "/",
+  rotulo = "RockHub — página inicial",
+}: Props = {}) {
   return (
-    <Link href="/" className={estilos.logo} aria-label="RockHub — página inicial">
+    <Link href={href} className={estilos.logo} aria-label={rotulo}>
       <Image src={marca} alt="" className={estilos.marca} priority />
     </Link>
   );

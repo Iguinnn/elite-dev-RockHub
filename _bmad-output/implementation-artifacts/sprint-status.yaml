@@ -42,7 +42,7 @@
 #   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (Epic 3 revisada, mergeada na main e no ar)
+last_updated: 2026-08-12 (Story 5.1 implementada; suíte em 463)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -253,7 +253,7 @@ development_status:
   # (o `compartilhar` era read-then-write sem trava), teste que passa nos dois
   # sentidos (o "sem recalcular" comparava contra o valor que o recálculo também
   # produz), e garantia declarada sem asserção nenhuma (a entropia do token).
-  epic-4: in-progress
+  epic-4: done
   # Commit 1: migração de `usado_em`/`validado_por` (AD-6, adiantada da 5.2
   # porque o primeiro consumidor é a leitura, não a porta), `services/
   # ingresso.py` (arquivo novo — o agregado tem vida própria desde a 3.9),
@@ -304,8 +304,54 @@ development_status:
   epic-4-retrospective: optional
 
   # ---------- Epic 5: Portaria ----------
-  epic-5: backlog
-  5-1-ver-onde-eu-trabalho-hoje: backlog
+  # Techspec em docs/techspec-turnos-da-portaria.md. Cobre **uma** story só, e
+  # mesmo assim é techspec: a 5.1 cria a terceira casca do frontend, muda o
+  # fluxo de acesso da Story 1.4 e decide a régua de tempo que a epic inteira
+  # herda. As 5.2 a 5.6 saem de outras specs.
+  epic-5: in-progress
+  # Commit 1: `GET /portaria/eventos` (primeira leitura da `evento_portaria`,
+  # gravada desde a 2.5 e sem consumidor até aqui), a casca própria em
+  # `/portaria` — sem grupo de rotas, sem o masthead do `(site)` —, a lista de
+  # turnos, `/portaria/conta` com o `<DadosDaConta>` extraído, e o login
+  # mandando a portaria para a casa dela. **Sem migração.**
+  # Decisões do Igor: casca própria em vez de item no masthead (EXPERIENCE.md
+  # manda a portaria ter navegação própria); o nome de quem está na porta
+  # aparece na casca, contrariando o Masthead da 1.6, porque o celular da porta
+  # é compartilhado; o `?voltar=` continua soberano e a regra por papel só vale
+  # quando ele está **ausente**; e a lista **não corta por tempo** — a portaria
+  # trabalha do outro lado do corte que as rotas públicas fazem.
+  # ⚠️ **A conferência visual achou o que a suíte não tinha como achar: a casca
+  # nova tinha três saídas e nenhuma entrada.** Três correções, todas do mesmo
+  # defeito — casca que não leva de volta para si mesma é um beco:
+  #   1. O `Logotipo` ganhou `href`/`rotulo`. O padrão fixo em `/` mandava quem
+  #      está na porta para a programação pública. Padrão inalterado, então
+  #      `(site)` e `(entrada)` não mudaram uma linha.
+  #   2. A `/conta` do `(site)` rebate `PORTARIA` para `/portaria/conta`. É a
+  #      única entrada da casca a partir do site, e entra **sem** tocar no
+  #      masthead, por um link que ele já oferece. A alternativa descartada era
+  #      o item `TURNOS` no masthead, que custaria exatamente a decisão que a
+  #      casca própria comprou. De quebra acaba com `/conta` e `/portaria/conta`
+  #      mostrando a mesma tela em duas cascas conforme o endereço digitado.
+  #   3. O `not-found.tsx` da **raiz** passou a escolher a casca pelo papel. Ele
+  #      é o único que atende URL sem rota, roda fora de qualquer layout de
+  #      grupo e por isso carrega a casca à mão — carregava *uma*, a de jornal.
+  #      Clicar num turno enquanto `/portaria/eventos/{id}` não existe devolvia
+  #      `Início`/`Minha conta` e nenhum caminho para `/portaria`; a leitura era
+  #      "eu nem estou mais logado". Para isso o cabeçalho saiu do layout e
+  #      virou `components/CabecalhoDaPortaria.tsx`, usado pelos dois.
+  # Mais uma decisão do Igor, de aparência: **a casca usa `.conteudo`**, a mesma
+  # medida do resto do produto. A primeira versão fechava em 560px pelo
+  # "primeiro para telas pequenas" do EXPERIENCE.md, e na tela a diferença de
+  # largura leu como defeito de layout. O que sobrevive do mobile-first é o que
+  # importa na fila: alvo de 44px, tipografia grande, uma coluna só.
+  # ⚠️ Janela consciente de **dois commits**: o item aberto já linka para
+  # `/portaria/eventos/{id}`, que só nasce na 5.3. Mesma forma da janela entre a
+  # 2.4 e a 2.5 e da fila da 3.1. Fecha no commit da 5.3.
+  # ⚠️ O portão abre `data_hora - 2h`, e não em `data_hora` como a resposta
+  # inicial dizia: `publicar` recusa data no passado e as rotas públicas
+  # escondem o evento a partir de `data_hora`, então portão exato travaria o
+  # roteiro de avaliação da 6.4. É constante de uma linha na tela.
+  5-1-ver-onde-eu-trabalho-hoje: done
   5-2-validar-o-ingresso-sem-deixar-passar-duas-vezes: backlog
   5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: backlog
   5-4-ver-o-resultado-a-tres-metros: backlog

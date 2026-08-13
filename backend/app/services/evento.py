@@ -57,7 +57,7 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
-from app.models.evento import Evento, Setor
+from app.models.evento import Evento, Setor, evento_portaria
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.evento import (
     DisponibilidadeDoSetor,
@@ -68,6 +68,7 @@ from app.schemas.evento import (
     EventoResumo,
     PeriodoDaProgramacao,
     SetorPublico,
+    TurnoDaPortaria,
 )
 
 # Quantos ingressos uma pessoa leva numa compra só (Story 3.4, decisão do Igor).
@@ -262,6 +263,57 @@ def listar_portarias(sessao: Session) -> list[Usuario]:
             .order_by(Usuario.nome)
         )
     )
+
+
+def listar_escalados(sessao: Session, portaria: Usuario) -> list[TurnoDaPortaria]:
+    """Os eventos em que a conta da sessão foi escalada na porta (Story 5.1).
+
+    **O outro lado do `listar_portarias`, e por isso a vizinha dele**: aquela
+    responde "quem eu posso pôr na porta deste evento", esta responde "em que
+    portas eu trabalho". As duas leem a `evento_portaria` do AD-7, cada uma por
+    uma das colunas.
+
+    **Ela não corta por tempo, e é a decisão mais importante desta função.** As
+    quatro rotas públicas filtram `data_hora >= agora`, e copiar esse corte aqui
+    seria o pior erro possível: **a portaria trabalha exatamente do outro lado
+    dele**. Às 21h30 de um show que começou às 21h o evento já sumiu de
+    `listar_programacao` — se o turno sumisse junto, ele desapareceria da mão de
+    quem está na porta no minuto em que a fila começa a andar. O argumento é o
+    mesmo que deixou `listar_do_organizador` sem filtro: isto é o inventário de
+    quem lê, não a vitrine de quem compra.
+
+    **`publicado_em IS NOT NULL` entra**, pela mesma razão da
+    `listar_programacao`: hoje não existe rascunho com escala — publicação e
+    escala são a mesma transação das Stories 2.4 e 2.5 —, e no dia em que
+    existir, a condição já vale. Rascunho não tem porta para abrir.
+
+    **`join` explícito na `Table`, e não `Usuario.eventos`.** Não há
+    `relationship` desse lado de propósito: `models/evento.py` declara
+    `Evento.portarias` **sem** `back_populates`, e o comentário lá explica que o
+    inverso obrigaria `usuario.py` a importar `evento.py`, que já importa
+    `usuario.py` — ciclo de import. A `Table` do Core resolve isso sem nenhum
+    dos dois.
+
+    **Devolve `TurnoDaPortaria`, e não `Evento` do ORM**, no molde do
+    `listar_do_organizador`: a rota até declararia o `response_model` e o corte
+    aconteceria de qualquer jeito, mas a projeção feita aqui é a que um teste de
+    service consegue ler sem subir HTTP.
+    """
+    eventos = sessao.scalars(
+        select(Evento)
+        .join(evento_portaria, evento_portaria.c.evento_id == Evento.id)
+        .where(
+            evento_portaria.c.usuario_id == portaria.id,
+            Evento.publicado_em.is_not(None),
+        )
+        # `Evento.id` como desempate, pelo mesmo motivo escrito no
+        # `listar_do_organizador`: duas casas na mesma noite é rotina, e sem
+        # critério total o Postgres não promete ordem nenhuma entre dois shows
+        # do mesmo horário. Esta é a tela que a portaria recarrega na fila.
+        .order_by(Evento.data_hora, Evento.id)
+    )
+
+    return [TurnoDaPortaria.model_validate(evento) for evento in eventos]
 
 
 def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoResumo]:

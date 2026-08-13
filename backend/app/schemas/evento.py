@@ -550,3 +550,46 @@ class EventoSaida(BaseModel):
 
     # `organizador_id` fica de fora: quem acabou de publicar já sabe quem é, e
     # devolvê-lo só daria a impressão de que é um campo que se escolhe.
+
+
+class TurnoDaPortaria(BaseModel):
+    """Um evento em que **quem está na porta** foi escalado (Story 5.1).
+
+    A primeira leitura da `evento_portaria` desde que a Story 2.5 passou a
+    gravá-la. É a lista de "onde eu trabalho" — não um inventário e não uma
+    vitrine.
+
+    **O que ele não devolve, e por quê.** Nem `capacidade`, nem `vendidos`, nem
+    `setores`: quantas pessoas já entraram no turno é a Story 5.6, e ela vai
+    contar `ingresso.usado_em`, não estoque. Devolver o inventário aqui daria à
+    tela um número que ela não usa e que, no dia em que a 5.6 chegar, seria o
+    número **errado** — vendidos não é entrou. O corte quem garante é o
+    `response_model` da rota, e não a tela: a mesma disciplina que a Story 3.1
+    inaugurou.
+
+    **Nenhum campo derivado, nem mesmo `aberto: bool`** (decisão do Igor). O
+    portão que libera a tela do evento duas horas antes do show é regra **da
+    tela**, comparada com o relógio de quem lê — o precedente literal do
+    `MeusEventos` da 2.6: "a API responde quais são os meus eventos; o que
+    interessa agora é leitura". Mandar o booleano no contrato pareceria mais
+    seguro e não é: o portão é conveniência operacional, não invariante. A
+    invariante desta epic é o vínculo do AD-7, e ela se cumpre no `403` da rota,
+    não num campo. Se a Story 5.2 decidir barrar validação fora da janela, ela
+    calcula a própria regra no servidor.
+
+    **Com `from_attributes`**, ao contrário do `EventoResumo` e dos três
+    schemas públicos: os cinco campos são colunas do `Evento`, sem uma soma nem
+    uma projeção no meio. O critério deste módulo é sempre o mesmo — declarar a
+    conversão só quando ela de fato acontece —, e aqui ela acontece.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    nome: str
+    data_hora: datetime
+    local: str
+    # Anulável desde a Story 2.3, e a chave **continua no corpo** quando é nula:
+    # a ficha da tela precisa distinguir "sem cidade" de "campo que não veio"
+    # para não imprimir um separador solto. Nada de `exclude_none` aqui.
+    cidade: str | None
