@@ -1,0 +1,205 @@
+/* O leitor da porta: câmera (5.5), veredito (5.4) e campo manual (5.3).
+
+   ┌──────────────────────────────────────────┐
+   │ ┌──────────────────────────────────────┐ │
+   │ │          LER PELA CÂMERA             │ │  ← secundário, fio + fumaça
+   │ └──────────────────────────────────────┘ │
+   │ ┌──────────────────────────────────────┐ │
+   │ │                                      │ │
+   │ │            (a mira)                  │ │  ← só existe com a câmera no ar
+   │ │                                      │ │
+   │ └──────────────────────────────────────┘ │
+   │ ─────────────────────────────────────────│
+   │ ╔══════════════════════════════════════╗ │
+   │ ║                  ✓                   ║ │  ← o `<Veredito>` (5.4): ele
+   │ ║              V Á L I D O             ║ │     ocupa o vão que a mira
+   │ ║ ──────────────────────────────────── ║ │     deixa ao desmontar
+   │ ║        Pista · Igor Duarte           ║ │
+   │ ╚══════════════════════════════════════╝ │
+   │ ─────────────────────────────────────────│
+   │ CÓDIGO DO INGRESSO                       │  ← rótulo visível, mono versalete
+   │ ┌──────────────────────────────────────┐ │
+   │ │ 9K4M7QX2                             │ │  ← mono grande, alvo de 56px
+   │ └──────────────────────────────────────┘ │
+   │ Digite o código e aperte Enter.          │
+   │ ┌──────────────────────────────────────┐ │
+   │ │              VALIDAR                 │ │  ← largura da coluna
+   │ └──────────────────────────────────────┘ │
+   └──────────────────────────────────────────┘
+
+   **Coluna única, sempre** — o `EXPERIENCE.md#Responsive` não dá alternativa
+   para esta superfície, e não é preferência: é uma mão só, em pé, no escuro.
+   Única, porém **não** da largura da casca: ver o `.leitor` logo abaixo.
+
+   ⚠️ **O veredito subiu para o meio da coluna na Story 5.4**, entre a câmera e o
+   campo. A três metros o que se lê é o topo da tela, e o campo com a dica
+   empurrava o resultado para a dobra no celular. A aparência dele mora inteira
+   no `Veredito.module.css`; aqui sobrou só o espaçamento da região que o
+   contém.
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
+
+/* ⚠️ **A coluna de 420px é o padrão do produto para controle de formulário
+   dentro da casca**, e não uma medida nova: é a mesma do `.filtroPortaria` do
+   `organizador/publicar`, e a irmã dos 440px de login e cadastro. Sem ela o
+   campo e o botão esticam pelos 1180px do `.conteudo`, e no desktop o botão
+   primário vira uma faixa neon atravessando a tela — que não se parece com nada
+   no resto do produto.
+
+   **Sem `margin: 0 auto`**, ao contrário do `(entrada)`: lá a coluna é a página
+   inteira e centrar faz sentido; aqui ela mora sob um cabeçalho alinhado à
+   esquerda cujo fio corta a largura toda, e uma coluna centrada abaixo dele
+   leria como bloco solto.
+
+   **Sem media query, e é o ponto:** abaixo de 420px o `max-width` não faz nada,
+   então o celular continua com campo e botão de largura inteira, que é o que o
+   `EXPERIENCE.md#Responsive` pede para esta superfície. A coluna é o que
+   acontece quando sobra tela, não uma segunda versão do leitor. */
+.leitor {
+  max-width: 420px;
+  margin-top: 28px;
+}
+
+/* O bloco da câmera (Story 5.5). Ele vem **antes** do campo porque é o caminho
+   primário da jornada 2 do EXPERIENCE.md — Ana aponta a câmera e só digita
+   quando a leitura falha. */
+.bloco {
+  margin-bottom: 26px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Secundário: fio e fumaça, no molde exato do `.copiar` do compartilhamento e do
+   `.cancelar` da confirmação — o neon é do `<Botao>` primário, e são dois
+   primários na mesma tela que fariam a portaria escolher entre duas ações do
+   mesmo peso. Aqui há hierarquia: a câmera abre, o *Validar* decide.
+
+   `padding` de 17px pelo mesmo motivo do campo: passa dos 44px do UX-DR6 com
+   folga, e este é o alvo que se acerta com o polegar antes de levantar o
+   telefone. */
+.botaoCamera {
+  width: 100%;
+  padding: 17px;
+  border: 1px solid var(--fio2);
+  background: none;
+  color: var(--fumaca);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  /* O único movimento previsto no sistema é mudança de cor em hover, até 120ms
+     (`globals.css`) — e quem pediu menos movimento não recebe nenhum. */
+  transition: color 120ms, border-color 120ms;
+}
+
+.botaoCamera:hover:not(:disabled) {
+  border-color: var(--cal);
+  color: var(--cal);
+}
+
+/* `cursor: default` junto com a opacidade: o cursor não pode prometer um clique
+   que o atributo `disabled` já recusou. Mesmo par do `<Botao>`. */
+.botaoCamera:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A mira. **Quadrada e ocupando a largura**, que é literalmente o que o
+   `EXPERIENCE.md#Responsive` pede para esta superfície.
+
+   `object-fit: cover` porque o quadro da câmera não é quadrado: sem ele o vídeo
+   estica e o QR chega deformado ao decodificador. O fundo `--breu2` é o que
+   aparece no intervalo entre o elemento existir e o primeiro quadro chegar —
+   sem ele o retângulo nasce transparente e o layout pisca. */
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-top: 16px;
+  background: var(--breu2);
+  border: 1px solid var(--fio);
+  object-fit: cover;
+}
+
+/* ⚠️ **`--fumaca`, e não `--brasa`.** Câmera negada ou ausente não é falha da
+   aplicação nem erro de quem está na porta: é uma condição do aparelho, e o
+   campo logo abaixo continua sendo um caminho inteiro. Pintar de vermelho diria
+   que o turno parou — e é o mesmo argumento que deixa o `JA_UTILIZADO` neutro
+   no EXPERIENCE.md. */
+.avisoCamera {
+  max-width: 46ch;
+  margin-top: 14px;
+  font: 15px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mesma anatomia do rótulo do `Campo`, repetida porque CSS Module não
+   compartilha classe entre arquivos. */
+.rotulo {
+  display: block;
+  margin-bottom: 8px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* ⚠️ **20px e `padding` de 17px, e não os 16/14 do `Campo`.** Aqui não é
+   generosidade: o alvo passa de 54px de altura (UX-DR6 pede 44), e o código
+   digitado precisa ser conferível de relance contra o que está na mão da pessoa
+   — oito símbolos em corpo de formulário, no escuro, se conferem errado.
+
+   `letter-spacing` largo pelo mesmo motivo: `9K4M7QX2` em monoespaçada colada é
+   um bloco; espaçado, são oito símbolos que se contam. */
+.entrada {
+  width: 100%;
+  background: var(--breu2);
+  border: 1px solid var(--fio);
+  color: var(--cal);
+  padding: 17px;
+  font: 20px/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ALÉM do `:focus-visible` global, nunca em vez dele — mesma regra do `Campo`.
+   O contorno de foco não é desligado em lugar nenhum do projeto. */
+.entrada:focus {
+  border-color: var(--neon);
+}
+
+.entrada:disabled {
+  opacity: 0.5;
+}
+
+/* A instrução do Enter fica **visível e permanente**, e não em `title` nem em
+   `placeholder`: quem trabalha na porta pode ser quem entrou hoje, e a tecla que
+   valida é a única coisa que a pessoa precisa saber para usar esta tela. */
+.dica {
+  margin: 10px 0 18px;
+  font: 13px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+/* A região do `aria-live`: existe sempre, e vazia não ocupa espaço nenhum. Sem
+   `min-height` reservado — a tela é curta e um vão em branco esperando resultado
+   pareceria conteúdo que não carregou (EXPERIENCE.md#Carregando: nada gira, nada
+   pulsa, e nada fica reservando lugar).
+
+   ⚠️ **`border-bottom`, e era `border-top` até a Story 5.4.** O fio acompanhou a
+   mudança de lugar: quem a região separa agora está **embaixo** dela — o rótulo
+   do campo —, e o de cima já é fechado pelo `border-bottom` do `.bloco`. Sem a
+   troca, o veredito sairia com dois fios colados no topo e nenhum na base.
+
+   `:not(:empty)` continua fazendo o trabalho que importa: sem resultado não há
+   fio nem folga, e a câmera encosta no campo como encostava antes da 5.4. */
+.painel:not(:empty) {
+  margin-bottom: 26px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--fio);
+}

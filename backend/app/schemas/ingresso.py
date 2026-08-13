@@ -1,4 +1,6 @@
-"""Schema de saída de `GET /ingressos` — a lista de "Meus ingressos" (Story 4.1).
+"""Os schemas do ingresso: a lista, o canhoto e o veredito da porta.
+
+Schema de saída de `GET /ingressos` — a lista de "Meus ingressos" (Story 4.1).
 
 **Um schema próprio, e não o `IngressoSaida` de `schemas/reserva.py`.** Aquele
 é o canhoto de uma compra — nasce com `codigo` e `titular_nome`, os dois
@@ -10,12 +12,19 @@ inteligência de quem lê para saber quais dos campos ignorar.
 `IngressoDetalhe` mora no mesmo arquivo, mas nasce só na Story 4.2 — é o
 canhoto cheio, com `codigo`. Este módulo cresce junto com as duas rotas que a
 techspec do grupo descreve.
+
+`ValidacaoEntrada` e `ResultadoDaValidacao` entram na Story 5.2 e são a outra
+ponta do mesmo agregado: os dois primeiros mostram o ingresso a quem o comprou,
+estes dois o julgam na porta. Moram aqui pelo mesmo critério que fez
+`services/ingresso.py` nascer — agrupar por agregado, não por quem chama.
 """
 
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.models.validacao import Veredito
 
 
 class IngressoNaLista(BaseModel):
@@ -49,10 +58,17 @@ class IngressoNaLista(BaseModel):
 class IngressoDetalhe(BaseModel):
     """O canhoto cheio — `GET /ingressos/{id}` (Story 4.2), o que vira QR.
 
-    **`codigo` entra aqui, e só aqui.** É `ID.ASSINATURA` (AD-5), montado a
-    partir da coluna `assinatura` sem recalcular — o mesmo aviso do
+    **`codigo` entra aqui, e só aqui.** São os 8 símbolos de base32 de Crockford
+    do AD-5, lidos da coluna `codigo` sem recalcular — o mesmo aviso do
     `_ingressos()` de `services/reserva.py`: a validação da portaria é quem
-    sempre recalcula (AD-5), esta rota só monta o texto que vira QR.
+    sempre recalcula (AD-5), esta rota só entrega o texto que vira QR.
+
+    ⚠️ **`titular_nome` é o nome da conta que comprou** (decisão do Igor,
+    techspec `docs/techspec-codigo-curto.md`), buscado pelo join
+    `Ingresso → Reserva → Usuario`. Não é o nome digitado no checkout: aquele é de
+    quem **pagou**, mora em `ingresso.pagador_nome` e não é desenhado em tela
+    nenhuma. Ele muda quando o nome da conta muda, ao contrário do preço e do
+    pagador, que são congelados na compra.
 
     **`usado_em` entra também aqui**, e não só na lista: um canhoto já
     utilizado que parecesse válido mandaria alguém para a fila da porta à
@@ -93,3 +109,134 @@ class IngressoDetalhe(BaseModel):
     # `None` é "nunca compartilhado" **ou** "revogado" — os dois são o mesmo
     # estado, e a tela desenha o botão *Compartilhar* nos dois casos.
     share_token: str | None
+
+
+class ValidacaoEntrada(BaseModel):
+    """O que a portaria leu — do QR ou do campo manual (Story 5.2).
+
+    **Um campo só, e cru.** O que chega é o que a câmera decodificou ou o que a
+    pessoa digitou, com espaços, hífens e caixa como vieram: quem normaliza é o
+    `normalizar_codigo` de `core/seguranca.py`, dentro do service. Normalizar
+    aqui, num `field_validator`, moveria uma regra de domínio para o schema e
+    deixaria a rota com duas normalizações possíveis para o mesmo valor.
+
+    ⚠️ **`max_length` generoso, e ele não é validação de código.** O contrato do
+    código são 8 símbolos; 64 é folga de sobra para separadores e espaço colado
+    numa colagem. O teto existe pelo mesmo motivo do `_TAMANHO_MAXIMO_BRUTO` de
+    `schemas/pagamento.py` e dos limites de `schemas/auth.py` — sem ele, um corpo
+    de 10 MB é 10 MB varridos pelo `.upper().translate()` do normalizador. O que
+    é **código inválido** responde `INVALIDO` no corpo de um `200`, e não `422`:
+    passar de 64 caracteres não é um código recusado, é um pedido malformado.
+    """
+
+    codigo: str = Field(max_length=64)
+
+
+class RecusasDoTurno(BaseModel):
+    """Os três vereditos de recusa deste evento, contados (Story 5.6).
+
+    **Um objeto, e não três campos soltos no `ResultadoDaValidacao`.** Eles são
+    lidos juntos, desenhados juntos numa linha só do contador e vêm da mesma
+    consulta — e é o mesmo objeto que o `TurnoDoLeitor` de `schemas/evento.py`
+    carrega, o que seria impossível com três campos avulsos.
+
+    ⚠️ **`VALIDO` não está aqui, e a ausência é a decisão.** As entradas saem de
+    `ingresso.usado_em`, a coluna que o `UPDATE` condicional do AD-6 escreve
+    atomicamente; esta contagem sai da tabela `validacao`, que é o registro do que
+    foi **tentado**. Duas fontes para números vizinhos, de propósito: no dia em que
+    divergirem, é o `usado_em` que ganha. Um `validos` aqui seria a terceira
+    resposta para a mesma pergunta.
+
+    ⚠️ **Veredito sem linha nenhuma é `0`, nunca ausente.** O `GROUP BY` do
+    service só devolve o que existe, e um campo faltando faria a tela desenhar
+    `undefined` no lugar do número — num contador em que zero é a informação mais
+    comum do começo do turno.
+    """
+
+    invalidos: int
+    ja_utilizados: int
+    evento_errado: int
+
+
+class ResultadoDaValidacao(BaseModel):
+    """O veredito da porta — a resposta de `POST /portaria/.../validacoes` (5.2).
+
+    ⚠️ **Os quatro resultados respondem `200`**, inclusive os três que negam
+    entrada. Eles são **o produto** deste endpoint — é o FR6 inteiro —, e tratar
+    três deles como `ErroDeDominio` inverteria o que a portaria vê: recusar
+    entrada é o trabalho dela dando certo, não uma falha de protocolo. Some-se
+    que o `ErroDeDominio` carrega `{codigo, mensagem}` e nada mais, e não haveria
+    onde pôr a hora da primeira entrada nem o setor — encaixar isso na
+    `mensagem` seria montar frase no backend, o que este projeto não faz desde a
+    Story 3.6.
+
+    **Um schema com campos opcionais, e não uma união discriminada de quatro
+    formas.** A união vira `anyOf` no OpenAPI e obriga a tela a estreitar tipo
+    antes de desenhar, para nenhum ganho: os quatro casos são a mesma tela
+    trocando de palavra.
+
+    ⚠️ **`EVENTO_ERRADO` não diz de qual show o ingresso é** (decisão do Igor,
+    contra o protótipo do `EXPERIENCE.md`, que pedia "ESTE INGRESSO É DO SHOW DA
+    CÉU"). Uma portaria que não foi escalada num evento acabaria recebendo o nome
+    dele de volta — e restringir exatamente isso é o motivo de o AD-7 existir.
+    Quem está na fila sabe qual ingresso comprou.
+
+    **As contagens do turno entraram na Story 5.6**, e é o que a redação anterior
+    deste docstring prometia — *"o contador do turno já foi decidido e viaja no
+    corpo da validação, mas o campo entra junto da tela que o desenha"*. A tela
+    chegou, e com ela os dois campos do fim desta classe.
+
+    ⚠️ **Elas viajam na resposta da validação, e não numa rota própria de
+    contador.** Atualizar o número é exatamente o que acontece a cada leitura, e
+    quem acabou de validar já está numa ida à rede — uma segunda chamada seria uma
+    latência a mais na fila para um dado que a primeira já podia trazer. **Sem
+    polling e sem WebSocket**: uma entrada da outra porta aparece no meu contador
+    na minha próxima leitura, e isso é rápido o suficiente para o único uso que o
+    número tem.
+    """
+
+    # ⚠️ **Era um `Literal[...]`, e virou o enum do modelo na Story 5.6.** As
+    # quatro palavras passaram a existir também no `CHECK` da tabela `validacao`,
+    # e mantê-las escritas aqui de novo seria a terceira cópia — com o dia em que
+    # discordam já marcado. `str, Enum` serializa igual (`"VALIDO"` no JSON) e o
+    # OpenAPI ganha um nome em vez de uma união anônima. Precedente:
+    # `PapelUsuario`, que nasce em `models/usuario.py` e é importado pelos schemas
+    # de autenticação desde a Story 1.4.
+    resultado: Veredito
+
+    # O nome da **conta** que comprou (`usuario.nome`), o mesmo que o canhoto
+    # mostra — e não `ingresso.pagador_nome`, que é de quem passou o cartão e
+    # pode ser um terceiro. As duas telas mostram a mesma pessoa: quem chega com
+    # o ingresso na mão vê o nome que a portaria lê, e a conferência com o
+    # documento tem resposta.
+    #
+    # Preenchido em `VALIDO` e em `JA_UTILIZADO`. Nulo nos outros dois: sem
+    # ingresso identificado não há titular, e em `EVENTO_ERRADO` dizer o nome
+    # seria contar de quem é o ingresso do outro show.
+    titular_nome: str | None = None
+
+    # Só em `VALIDO` — é a informação que faz a portaria apontar a direção certa
+    # ("Pista, por ali"). Em `JA_UTILIZADO` ela não serve: ninguém vai entrar.
+    setor_nome: str | None = None
+
+    # Em `VALIDO`, o instante **desta** entrada; em `JA_UTILIZADO`, o da
+    # **primeira**. É o dado que transforma "já utilizado" numa frase que a fila
+    # entende — "entrou às 20h47" —, e é ele que a armadilha do
+    # `expire_on_commit=False` fazia sair nulo.
+    entrada_em: datetime | None = None
+
+    # ⚠️ **Os dois vêm nos quatro vereditos, e não têm valor padrão.** Um
+    # `entradas: int = 0` faria a resposta que esquecesse de contar sair com zero
+    # em vez de estourar — e zero é um número plausível no começo do turno, ou
+    # seja, o defeito seria invisível. Aqui a ausência precisa doer.
+    #
+    # **Quantas pessoas já entraram neste evento**, de todas as portas — `COUNT`
+    # por `evento_id`, sem filtrar por quem validou. A story quer "noção do
+    # movimento", e com duas portas na mesma casa o número da minha própria
+    # digitação não mede a fila, mede a minha digitação.
+    #
+    # ⚠️ **Sai de `ingresso.usado_em`, não da tabela `validacao`** — ver o
+    # docstring do `RecusasDoTurno` logo acima e o do `models/validacao.py`.
+    entradas: int
+
+    recusas: RecusasDoTurno

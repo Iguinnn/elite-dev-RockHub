@@ -30,10 +30,16 @@ export default function Canhoto({ ingresso }: { ingresso: IngressoDetalhe }) {
   const casa = [ingresso.evento_local, ingresso.evento_cidade]
     .filter(Boolean)
     .join(" · ");
-  // "Quebrado em blocos" (techspec da 4.2): o `codigo` é `ID.ASSINATURA`, uma
-  // palavra só de ~80 caracteres. Espaçar em grupos de 4 dá ao olho pontos de
-  // parada para conferir contra a tela da porta, sem mudar o valor codificado —
-  // o espaço é só de exibição, e o QR recebe `ingresso.codigo` puro.
+  // "Quebrado em blocos" (techspec da 4.2): o `codigo` são 8 símbolos de base32
+  // de Crockford, e em grupos de 4 ele sai `9K4M 7QX2`. O espaço dá ao olho um
+  // ponto de parada para ler o código em voz alta na fila, sem mudar o valor
+  // codificado — ele é só de exibição, e o QR recebe `ingresso.codigo` puro.
+  //
+  // ⚠️ **Esta linha não mudou quando o código encolheu de 80 para 8 caracteres**
+  // (techspec `docs/techspec-codigo-curto.md`): o `match(/.{1,4}/g)` já fazia o
+  // certo nos dois tamanhos. Quem valida na porta normaliza a entrada — sobem as
+  // letras, caem espaços e hífens —, então o que está na tela pode ser digitado
+  // exatamente como se lê.
   const codigoEmBlocos =
     ingresso.codigo.match(/.{1,4}/g)?.join(" ") ?? ingresso.codigo;
 

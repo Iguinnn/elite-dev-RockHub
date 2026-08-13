@@ -48,10 +48,13 @@ export type ItemDaReserva = {
 /**
  * Espelha `app/schemas/reserva.py::IngressoSaida` (Story 3.9).
  *
- * `codigo` é `ID.ASSINATURA` (AD-5) — o conteúdo que vira QR. A assinatura e o
- * nonce **não** chegam separados: o código já os traz no formato que a
- * validação da portaria espera, e expor as partes convidaria a recombiná-las
- * por fora.
+ * `codigo` são os 8 símbolos de base32 de Crockford do AD-5 — o conteúdo que
+ * vira QR (até 2026-08-12 era `ID.ASSINATURA`, 80 caracteres; techspec
+ * `docs/techspec-codigo-curto.md`). O `nonce` **não** chega junto: ele é
+ * ingrediente secreto do HMAC e nunca sai do servidor.
+ *
+ * `titular_nome` é o nome da **conta**, e não o digitado no checkout — o
+ * ingresso é de quem tem a conta, e o cartão pode ser de outra pessoa.
  */
 export type IngressoDaReserva = {
   id: string;

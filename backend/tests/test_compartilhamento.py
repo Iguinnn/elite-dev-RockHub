@@ -139,10 +139,15 @@ def test_o_share_token_e_diferente_do_codigo_e_nao_aparece_dentro_dele(
 ) -> None:
     """⚠️ São dois valores com exposições opostas, e o link não pode carregar o QR.
 
-    O `codigo` é `ID.ASSINATURA` (AD-5) e vale na porta; o `share_token` é um
-    endereço opaco que viaja por WhatsApp (AD-8). Se um estivesse contido no
-    outro, quem recebesse o link teria o código de entrada de graça — e a
-    entropia da assinatura junto.
+    O `codigo` são os 8 símbolos de Crockford do AD-5 e valem na porta; o
+    `share_token` é um endereço opaco de 32 caracteres que viaja por WhatsApp
+    (AD-8). Se um estivesse contido no outro, quem recebesse o link teria o código
+    de entrada de graça — e a entropia do HMAC junto.
+
+    ⚠️ **A asserção `token not in codigo` ficou trivial** desde que o código
+    encolheu (techspec `docs/techspec-codigo-curto.md`): 32 caracteres não cabem
+    em 8. Ela fica porque a que importa é a irmã dela — `codigo not in token` —, e
+    manter as duas custa uma linha e diz em qual direção cada uma protege.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cp5@exemplo.com")
     dono = fabricar_usuario(PapelUsuario.CLIENTE, "dono-cp5@exemplo.com")

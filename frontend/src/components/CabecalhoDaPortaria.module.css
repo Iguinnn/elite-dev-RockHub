@@ -1,0 +1,70 @@
+/* A navegação da porta (Story 5.1).
+
+   RockHub                        ← a marca, do `Logotipo`, levando a /portaria
+   ANA SAMPAIO · PORTARIA         ← quem está validando, em mono versalete
+   ─────────────────────────────  ← fio
+   TURNOS   MINHA CONTA           ← dois itens, alvos de 44px
+   ─────────────────────────────  ← fio, fecha o bloco
+
+   **A largura é a do resto da aplicação** (decisão do Igor, 2026-08-12). A
+   primeira versão fechava a coluna em 560px, argumentando com o
+   `EXPERIENCE.md` — "a única superfície projetada primeiro para telas
+   pequenas". Na tela, o que isso produziu foi uma casca visivelmente mais
+   estreita que todas as outras do produto, e a diferença lia como defeito de
+   layout, não como escolha. O `.conteudo` do `globals.css` já é responsivo, e é
+   ele quem passa a valer aqui: quem está no celular vê a mesma coisa dos dois
+   jeitos, e quem está no desktop deixa de ver duas larguras de aplicação. O
+   que continua valendo do "primeiro para telas pequenas" é o que importa —
+   alvos de 44px, tipografia grande e uma coluna só.
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
+
+.topo {
+  padding-top: 26px;
+}
+
+/* Marca e identificação empilhadas, coladas: as duas dizem "onde você está" e
+   "quem você é", e um fio entre elas separaria o que é uma coisa só. */
+.marca {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Mono versalete porque é etiqueta de máquina, não nome próprio em destaque —
+   UX-DR2. O nome da pessoa aparece aqui **por exceção**, e a tipografia é o que
+   deixa claro que ele é identificação de turno, não o título da tela. */
+.quem {
+  margin-top: 8px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+  overflow-wrap: anywhere;
+}
+
+/* ⚠️ **Os 44px do UX-DR6 valem aqui mais do que em qualquer outra tela.** O
+   `.navLink` do `Masthead.module.css` — que o `NavLink` traz consigo — tem
+   `padding-bottom: 3px` e uns 14px de altura total: alvo de mouse, não de
+   polegar no escuro. O `padding` vertical daqui o leva aos 44px sem tocar no
+   componente e sem duplicar a tipografia do item, que continua sendo a do
+   masthead: mesma linguagem, alvo de outro tamanho.
+
+   O seletor casa o `<a>` por elemento, e não por classe: CSS Module gera nomes
+   próprios por arquivo, e não há como nomear a classe do outro módulo daqui. Um
+   descendente de `.nav` é preciso o bastante — não existe outro link nesta
+   navegação. */
+.nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 26px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding-bottom: 0;
+  border-bottom-width: 3px;
+}

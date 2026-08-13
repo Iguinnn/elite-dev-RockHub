@@ -20,12 +20,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.core.seguranca import (
-    SEPARADOR_DO_CODIGO,
-    assinar_ingresso,
-    gerar_nonce,
-    montar_codigo,
-)
+from app.core.seguranca import gerar_codigo, gerar_nonce
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
@@ -103,8 +98,12 @@ def _ingresso_gravado(
         reserva_id=reserva.id,
         evento_id=evento.id,
         setor_id=setor.id,
-        titular_nome=cliente.nome,
-        assinatura=assinar_ingresso(ingresso_id, evento.id, nonce),
+        # Quem pagou, e não o titular: o titular do canhoto é `usuario.nome`, e
+        # sai do join com `reserva` (techspec `docs/techspec-codigo-curto.md`).
+        # A fixture põe um nome **diferente** do da conta de propósito — com os
+        # dois iguais, uma rota que lesse a coluna errada passaria batido.
+        pagador_nome=f"Cartão de {cliente.nome}",
+        codigo=gerar_codigo(ingresso_id, evento.id, nonce),
         nonce=nonce,
         usado_em=usado_em,
         validado_por=validado_por.id if validado_por else None,
@@ -353,56 +352,56 @@ def test_o_canhoto_traz_evento_setor_titular_codigo_e_usado_em(
     assert corpo["evento_local"] == evento.local
     assert corpo["evento_cidade"] == evento.cidade
     assert corpo["setor_nome"] == setor.nome
+    # ⚠️ **O titular é o nome da CONTA, e não `ingresso.pagador_nome`** (techspec
+    # `docs/techspec-codigo-curto.md`). A fixture grava um pagador diferente de
+    # propósito: sem a segunda asserção, uma rota que lesse a coluna do pagador
+    # passaria por aqui no dia em que os dois nomes coincidissem.
     assert corpo["titular_nome"] == comprador.nome
+    assert corpo["titular_nome"] != ingresso.pagador_nome
     assert corpo["usado_em"] is None
 
 
-def test_o_codigo_e_montado_a_partir_da_coluna_sem_recalcular(
+def test_o_codigo_sai_da_coluna_sem_recalcular(
     cliente: TestClient,
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """⚠️ `montar_codigo(id, assinatura)`, e nada mais — o aviso do AD-5.
+    """⚠️ `ingresso.codigo`, e nada mais — o aviso do AD-5.
 
-    Recalcular a assinatura aqui daria o mesmo valor no caso feliz e
-    esconderia o ponto: só a portaria (Epic 5) recalcula, nunca esta rota.
+    Recalcular o HMAC aqui daria o mesmo valor no caso feliz e esconderia o
+    ponto: só a portaria (Epic 5) recalcula, nunca esta rota.
 
     ⚠️ **A coluna é adulterada de propósito, e é isso que dá força ao teste**
-    (code review da Epic 4). Antes, a asserção comparava a resposta contra
-    `montar_codigo(id, assinatura)` com a assinatura que a própria fixture
-    havia gravado pelo HMAC — e ler a coluna ou recalcular produzem **o mesmo
-    valor** no caminho feliz. Trocar o `_montar_detalhe` por um
-    `assinar_ingresso(...)` deixava os 449 testes verdes e o critério de pronto
-    da 4.2 virava letra morta.
+    (code review da Epic 4). Antes, a asserção comparava a resposta contra o
+    valor que a própria fixture havia gravado pelo HMAC — e ler a coluna ou
+    recalcular produzem **o mesmo valor** no caminho feliz. Trocar o
+    `_montar_detalhe` por um `gerar_codigo(...)` deixava a suíte inteira verde e o
+    critério de pronto da 4.2 virava letra morta.
 
-    Gravando aqui um valor que o HMAC **nunca** produziria, os dois caminhos
-    passam a divergir: se a rota recalcular, o código volta com a assinatura
-    legítima e a asserção quebra. O que estaria em jogo em produção é a coluna
-    deixar de ser a fonte do QR — e as duas rotas de leitura, a do dono e a
-    pública, passarem a depender do `TICKET_SIGNING_SECRET` em tempo de
-    leitura. Aí trocar o segredo no painel da Railway mudaria o QR exibido, em
-    vez de só invalidar a validação na porta.
+    Gravando aqui um valor que o HMAC **nunca** produziria para este ingresso, os
+    dois caminhos divergem: se a rota recalcular, o código volta o legítimo e a
+    asserção quebra. O que estaria em jogo em produção é a coluna deixar de ser a
+    fonte do QR — e as duas rotas de leitura, a do dono e a pública, passarem a
+    depender do `TICKET_SIGNING_SECRET` em tempo de leitura. Aí trocar o segredo
+    no painel da Railway mudaria o QR exibido, em vez de só invalidar a validação
+    na porta.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-cd2@exemplo.com")
     comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-cd2@exemplo.com")
     evento, setor = _evento_publicado(sessao, organizador)
     ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
 
-    # Nem base64url de 43 caracteres, nem coisa que o HMAC-SHA256 saiba gerar:
-    # se este texto voltar na resposta, a rota leu a coluna. Cabe no
-    # `String(64)` com folga.
-    assinatura_impossivel = "assinatura-que-o-hmac-nunca-produziria"
-    ingresso.assinatura = assinatura_impossivel
+    # Oito símbolos válidos do alfabeto — cabe na coluna e passa pela
+    # normalização —, mas que o HMAC deste ingresso não produz. Se este texto
+    # voltar na resposta, a rota leu a coluna.
+    codigo_impossivel = "ZZZZZZZZ"
+    assert gerar_codigo(ingresso.id, evento.id, ingresso.nonce) != codigo_impossivel
+    ingresso.codigo = codigo_impossivel
     sessao.flush()
 
     _entrar(cliente, comprador)
 
-    codigo = cliente.get(f"/ingressos/{ingresso.id}").json()["codigo"]
-
-    assert codigo == montar_codigo(ingresso.id, assinatura_impossivel)
-    # Redundante com a linha acima e proposital: ela falha com uma mensagem que
-    # diz *o que* deu errado, e não só que duas strings longas diferem.
-    assert codigo.endswith(f"{SEPARADOR_DO_CODIGO}{assinatura_impossivel}")
+    assert cliente.get(f"/ingressos/{ingresso.id}").json()["codigo"] == codigo_impossivel
 
 
 def test_usado_em_aparece_no_canhoto_quando_gravado_a_mao(

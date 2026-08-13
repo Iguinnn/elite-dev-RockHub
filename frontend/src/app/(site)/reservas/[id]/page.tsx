@@ -198,7 +198,10 @@ export default async function PaginaDaReserva({
 
           {/* O nome da conta desce como **dado**, não como função — a fronteira
               servidor/cliente do projeto. É ele que preenche o campo Nome, e é
-              dele que sai o `titular_nome` do ingresso na Story 3.9. */}
+              dele que sai o `pagador_nome` do ingresso. ⚠️ **Não é o titular:**
+              o ingresso está no nome da conta, e o campo é editável porque quem
+              paga pode ser outra pessoa (techspec
+              `docs/techspec-codigo-curto.md`). */}
           <FormularioDePagamento reservaId={reserva.id} nomeDaConta={usuario.nome} />
         </>
       ) : (

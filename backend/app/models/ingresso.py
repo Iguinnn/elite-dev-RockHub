@@ -9,8 +9,11 @@ regra do projeto é agrupar por **agregado**, e este é um agregado novo.
 **Três decisões da arquitetura estão materializadas aqui:**
 
 - **O código é um token assinado, não um identificador** (AD-5). O conteúdo do
-  QR é `ID.ASSINATURA`, e é a assinatura que impede forja: sem o segredo do
-  servidor, nem adivinhar UUID nem incrementar id produz um ingresso válido.
+  QR são 8 símbolos de base32 de Crockford, e eles são o HMAC do servidor
+  truncado — não um sorteio: sem o segredo, nem adivinhar UUID nem incrementar id
+  produz um ingresso válido. O formato antigo era `ID.ASSINATURA`, 80 caracteres,
+  e encolheu em 2026-08-12 para o campo manual da portaria ser usável na fila
+  (techspec `docs/techspec-codigo-curto.md`).
 - **Um ingresso por unidade.** Dois ingressos da Pista são duas linhas, com dois
   ids e dois códigos — e não uma linha com `quantidade = 2`. É o que permite
   validar um e o outro não, que é o comportamento inteiro da Epic 5.
@@ -67,28 +70,41 @@ class Ingresso(Base):
         Uuid, ForeignKey("setor.id"), nullable=False
     )
 
-    # O nome que a pessoa digitou no checkout, e não uma cópia de
-    # `usuario.nome`: o campo chega preenchido com o nome da conta e é editável,
-    # porque quem compra pode estar comprando para outra pessoa. Congelado aqui
-    # pelo mesmo motivo do preço em `item_reserva` — trocar o nome da conta
-    # amanhã não reescreve ingresso já emitido.
-    titular_nome: Mapped[str] = mapped_column(String(120), nullable=False)
-
-    # base64url do HMAC-SHA256 sem padding: 43 caracteres. `String(64)` dá
-    # folga para o dia em que o algoritmo mudar sem virar migração.
+    # O nome de **quem pagou**, digitado no checkout — e não o titular do
+    # ingresso (decisão do Igor, techspec `docs/techspec-codigo-curto.md`). O
+    # ingresso está no nome de quem tem a conta; o cartão pode ser de outra
+    # pessoa. A coluna nasceu como `titular_nome` na Story 3.9 e foi renomeada
+    # quando a decisão foi tomada: coluna e campo de resposta com o mesmo nome
+    # significando pessoas diferentes é armadilha que só se descobre depurando.
     #
-    # ⚠️ **Guardada só para montar o QR sem recalcular.** A validação da
-    # portaria **sempre recalcula** (AD-5), e assinatura divergente é recusada
-    # sem consultar o banco. Esta coluna nunca é fonte da verdade — comparar
-    # contra ela transformaria o banco em oráculo de assinatura, que é
-    # exatamente o que o AD-5 evita. Consequência assumida: girar o
-    # `TICKET_SIGNING_SECRET` invalida os ingressos já emitidos, que é o
-    # comportamento correto de um segredo rotacionado.
-    assinatura: Mapped[str] = mapped_column(String(64), nullable=False)
+    # ⚠️ **Hoje ela não tem leitor nenhum**, e fica de propósito: é o registro
+    # de quem pagou, que é o que a Story 3.8 decidiu persistir. Ausência de tela
+    # não a torna ruído. Congelada aqui pelo mesmo motivo do preço em
+    # `item_reserva`.
+    pagador_nome: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    # O código que vira QR: o HMAC truncado a 40 bits em base32 de Crockford,
+    # 8 símbolos exatos (`String(8)`, sem folga — o tamanho é o contrato).
+    #
+    # ⚠️ **Único e indexado, e as duas coisas pelo mesmo motivo:** a validação da
+    # portaria acha a linha **pelo código** — é o `where` dela, e é o caminho mais
+    # sensível a tempo do produto. O único impede que duas linhas respondam à
+    # mesma leitura de QR, e é ele que obriga a emissão a sortear outro `nonce`
+    # quando colide (40 bits colidem; 43 caracteres de base64 não colidiam).
+    #
+    # ⚠️ **Achar a linha pelo código não é conferir o código.** A validação
+    # **sempre recalcula** o HMAC das colunas (AD-5): esta coluna nunca é fonte da
+    # verdade na comparação, senão bastaria a alguém conseguir escrever nela.
+    # Consequência assumida: girar o `TICKET_SIGNING_SECRET` invalida os
+    # ingressos já emitidos, que é o comportamento correto de um segredo
+    # rotacionado.
+    codigo: Mapped[str] = mapped_column(
+        String(8), nullable=False, unique=True, index=True
+    )
 
     # `secrets.token_urlsafe(24)` → 32 caracteres. É o que faz dois ingressos do
-    # mesmo evento, do mesmo setor e da mesma reserva terem assinaturas
-    # diferentes mesmo com o mesmo segredo.
+    # mesmo evento, do mesmo setor e da mesma reserva terem códigos diferentes
+    # mesmo com o mesmo segredo.
     #
     # ⚠️ **Nunca sai do servidor**, ao contrário do `share_token` logo abaixo,
     # que sai do mesmo gerador — ver o par de docstrings em `core/seguranca.py`.

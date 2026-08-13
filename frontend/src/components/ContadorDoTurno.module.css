@@ -1,0 +1,97 @@
+/* O painel do turno: quatro números em faixa própria (Story 5.6).
+
+   ┌──────────────────────────────────────────┐
+   │ LEITOR                                   │
+   │ Capital Inicial — Cine Lido              │  ← o cabeçalho, no page.module.css
+   │ QUI, 13 AGO 2026 · 12H00 · CINE LIDO     │
+   │ ─────────────────────────────────────────│
+   │ ENTRADAS  INVÁLIDOS  JÁ USADOS  OUTRO SH │  ← 9px, fumaça
+   │ 32        0          0          0        │  ← 22px; o 1º em cal, os 3 em fumaça
+   │ ─────────────────────────────────────────│
+   │ ┌──────────────────────────────────────┐ │
+   │ │          LER PELA CÂMERA             │ │
+   │ └──────────────────────────────────────┘ │
+   └──────────────────────────────────────────┘
+
+   ⚠️ **Faixa própria, e é a terceira forma que este bloco teve** (decisão do
+   Igor, na tela). Dentro do cabeçalho ele só sabia sumir ou competir com o nome
+   do show; aqui ele tem território, e o conjunto carrega a presença que nenhum
+   número sozinho precisava carregar. O porquê completo está no `ContadorDoTurno.tsx`.
+
+   **A hierarquia é por cor, não por corpo**: os quatro números têm a mesma
+   medida, e é isso que faz a faixa ler como grade. Diferenciar por tamanho
+   desmontaria justamente o que a decisão comprou.
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero, e nenhuma transição — o
+   número troca a cada leitura, e animação aqui seria movimento no meio do turno
+   (EXPERIENCE.md#Carregando). */
+
+/* ⚠️ **`max-width: 420px`, a mesma coluna do `.leitor`.** Sem isto, no desktop as
+   quatro colunas se espalham pelos 1180px do `.conteudo` e viram quatro números
+   perdidos numa faixa larga, desalinhados de tudo o que vem abaixo. O fio do
+   cabeçalho continua atravessando a largura toda — é ele que separa as camadas da
+   tela; a coluna é onde o trabalho acontece.
+
+   **`repeat(4, 1fr)` e não `auto-fit`**: com `minmax`, larguras intermediárias
+   caem em três colunas e sobra uma sozinha na segunda fila. Quatro sempre, ou o
+   2×2 do bloco de baixo — nada entre os dois. */
+.contador {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px 10px;
+  max-width: 420px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Abaixo de 420px cada coluna ficaria com ~72px, e o número de dois dígitos
+   encosta na etiqueta da vizinha. Duas por linha devolvem o dobro de largura sem
+   quebrar nenhuma etiqueta em duas linhas — que é o que desalinharia os números
+   entre si e desfaria a grade.
+
+   O corte é em 420 porque é a largura da própria coluna: abaixo dela a tela
+   deixou de caber o desenho, não o contrário. */
+@media (max-width: 420px) {
+  .contador {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* `flex` em coluna, e não duas linhas soltas: é o que mantém a etiqueta colada no
+   número dela quando a faixa vira 2×2 e as alturas passam a variar. */
+.coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* Mesma anatomia do `.kicker` global, um passo menor em corpo e em entreletra:
+   aqui são quatro etiquetas dividindo 420px, e os 10px com 0,22em do global
+   estouram `INVÁLIDOS` na coluna de 96px. */
+.rotulo {
+  font: 600 9px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+  white-space: nowrap;
+}
+
+/* ⚠️ **`--fumaca` é o padrão e `--cal` é a exceção**, no molde do `data-veredito`
+   do `Veredito.module.css`: o seletor de destaque é um só, e é o das entradas.
+   Três recusas em `--cal` fariam quatro números do mesmo peso, sem nada dizendo
+   qual olhar primeiro.
+
+   **Não é `--brasa`**: recusa contada é registro, não erro acontecendo — o
+   vermelho é do veredito, na hora em que ele aparece. E não é `--neon`, que é o
+   acento único da ação primária: o contador competiria com o *Validar* logo
+   abaixo, a única coisa desta tela que se toca. */
+.numero {
+  font: 700 22px/1 var(--mono);
+  letter-spacing: 0.02em;
+  color: var(--fumaca);
+}
+
+.numero[data-destaque] {
+  color: var(--cal);
+}

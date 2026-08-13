@@ -1,0 +1,182 @@
+/* A lista de turnos (Story 5.1).
+
+   ┌──────────────────────────────────────────┐
+   │ Turnos                          PORTARIA │  ← título e kicker, com fio
+   │ ─────────────────────────────────────────│
+   │ SEX                                      │
+   │  15   Sepultura                    21h00 │  ← o bloco inteiro é o alvo
+   │ AGO   ESPAÇO UNIMED · SÃO PAULO          │
+   │ 2026                                     │
+   │ ─────────────────────────────────────────│
+
+   **Projetada primeiro para tela pequena** (EXPERIENCE.md) — é a única do
+   produto que é. Tudo aqui é maior do que nas telas equivalentes do cliente e do
+   organizador, e não é generosidade: quem lê está em pé, à noite, com pressa.
+
+   ⚠️ **"Primeiro para tela pequena" não virou "coluna estreita"** (decisão do
+   Igor, 2026-08-12). A primeira versão fechava a casca em 560px e ficou
+   visivelmente mais magra que todo o resto do produto — a diferença lia como
+   defeito de layout, não como escolha. A medida agora é a mesma `.conteudo` do
+   `(site)`. O que sobrevive do mobile-first é o que de fato importa na fila da
+   porta: alvo de 44px, tipografia grande, uma coluna só.
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
+
+.pagina {
+  padding: 40px 0 96px;
+}
+
+/* Mesma anatomia do título de "Meus eventos" e "Meus ingressos": serifada
+   grande, kicker do outro lado, fio embaixo. Repetido em vez de importado
+   porque CSS Module não compartilha classe entre arquivos. */
+.secTitulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.secTitulo h1 {
+  font: 400 25px/1 var(--serif);
+  letter-spacing: -0.02em;
+}
+
+/* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  font: 19px/1.5 var(--serif);
+}
+
+.lista {
+  margin-top: 22px;
+  border-top: 1px solid var(--fio);
+}
+
+/* ---- um turno ------------------------------------------------------------ */
+
+/* ⚠️ **UX-DR6 vive aqui.** Os 18px de `padding` vertical mais o conteúdo passam
+   folgadamente dos 44px, e o alvo é o bloco inteiro — não o nome do show. É a
+   diferença entre acertar e errar o toque com uma mão, no escuro. */
+.turno {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
+  gap: 4px 18px;
+  align-items: center;
+  padding: 18px 8px 18px 4px;
+  border-bottom: 1px solid var(--fio);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Só quem é link responde ao toque. O bloco travado não muda de fundo: fingir
+   interação onde não há é pior que não ter nenhuma. */
+.turno:hover {
+  background: var(--breu2);
+}
+
+.travado:hover {
+  background: none;
+}
+
+/* A coluna da data, empilhada: dia da semana e mês/ano em mono versalete, o dia
+   em serifada grande no meio. A tipografia separa o que decide (o dia) do que
+   situa — DESIGN.md#Typography, o mesmo recorte da fila pública. */
+.data {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.diaDaSemana,
+.mesEAno {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.dia {
+  font: 400 30px/1 var(--serif);
+}
+
+.corpo {
+  min-width: 0;
+}
+
+.nome {
+  font: 400 21px/1.2 var(--serif);
+  overflow-wrap: break-word;
+}
+
+.origem {
+  margin-top: 5px;
+  font: 10px/1.4 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* A frase do portão fechado. Em `--fumaca` e não em `--brasa`: não é erro nem
+   recusa — é uma hora que ainda não chegou, e pintá-la de vermelho faria a
+   escala normal da noite parecer um problema. */
+.fechado {
+  margin-top: 8px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--fumaca);
+}
+
+/* O movimento do turno aberto (Story 5.6). **Mesmas medidas do `.fechado`**, e
+   não é economia de linha: os dois ocupam a mesma posição no cartão e nunca
+   aparecem juntos — com corpos diferentes, a fila inteira mudaria de altura
+   conforme os shows fossem abrindo ao longo da noite.
+
+   ⚠️ **`--cal` e não `--fumaca`, ao contrário do vizinho.** A frase do portão
+   fechado é uma condição que ainda não passou; o número é o dado que a pessoa
+   veio buscar antes de escolher a porta. Em fumaça ele leria como observação de
+   rodapé. */
+.entradas {
+  margin-top: 8px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cal);
+}
+
+.hora {
+  font: 15px/1 var(--mono);
+  letter-spacing: 0.06em;
+  align-self: center;
+}
+
+/* O bloco travado inteiro recua um passo de contraste — menos o suficiente para
+   se distinguir do que está aberto, mais o suficiente para continuar legível a
+   três metros. Sem `opacity` na caixa toda: ela apagaria também o fio da
+   separação e o quebraria visualmente do resto da lista. */
+.travado .nome,
+.travado .dia {
+  color: var(--fumaca);
+}
+
+/* Abaixo de 380px (o iPhone SE ainda é o piso real de uma fila de show) a hora
+   sai da terceira coluna e vai para baixo do dia, onde há espaço sobrando. */
+@media (max-width: 380px) {
+  .turno {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+
+  .hora {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 4px;
+  }
+
+  .corpo {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}

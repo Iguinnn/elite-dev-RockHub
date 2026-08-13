@@ -44,6 +44,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
+# ⚠️ **Um schema importando do outro, e a seta aponta só para este lado.**
+# `schemas/ingresso.py` não conhece este módulo, e não pode passar a conhecer:
+# seria ciclo de import. O `RecusasDoTurno` mora lá porque nasce da validação, que
+# é assunto do ingresso; aqui ele é carona no turno do leitor.
+from app.schemas.ingresso import RecusasDoTurno
+
 
 # Copiado de `schemas/auth.py`, não importado: lá ele é `_limpar_texto`, com o
 # `_` que o declara privado do módulo. Duas linhas duplicadas custam menos que
@@ -550,3 +556,88 @@ class EventoSaida(BaseModel):
 
     # `organizador_id` fica de fora: quem acabou de publicar já sabe quem é, e
     # devolvê-lo só daria a impressão de que é um campo que se escolhe.
+
+
+class TurnoDaPortaria(BaseModel):
+    """Um evento em que **quem está na porta** foi escalado (Story 5.1).
+
+    A primeira leitura da `evento_portaria` desde que a Story 2.5 passou a
+    gravá-la. É a lista de "onde eu trabalho" — não um inventário e não uma
+    vitrine.
+
+    ⚠️ **`aberto` entrou na Story 5.2, e ele reverte a decisão que este
+    docstring anunciava.** A redação anterior dizia, com todas as letras, que
+    nenhum campo derivado entraria aqui — que o portão das duas horas era regra
+    **da tela**, comparada com o relógio de quem lê, e que "se a Story 5.2
+    decidir barrar validação fora da janela, ela calcula a própria regra no
+    servidor". A 5.2 decidiu barrar, e é aí que a frase se desfaz sozinha: com a
+    regra valendo **nos dois lados**, duas constantes de duas horas em duas
+    camadas discordariam algum dia, e a tela mostraria a porta aberta enquanto a
+    API recusa com `403 EVENTO_NAO_ABERTO`. Uma regra, um relógio, um lugar — e
+    o lugar passa a ser o `ABERTURA_DOS_PORTOES` de `services/evento.py`.
+
+    A alternativa descartada foi duplicar a constante nas duas camadas com um
+    comentário pedindo que ficassem iguais. Comentário não é mecanismo.
+
+    **O que ele continua não devolvendo, e por quê.** Nem `capacidade`, nem
+    `vendidos`, nem `setores` — inventário é do organizador. O `entradas` que a
+    Story 5.6 acrescentou logo abaixo **não** é uma exceção a isso: ele conta
+    `ingresso.usado_em`, ou seja, quem passou pela porta, e vendidos não é
+    entrou. Os dois números respondem a perguntas diferentes, e é justamente por
+    isso que o estoque continua fora daqui. O corte quem garante é o
+    `response_model` da rota, e não a tela: a mesma disciplina que a Story 3.1
+    inaugurou.
+
+    **Sem `from_attributes`, e a ausência é consequência do `aberto`.** Enquanto
+    os cinco campos eram colunas do `Evento`, a conversão de fato acontecia e a
+    declaração era honesta. `aberto` não é coluna nenhuma: é o relógio comparado
+    com `data_hora`, ou seja, exatamente a projeção que faltava. O critério
+    deste módulo é sempre o mesmo — declarar a conversão só quando ela acontece
+    —, e agora ela não acontece mais: quem monta o schema é `listar_escalados`,
+    campo a campo.
+    """
+
+    id: UUID
+    nome: str
+    data_hora: datetime
+    local: str
+    # Anulável desde a Story 2.3, e a chave **continua no corpo** quando é nula:
+    # a ficha da tela precisa distinguir "sem cidade" de "campo que não veio"
+    # para não imprimir um separador solto. Nada de `exclude_none` aqui.
+    cidade: str | None
+    # `True` quando `data_hora - ABERTURA_DOS_PORTOES <= agora`. É a **mesma**
+    # função que a dependência `exigir_porta_aberta` chama antes de deixar
+    # validar um ingresso, e é essa identidade que impede a tela e a rota de
+    # discordarem sobre um turno na borda da janela.
+    aberto: bool
+
+    # Quantas pessoas já entraram neste evento — **de todas as portas** (Story
+    # 5.6). `COUNT` sobre `ingresso.usado_em IS NOT NULL`, sem filtrar por quem
+    # validou: com duas portas na mesma casa, o número da minha própria digitação
+    # não mede a fila.
+    #
+    # ⚠️ **Ele entra no schema da lista, e não só no do leitor**, e a consequência
+    # é que **duas telas** passam a recebê-lo: o cartão de `/portaria` desenha o
+    # número de cada turno aberto. Era o campo que faltava para a lista dizer onde
+    # o movimento está antes de a portaria escolher a porta.
+    entradas: int
+
+
+class TurnoDoLeitor(TurnoDaPortaria):
+    """O turno com as três recusas — `GET /portaria/eventos/{id}` (Story 5.6).
+
+    **Herda em vez de repetir**, e a herança é a decisão: os seis campos de cima
+    são exatamente os mesmos, e a única diferença entre a lista e o leitor é este
+    objeto a mais. Duas classes irmãs com seis campos copiados divergiriam no
+    primeiro campo novo.
+
+    ⚠️ **As três recusas não entram na lista, e a assimetria é de propósito.** O
+    cartão de `/portaria` desenha um número só — "onde está o movimento" —, e
+    `INVÁLIDOS 2 · JÁ UTILIZADOS 1 · OUTRO SHOW 0` em cada item de uma lista de
+    turnos seria ruído operacional numa tela de escolha. Elas custam um `GROUP BY`
+    por evento, e a lista teria de pagá-lo por item para desenhar o que não
+    desenha. O contrato acompanha a tela: campo sem consumidor não viaja
+    (disciplina desde a 3.1).
+    """
+
+    recusas: RecusasDoTurno

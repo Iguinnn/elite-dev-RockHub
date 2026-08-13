@@ -75,9 +75,10 @@
   line-height: 0;
 }
 
-/* O payload tem ~80 caracteres; espaçado em blocos de 4 (ver o comentário no
-   componente) para o olho ter onde parar ao conferir contra a tela da porta.
-   `overflow-wrap` porque, mesmo em blocos, é uma coluna estreita no celular. */
+/* O payload tem 8 caracteres desde 2026-08-12 (era ~80); espaçado em blocos de
+   4 (ver o comentário no componente) para o olho ter onde parar ao ler o código
+   em voz alta na fila. O `max-width` e o `overflow-wrap` ficam: eles não custam
+   nada no tamanho novo e continuam certos se um dia o código crescer. */
 .codigo {
   max-width: 34ch;
   text-align: center;

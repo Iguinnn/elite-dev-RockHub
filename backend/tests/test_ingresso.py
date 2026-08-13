@@ -9,33 +9,42 @@ duas são fáceis de quebrar sem quebrar nenhum teste ingênuo:**
 - **A emissão só acontece depois do `_transicionar` vencer** (AD-14). Movida
   para antes, ou protegida por um `if ja_tem_ingresso`, ela continua passando em
   todo teste sequencial e emite ingresso duplo no reprocessamento.
-- **A assinatura é recalculada, nunca comparada com a coluna** (AD-5). Comparar
+- **O código é recalculado, nunca comparado com a coluna** (AD-5). Comparar
   com o que está gravado dá o mesmo resultado em todo caso feliz e transforma o
   banco em oráculo de assinatura.
 
-**O teste de forja é o que mais importa aqui**: ele altera um caractere da
-assinatura e exige que a verificação falhe **sem tocar o banco** — por isso ele
-chama `conferir_codigo` direto, sem sessão nenhuma.
+**O teste de forja é o que mais importa aqui**: ele altera um símbolo do código e
+exige que a verificação falhe **sem tocar o banco** — por isso ele chama
+`conferir_codigo` direto, sem sessão nenhuma.
+
+⚠️ **O código encolheu de 80 para 8 caracteres em 2026-08-12** (techspec
+`docs/techspec-codigo-curto.md`), e com ele três coisas mudaram de forma aqui:
+não há mais `ID.ASSINATURA` para partir no ponto, a normalização de entrada
+passou a ser parte do contrato, e **colisão de código deixou de ser
+impossível** — 40 bits colidem, e a emissão sorteia outro `nonce` quando isso
+acontece.
 """
 
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.erros import ErroDeDominio
 from app.core.seguranca import (
-    SEPARADOR_DO_CODIGO,
-    assinar_ingresso,
+    TAMANHO_DO_CODIGO,
     conferir_codigo,
+    gerar_codigo,
     gerar_hash,
     gerar_nonce,
     gerar_share_token,
-    montar_codigo,
+    normalizar_codigo,
 )
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
@@ -197,7 +206,7 @@ def test_cada_ingresso_tem_id_e_codigo_proprios(
         select(Ingresso).where(Ingresso.reserva_id == reserva.id)
     ).all()
     assert len({g.nonce for g in gravados}) == 3
-    assert len({g.assinatura for g in gravados}) == 3
+    assert len({g.codigo for g in gravados}) == 3
 
 
 def test_dois_setores_geram_ingressos_do_setor_certo(
@@ -226,15 +235,22 @@ def test_dois_setores_geram_ingressos_do_setor_certo(
     assert [i["setor_nome"] for i in ingressos].count("Camarote") == 1
 
 
-def test_o_titular_e_o_nome_digitado_no_checkout(
+def test_o_titular_e_a_conta_e_o_nome_do_checkout_vai_para_o_pagador(
     cliente: TestClient,
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """Decisão do Igor: o campo vem preenchido com o nome da conta, e é editável.
+    """Decisão do Igor: **o ingresso é da conta**, o cartão pode ser de outro.
 
-    Quem compra pode estar comprando para outra pessoa — então o que vale é o
-    que foi digitado, não `usuario.nome`.
+    O campo do checkout vem preenchido com o nome da conta e é editável — a
+    namorada compra na conta dela, eu ponho meu cartão. O que foi digitado é
+    quem **pagou**, e vai para `ingresso.pagador_nome`, que não tem leitor em
+    tela nenhuma; o titular do canhoto é `usuario.nome`.
+
+    ⚠️ **Este teste afirmava exatamente o contrário até 2026-08-12** (techspec
+    `docs/techspec-codigo-curto.md`). As duas asserções abaixo são a decisão
+    invertida, e não uma correção de bug: se um dia o titular voltar a ser o
+    nome do checkout, é aqui que se vê.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-i4@exemplo.com")
     comprador = fabricar_usuario(PapelUsuario.CLIENTE, "cli-i4@exemplo.com")
@@ -246,9 +262,15 @@ def test_o_titular_e_o_nome_digitado_no_checkout(
         f"/reservas/{reserva.id}/pagamento", json=_corpo(nome="Fulana de Tal")
     ).json()["ingressos"]
 
-    # A conta se chama "Alguém" (fixture) — o ingresso, não.
-    assert ingressos[0]["titular_nome"] == "Fulana de Tal"
+    # A conta se chama "Alguém" (fixture), e é ela que aparece no canhoto.
+    assert ingressos[0]["titular_nome"] == comprador.nome
     assert comprador.nome != "Fulana de Tal"
+
+    # E o nome digitado não se perdeu: ele está na coluna do pagador.
+    gravado = sessao.scalars(
+        select(Ingresso).where(Ingresso.reserva_id == reserva.id)
+    ).one()
+    assert gravado.pagador_nome == "Fulana de Tal"
 
 
 def test_recusa_nao_emite_ingresso(
@@ -345,15 +367,27 @@ def test_reserva_pendente_nao_tem_ingresso_no_contrato(
 
 
 # --------------------------------------------------------------------------- #
-# AC3 e AC5 — o código é `ID.ASSINATURA`, e assinatura adulterada não passa
+# AC3 e AC5 — o código são 8 símbolos de Crockford, e código adulterado não passa
 # --------------------------------------------------------------------------- #
 
+# O alfabeto da base32 de Crockford, escrito aqui à mão de propósito: se o
+# `_ALFABETO` do módulo mudar, é este teste que tem de dizer não. Importá-lo faria
+# as asserções abaixo concordarem com qualquer alfabeto, inclusive um com `O` e
+# `I` de volta — que é o defeito que elas existem para pegar.
+CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-def test_o_codigo_tem_o_formato_id_ponto_assinatura(
+
+def test_o_codigo_tem_oito_simbolos_de_crockford(
     cliente: TestClient,
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
+    """8 caracteres, todos do alfabeto — e `I`, `L`, `O` e `U` fora dele.
+
+    O tamanho é o contrato (`String(8)` na coluna), e o alfabeto é o que resolve
+    de graça o AC de "não diferencia maiúsculas de minúsculas": não existe
+    minúscula nele.
+    """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-i9@exemplo.com")
     comprador = fabricar_usuario(PapelUsuario.CLIENTE, "cli-i9@exemplo.com")
     evento = _evento_publicado(sessao, organizador)
@@ -364,13 +398,78 @@ def test_o_codigo_tem_o_formato_id_ponto_assinatura(
         f"/reservas/{reserva.id}/pagamento", json=_corpo()
     ).json()["ingressos"][0]["codigo"]
 
-    id_bruto, separador, assinatura = codigo.partition(SEPARADOR_DO_CODIGO)
-    assert separador == SEPARADOR_DO_CODIGO
-    # A primeira metade é o id do ingresso, e ele existe no banco.
-    assert sessao.get(Ingresso, UUID(id_bruto)) is not None
-    # base64url de SHA-256 sem padding: 43 caracteres, e nenhum `=`.
-    assert len(assinatura) == 43
-    assert "=" not in assinatura
+    assert len(codigo) == TAMANHO_DO_CODIGO == 8
+    assert set(codigo) <= set(CROCKFORD)
+    assert not set(codigo) & set("ILOU")
+
+    # E é o código que acha a linha: é assim que a portaria vai chegar nela.
+    gravado = sessao.scalars(
+        select(Ingresso).where(Ingresso.codigo == codigo)
+    ).one()
+    assert gravado.reserva_id == reserva.id
+
+
+def test_gerar_codigo_e_deterministico_e_muda_com_qualquer_ingrediente() -> None:
+    """O mesmo trio devolve sempre o mesmo código — é o que o recálculo exige.
+
+    Um gerador que sorteasse qualquer coisa passaria em todo teste de formato e
+    reprovaria **todo ingresso legítimo** na porta, porque a validação recalcula
+    (AD-5). É esta função que não pode ter aleatoriedade nenhuma dentro.
+    """
+    ingresso_id = uuid4()
+    evento_id = uuid4()
+    nonce = gerar_nonce()
+
+    codigo = gerar_codigo(ingresso_id, evento_id, nonce)
+
+    assert gerar_codigo(ingresso_id, evento_id, nonce) == codigo
+    # E os três ingredientes entram na conta (AD-5): trocar qualquer um muda.
+    assert gerar_codigo(uuid4(), evento_id, nonce) != codigo
+    assert gerar_codigo(ingresso_id, uuid4(), nonce) != codigo
+    assert gerar_codigo(ingresso_id, evento_id, gerar_nonce()) != codigo
+
+
+def test_normalizar_codigo_aceita_o_que_a_fila_produz() -> None:
+    """`9k4m 7qx2`, `9K4M-7QX2` e `9K4M7QX2` são o mesmo valor.
+
+    É esta função que faz o AC de "não diferencia maiúsculas de minúsculas" ser
+    verdade, e ela também desfaz as confusões de leitura em voz alta: `I` e `L`
+    viram `1`, `O` vira `0`. Quem digita na porta não sabe que o alfabeto não tem
+    esses três — e não precisa saber.
+    """
+    assert normalizar_codigo("9K4M7QX2") == "9K4M7QX2"
+    assert normalizar_codigo("9k4m 7qx2") == "9K4M7QX2"
+    assert normalizar_codigo("9K4M-7QX2") == "9K4M7QX2"
+    assert normalizar_codigo("  9k4m-7qx2  ") == "9K4M7QX2"
+
+    # Os confundíveis, nas duas caixas: `I`/`L` → `1`, `O` → `0`.
+    assert normalizar_codigo("IL0O9K4M") == "11009K4M"
+    assert normalizar_codigo("il0o9k4m") == "11009K4M"
+
+
+def test_normalizar_codigo_recusa_o_que_nao_e_codigo() -> None:
+    """`None` para tamanho errado, símbolo fora do alfabeto e não-ASCII.
+
+    ⚠️ **O `U` não está no alfabeto de Crockford**, e por isso `UUUUUUUU` é
+    recusado. Quem testar à mão não invente código com `U` e conclua que a
+    validação está quebrada — ela está certa.
+
+    ⚠️ **O caso não-ASCII é o que evitava um `500` na fila da porta** (code review
+    da Epic 3): `hmac.compare_digest` com `str` fora do ASCII levanta
+    `TypeError`, não devolve `False`. A guarda mudou de lugar quando o código
+    encolheu, e continua sendo esta função que a exerce.
+    """
+    for lixo in (
+        "",
+        "9K4M7QX",  # sete
+        "9K4M7QX23",  # nove
+        "9K4M7QX!",  # símbolo fora do alfabeto
+        "UUUUUUUU",  # `U` não existe em Crockford
+        "9K4M7QXÇ",  # não-ASCII com o tamanho certo
+        "アイウエオカキク",  # oito caracteres, nenhum ASCII
+        "9K4M 7QX2 EXTRA",
+    ):
+        assert normalizar_codigo(lixo) is None, lixo
 
 
 def test_share_token_tem_32_caracteres_e_nao_se_repete() -> None:
@@ -412,88 +511,236 @@ def test_share_token_tem_32_caracteres_e_nao_se_repete() -> None:
     assert len({gerar_share_token() for _ in range(500)}) == 500
 
 
-def test_assinatura_adulterada_falha_sem_consultar_o_banco() -> None:
+def test_codigo_adulterado_falha_sem_consultar_o_banco() -> None:
     """⚠️ **Sem fixture de sessão, e a ausência dela é o teste** (AD-5).
 
-    A verificação recalcula o HMAC e compara; ela não conhece o banco, não
-    recebe sessão e não teria como consultar nada. Se um dia alguém trocar o
-    recálculo por um `SELECT ... WHERE assinatura = :valor`, este teste para de
-    compilar antes de parar de passar.
+    A verificação recalcula o HMAC das colunas e compara; ela não conhece o
+    banco, não recebe sessão e não teria como consultar nada. Se um dia alguém
+    trocar o recálculo por um `SELECT ... WHERE codigo = :valor`, este teste para
+    de compilar antes de parar de passar.
+
+    ⚠️ **A adulteração é no PRIMEIRO símbolo, nunca no último** — a armadilha
+    registrada no code review da Epic 3. Lá o motivo era aritmético: os 43
+    caracteres de base64 tinham 2 bits sobrando no último símbolo, então `A`, `B`,
+    `C` e `D` decodificavam para os mesmos bytes e a "adulteração" não adulterava
+    nada em ~4,7% das execuções — o teste que prova que o ingresso não é forjável
+    passava sem ter forjado. Aqui os 40 bits fecham exatos com os 8 símbolos e
+    nenhuma posição tem folga, mas a regra fica: **trocar o último caractere não é
+    o teste que se quer escrever**, porque ele depende de uma conta de bits em vez
+    de depender do HMAC.
     """
     ingresso_id = uuid4()
     evento_id = uuid4()
     nonce = gerar_nonce()
-    codigo = montar_codigo(ingresso_id, assinar_ingresso(ingresso_id, evento_id, nonce))
+    codigo = gerar_codigo(ingresso_id, evento_id, nonce)
 
-    assert conferir_codigo(codigo, evento_id, nonce) is True
+    assert conferir_codigo(codigo, ingresso_id, evento_id, nonce) is True
 
-    # ⚠️ **Um caractere trocado no INÍCIO da assinatura, nunca no fim** (code
-    # review da Epic 3). Trocar o último não adultera coisa nenhuma numa fração
-    # dos casos: o HMAC-SHA256 tem 32 bytes, que em base64url sem padding dão 43
-    # caracteres — 258 bits para 256 de dado. Os **2 bits sobrando ficam no
-    # último caractere**, então `A`, `B`, `C` e `D` decodificam para os mesmos
-    # bytes. Em ~4,7% das execuções a "adulteração" produzia uma assinatura
-    # byte a byte idêntica, e este teste — o que existe para provar que o
-    # ingresso não é forjável — passava sem ter forjado nada.
-    #
-    # O gêmeo deste defeito estava em `test_seguranca.py`, onde ele se
-    # manifestava como falha intermitente da suíte; aqui ele era pior, porque
-    # a asserção é `is False` e a colisão passa despercebida em silêncio.
-    #
-    # O primeiro caractere carrega 6 bits significativos: trocá-lo muda sempre.
-    ingresso_bruto, _, assinatura = codigo.partition(SEPARADOR_DO_CODIGO)
-    adulterada = ("B" if assinatura[0] == "A" else "A") + assinatura[1:]
-    adulterado = f"{ingresso_bruto}{SEPARADOR_DO_CODIGO}{adulterada}"
+    # Outro símbolo do alfabeto no lugar do primeiro, sempre diferente do que
+    # estava lá — nada de `+ 1` no índice, que sairia do alfabeto no último.
+    trocado = CROCKFORD[1] if codigo[0] == CROCKFORD[0] else CROCKFORD[0]
+    adulterado = trocado + codigo[1:]
 
     assert adulterado != codigo
-    assert conferir_codigo(adulterado, evento_id, nonce) is False
+    assert conferir_codigo(adulterado, ingresso_id, evento_id, nonce) is False
+
+    # E o do meio também, para não haver posição privilegiada.
+    meio = CROCKFORD[1] if codigo[4] == CROCKFORD[0] else CROCKFORD[0]
+    assert (
+        conferir_codigo(
+            codigo[:4] + meio + codigo[5:], ingresso_id, evento_id, nonce
+        )
+        is False
+    )
 
 
-def test_o_codigo_nao_vale_para_outro_evento_nem_outro_nonce() -> None:
-    """Os três componentes entram na conta (AD-5), e trocar qualquer um invalida."""
+def test_o_codigo_nao_vale_para_outro_ingresso_evento_nem_nonce() -> None:
+    """Os três componentes entram na conta (AD-5), e trocar qualquer um invalida.
+
+    É o que impede o código de um ingresso valer no show do lado, ou de um
+    `nonce` reaproveitado produzir dois códigos iguais de propósito.
+    """
     ingresso_id = uuid4()
     evento_id = uuid4()
     nonce = gerar_nonce()
-    codigo = montar_codigo(ingresso_id, assinar_ingresso(ingresso_id, evento_id, nonce))
+    codigo = gerar_codigo(ingresso_id, evento_id, nonce)
 
-    assert conferir_codigo(codigo, uuid4(), nonce) is False
-    assert conferir_codigo(codigo, evento_id, gerar_nonce()) is False
-    # E o id: o mesmo par (evento, nonce) com outro id é outro código.
-    outro = montar_codigo(uuid4(), assinar_ingresso(uuid4(), evento_id, nonce))
-    assert conferir_codigo(outro, evento_id, nonce) is False
+    assert conferir_codigo(codigo, uuid4(), evento_id, nonce) is False
+    assert conferir_codigo(codigo, ingresso_id, uuid4(), nonce) is False
+    assert conferir_codigo(codigo, ingresso_id, evento_id, gerar_nonce()) is False
 
 
-def test_codigo_malformado_nao_estoura(
-) -> None:
+def test_conferir_codigo_normaliza_a_entrada() -> None:
+    """O que a portaria digita confere igual ao que a câmera lê.
+
+    A mesma função serve as três formas de entrada da Epic 5 — QR, digitação e
+    colagem —, e é a normalização que faz as três chegarem ao mesmo lugar.
+    """
+    ingresso_id = uuid4()
+    evento_id = uuid4()
+    nonce = gerar_nonce()
+    codigo = gerar_codigo(ingresso_id, evento_id, nonce)
+
+    for forma in (
+        codigo.lower(),
+        f"{codigo[:4]} {codigo[4:]}",
+        f"{codigo[:4]}-{codigo[4:]}",
+        f"  {codigo.lower()}  ",
+    ):
+        assert conferir_codigo(forma, ingresso_id, evento_id, nonce) is True, forma
+
+
+def test_codigo_malformado_nao_estoura() -> None:
     """Lixo entra, `False` sai — nunca exceção.
 
-    A portaria vai alimentar isto com o que a câmera ler, e o que a câmera lê
-    nem sempre é um código deste sistema.
+    A portaria vai alimentar isto com o que a câmera ler, e o que a câmera lê nem
+    sempre é um código deste sistema.
 
-    ⚠️ **Os três últimos são o que faltava** (code review da Epic 3). Os cinco
-    primeiros saem cedo — pelo `if not separador or not assinatura` ou pelo
-    `except ValueError` do `UUID` —, e **nenhum deles chegava ao
-    `compare_digest`**, que é a única linha perigosa da função. `compare_digest`
-    com `str` só aceita ASCII: fora dele ele levanta `TypeError`, não devolve
-    `False`. Um QR que decodificasse como `<uuid>.çç` subia até o handler
-    genérico e virava `500 ERRO_INTERNO` na fila da porta — para um código
-    simplesmente inválido, que é o caso que este teste promete cobrir.
+    ⚠️ **Os últimos três são o que faltava** (code review da Epic 3).
+    `compare_digest` com `str` só aceita ASCII: fora dele ele levanta
+    `TypeError`, não devolve `False`. Um QR que decodificasse com acento subia até
+    o handler genérico e virava `500 ERRO_INTERNO` na fila da porta — para um
+    código simplesmente inválido, que é o caso que este teste promete cobrir. Quem
+    barra agora é o `normalizar_codigo`, e a asserção não muda.
     """
+    ingresso_id = uuid4()
     evento_id = uuid4()
     nonce = gerar_nonce()
 
     for lixo in (
         "",
-        "sem-separador",
-        ".",
-        "nao-e-uuid.assinatura",
-        f"{uuid4()}.",
-        # Chegam ao `compare_digest` com um `id` válido e assinatura não-ASCII.
-        f"{uuid4()}.çç",
-        f"{uuid4()}.assinatura-com-acentuação",
-        f"{uuid4()}.アイ",
+        "curto",
+        "muito-longo-para-ser-codigo",
+        f"{uuid4()}",  # o formato antigo do QR, que não vale mais
+        "9K4M7QX!",
+        "UUUUUUUU",
+        "9K4M7QXÇ",
+        "assinatura-com-acentuação",
+        "アイ",
     ):
-        assert conferir_codigo(lixo, evento_id, nonce) is False
+        assert conferir_codigo(lixo, ingresso_id, evento_id, nonce) is False, lixo
+
+
+def test_dois_ingressos_nao_podem_gravar_o_mesmo_codigo(
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O índice único de `ingresso.codigo`, lido do banco.
+
+    ⚠️ **Sem ele, duas linhas responderiam à mesma leitura de QR** — e a validação
+    da porta, que acha a linha *pelo* código, escolheria uma das duas em silêncio.
+    Com 40 bits a colisão deixou de ser impossível, e é o índice que a transforma
+    em `IntegrityError` no lugar certo: dentro da emissão, onde sortear outro
+    `nonce` resolve.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-uq@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "cli-uq@exemplo.com")
+    evento = _evento_publicado(sessao, organizador)
+    reserva = _reserva(sessao, comprador, evento, (evento.setores[0], 2))
+
+    for _ in range(2):
+        sessao.add(
+            Ingresso(
+                reserva_id=reserva.id,
+                evento_id=evento.id,
+                setor_id=evento.setores[0].id,
+                pagador_nome="Quem pagou",
+                # O mesmo código nas duas linhas, à mão: o que o HMAC nunca
+                # produziria por acidente é exatamente o que o índice tem de
+                # recusar.
+                codigo="9K4M7QX2",
+                nonce=gerar_nonce(),
+            )
+        )
+
+    with pytest.raises(IntegrityError):
+        sessao.flush()
+
+
+def test_codigo_repetido_na_emissao_sorteia_outro_nonce(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """⚠️ **Pagamento aprovado não pode estourar por colisão de código.**
+
+    É a primeira armadilha da techspec `docs/techspec-codigo-curto.md`: com 40
+    bits e o índice único, dois códigos iguais viram `IntegrityError` **dentro da
+    transação que acabou de marcar a reserva `PAGA`**. A chance é ínfima e o
+    desfecho é o pior do produto — cobrança feita, `500` na tela —, então a
+    emissão sorteia outro `nonce` e recalcula.
+
+    A colisão é forçada aqui porque **nenhum teste honesto a produz por sorteio**:
+    esperar 40 bits colidirem é esperar bilhões de execuções. O `gerar_codigo`
+    visto por `services/reserva.py` devolve um código já ocupado na primeira
+    chamada e o real nas seguintes.
+
+    ⚠️ **O que este teste protege de verdade é o `begin_nested()`.** Sem o
+    SAVEPOINT, o `IntegrityError` invalida a transação inteira — inclusive o
+    `UPDATE` que levou a reserva a `PAGA` —, a segunda tentativa grava num
+    contexto morto e a requisição termina em `PendingRollbackError`. Trocar o
+    savepoint por um `try/except` simples deixa o resto da suíte verde e quebra
+    aqui.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-col@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "cli-col@exemplo.com")
+    evento = _evento_publicado(sessao, organizador)
+    setor = evento.setores[0]
+
+    # O ocupante do código: um ingresso de outra reserva, já gravado.
+    dona_do_codigo = _reserva(sessao, comprador, evento, (setor, 1))
+    ocupado = "9K4M7QX2"
+    sessao.add(
+        Ingresso(
+            reserva_id=dona_do_codigo.id,
+            evento_id=evento.id,
+            setor_id=setor.id,
+            pagador_nome="Quem chegou primeiro",
+            codigo=ocupado,
+            nonce=gerar_nonce(),
+        )
+    )
+    sessao.flush()
+
+    reserva = _reserva(sessao, comprador, evento, (setor, 1))
+    _entrar(cliente, comprador)
+
+    nonces: list[str] = []
+
+    def gerar_codigo_que_colide_uma_vez(
+        ingresso_id: object, evento_id: object, nonce: str
+    ) -> str:
+        nonces.append(nonce)
+        if len(nonces) == 1:
+            return ocupado
+        return gerar_codigo(ingresso_id, evento_id, nonce)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        "app.services.reserva.gerar_codigo", gerar_codigo_que_colide_uma_vez
+    )
+
+    resposta = cliente.post(f"/reservas/{reserva.id}/pagamento", json=_corpo())
+
+    # O pagamento passou, e a reserva ficou `PAGA` — o savepoint preservou tudo
+    # que a transação já tinha feito.
+    assert resposta.status_code == 200
+    assert resposta.json()["estado"] == EstadoReserva.PAGA.value
+
+    # Duas tentativas, com **nonces diferentes**: o segundo não é o primeiro
+    # reaproveitado, senão o código recalculado seria o mesmo e colidiria de novo.
+    assert len(nonces) == 2
+    assert nonces[0] != nonces[1]
+
+    emitido = sessao.scalars(
+        select(Ingresso).where(Ingresso.reserva_id == reserva.id)
+    ).one()
+    assert emitido.codigo != ocupado
+    # E o código gravado é o do `nonce` gravado: sem isso, o ingresso existe e
+    # não passa na porta.
+    assert (
+        conferir_codigo(emitido.codigo, emitido.id, evento.id, emitido.nonce) is True
+    )
 
 
 def test_ingresso_de_outra_pessoa_nao_aparece(

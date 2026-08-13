@@ -1,0 +1,97 @@
+/* O veredito da porta, legível a três metros (Story 5.4).
+
+   ┌══════════════════════════════════════════┐  ← 2px, na tinta do veredito
+   ║                                          ║
+   ║                   ✓                      ║  ← símbolo, 44px, currentColor
+   ║                                          ║
+   ║               V Á L I D O                ║  ← palavra, mono 46px, a tinta
+   ║                                          ║
+   ║ ──────────────────────────────────────── ║
+   ║        Pista · Igor Duarte Vieira        ║  ← detalhe, serifada, cal
+   └══════════════════════════════════════════┘
+
+   ⚠️ **Duas tintas: `--verde` no VÁLIDO, `--brasa` nos outros três.** O porquê
+   está no docstring do `Veredito.tsx` e não se repete aqui — mas a consequência
+   é deste arquivo: existe **um** seletor de exceção, e ele é o do VÁLIDO.
+
+   ⚠️ **Sem fundo, sem raio, sem sombra (UX-DR3)**, ao contrário do protótipo,
+   que pintava cada veredito com um `rgba()` de 7% da própria cor. Aquilo é
+   superfície tingida, que o sistema não tem em lugar nenhum — e sobre o breu a
+   borda de 2px já separa o bloco com folga. Nenhum hex: só `var(--token)`.
+
+   ⚠️ **Nenhuma transição e nenhum keyframe.** O bloco troca de conteúdo dezenas
+   de vezes por turno e qualquer entrada animada seria movimento no meio da fila
+   (EXPERIENCE.md#Carregando). A exceção da espera de 6s do checkout é do
+   checkout. */
+
+.veredito {
+  /* A tinta padrão é a recusa, e o seletor abaixo é a exceção — não o
+     contrário. Quem garante que os quatro nomes existem é o `Record` tipado do
+     `Veredito.tsx`, não esta linha: um nome inesperado sairia vermelho **e
+     vazio**, sem símbolo e sem palavra, que é um bloco quebrado e não um
+     fallback. A defesa contra isso é o `tsc`, e ela vale enquanto os quatro
+     nomes vierem do tipo do `lib/validacao.ts`. */
+  --tinta: var(--brasa);
+
+  border: 2px solid var(--tinta);
+  /* 22px na horizontal, e não os 26 do protótipo: são 8px de coluna que a
+     palavra de 46px precisa em 360px de largura. Ver o `clamp` da `.palavra`. */
+  padding: 30px 22px;
+  text-align: center;
+  color: var(--tinta);
+}
+
+.veredito[data-veredito="VALIDO"] {
+  --tinta: var(--verde);
+}
+
+/* `display: block` porque `<svg>` é inline por padrão, e inline carrega o
+   espaço da linha de base — que apareceria como um vão irregular entre o
+   símbolo e a palavra. `margin: 0 auto` centra o bloco resultante. */
+.simbolo {
+  display: block;
+  margin: 0 auto 16px;
+}
+
+/* ⚠️ **O `clamp` é a única razão de a palavra caber no celular.** `JÁ UTILIZADO`
+   quebra no espaço, mas `UTILIZADO` é uma palavra só de 9 símbolos: em mono de
+   46px com entreletra, são ~273px, e um aparelho de 360px oferece 276px depois
+   dos 18px do `.conteudo` e dos 22px+2px deste bloco. Passa por três pixels —
+   perto demais para deixar fixo. Em 360px o `11vw` resolve 39,6px e sobra
+   folga; dos ~418px em diante trava nos 46px que o EXPERIENCE.md pede.
+
+   **`clamp` e não media query**: o corpo cresce junto com a tela em vez de dar
+   um pulo de 8px num ponto só, e não há segunda versão do bloco para manter.
+
+   Entreletra de 0,06em — a mesma do protótipo, e menor que os 0,1em da palavra
+   de 27px que existia antes: em corpo grande a entreletra larga vira vão, e o
+   que se ganha em elegância se perde em largura de coluna, que aqui é o
+   recurso escasso.
+
+   ⚠️ **`overflow-wrap` porque abaixo de ~310px a conta acima deixa de valer.**
+   O `clamp` trava no piso de 38px lá pelos 345px de tela, e daí para baixo a
+   palavra fica do mesmo tamanho enquanto a coluna continua encolhendo: num Fold
+   fechado, `UTILIZADO` atravessaria a borda de 2px. É o mesmo remendo que o
+   `.nome` do `portaria/eventos/[id]` já leva, pelo mesmo motivo — palavra longa
+   e indivisível dentro de caixa estreita. */
+.palavra {
+  font: 700 clamp(38px, 11vw, 46px) / 1.05 var(--mono);
+  letter-spacing: 0.06em;
+  overflow-wrap: break-word;
+}
+
+/* Serifada porque o detalhe carrega **nome próprio** (o titular) e nome de
+   setor — a regra do DESIGN.md é literal: nunca monoespaçada em nome próprio.
+   A palavra acima é etiqueta, e por isso é mono.
+
+   **`--cal`, e não a tinta.** O detalhe é o que se lê de perto, quando a pessoa
+   reclama e é preciso explicar; pintá-lo de brasa faria uma frase de duas
+   linhas competir com a palavra pela mesma leitura à distância. A cor pertence
+   ao veredito, não à explicação dele. */
+.detalhe {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fio);
+  font: 18px/1.4 var(--serif);
+  color: var(--cal);
+}

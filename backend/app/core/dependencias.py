@@ -19,6 +19,7 @@ lá embaixo — primeiro se pergunta quem é, depois o que pode.
 """
 
 from collections.abc import Callable
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import Depends, Request
@@ -28,8 +29,10 @@ from app.core.config import obter_settings
 from app.core.db import obter_sessao
 from app.core.erros import ErroDeDominio
 from app.core.seguranca import ler_token_sessao
+from app.models.evento import Evento
 from app.models.usuario import PapelUsuario, Usuario
 from app.services import autenticacao
+from app.services import evento as servico_de_evento
 
 
 def _nao_autenticado() -> ErroDeDominio:
@@ -110,3 +113,66 @@ def exigir_papel(*papeis: PapelUsuario) -> Callable[..., Usuario]:
     # sessão responde `401` e não `403`. Chamar `usuario_atual(...)` à mão aqui
     # obrigaria a repassar `Request` e `Session` e inverteria a ordem.
     return verificar
+
+
+# ⚠️ **Uma instância só, guardada num nome** — e não `exigir_papel(PORTARIA)`
+# escrito em cada lugar que precisa dela. `exigir_papel` é uma **fábrica**: cada
+# chamada devolve uma função nova, e o cache de dependências do FastAPI é por
+# objeto. Com duas instâncias na mesma rota — uma dentro do
+# `exigir_porta_aberta` abaixo, outra na assinatura do handler que também
+# precisa saber **quem** validou —, a checagem de papel rodaria duas vezes e as
+# duas devolveriam objetos `Usuario` distintos da mesma linha. Com o nome, o
+# FastAPI resolve uma vez e entrega o mesmo objeto aos dois.
+PORTARIA_DA_SESSAO = exigir_papel(PapelUsuario.PORTARIA)
+
+
+def exigir_porta_aberta(
+    evento_id: UUID,
+    portaria: Usuario = Depends(PORTARIA_DA_SESSAO),
+    sessao: Session = Depends(obter_sessao),
+) -> Evento:
+    """O evento do caminho, se quem está na sessão pode atendê-lo agora (5.2).
+
+    **As duas recusas da portaria numa dependência só**, e é isso que a torna
+    diferente do `exigir_papel`: papel diz o que a pessoa faz, esta diz **onde**
+    e **quando**. As duas respondem `403`:
+
+    - sem vínculo na `evento_portaria` → `SEM_ESCALA_NO_EVENTO` (AD-7)
+    - com vínculo, mas antes de `data_hora - ABERTURA_DOS_PORTOES`
+      → `EVENTO_NAO_ABERTO`
+
+    ⚠️ **Evento inexistente responde a primeira**, e não `404`. Quem não está
+    escalado não descobre se o evento existe — o `obter_escalado` colapsa os dois
+    casos num `None` de propósito, e o docstring dele explica o porquê.
+
+    ⚠️ **A ordem das duas não é estética.** Invertida, alguém sem escala
+    nenhuma descobriria pelo código do erro se o show começa em breve.
+
+    ⚠️ **É uma dependência, e não as primeiras linhas do handler** (AD-9). É
+    isso que faz o `403` acontecer **antes de qualquer consulta ao ingresso** —
+    o AC da Story 5.2 é literal nisso, e ele deixa de valer sem nenhum teste
+    mudar de cor se alguém "melhorar" carregando o ingresso antes. O teste
+    barato que pega o caso que importa é o que confirma que `usado_em` continua
+    nulo depois do `403`.
+
+    Devolve o `Evento` para o handler não reconsultar o que a dependência já
+    leu: é o mesmo molde do `exigir_papel`, que devolve o `Usuario` em vez de só
+    autorizar.
+    """
+    evento = servico_de_evento.obter_escalado(sessao, portaria, evento_id)
+
+    if evento is None:
+        raise ErroDeDominio(
+            "SEM_ESCALA_NO_EVENTO",
+            "Você não está escalado para este evento.",
+            status_http=403,
+        )
+
+    if not servico_de_evento.porta_aberta(evento, datetime.now(timezone.utc)):
+        raise ErroDeDominio(
+            "EVENTO_NAO_ABERTO",
+            "A porta deste evento ainda não abriu.",
+            status_http=403,
+        )
+
+    return evento

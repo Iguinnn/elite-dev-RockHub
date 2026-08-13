@@ -1,7 +1,13 @@
 /* Dados da conta: kicker, nome em serifada, fio, pares rótulo/valor em mono,
    fio, botão. Raio zero, sombra zero, nenhum card, nenhum avatar — círculo com
    inicial dentro é justamente o vocabulário que este projeto não tem.
-   [Fonte: DESIGN.md#Typography, #Spacing & Grid, UX-DR1, UX-DR2] */
+   [Fonte: DESIGN.md#Typography, #Spacing & Grid, UX-DR1, UX-DR2]
+
+   **Este arquivo era `(site)/conta/page.module.css`** e veio junto com o
+   componente na Story 5.1, quando a portaria passou a renderizar a mesma tela
+   dentro da casca dela. Ele não mudou uma linha na mudança de casa: o que a
+   `/conta` do `(site)` e a `/portaria/conta` mostram é literalmente o mesmo
+   bloco, e é o CSS ficar com o componente que garante que continue sendo. */
 
 .pagina {
   padding: 40px 0 96px;
@@ -43,7 +49,7 @@
 }
 
 /* O botão não vira a largura da coluna de 1180px. A restrição é aqui, no CSS
-   da página, e não numa prop nova do `Botao`: largura é decisão do contexto,
+   da tela, e não numa prop nova do `Botao`: largura é decisão do contexto,
    não do componente. */
 .saida {
   max-width: 220px;
