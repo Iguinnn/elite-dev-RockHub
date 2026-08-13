@@ -268,11 +268,16 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """Sem `capacidade`, `vendidos`, `setores` nem `aberto`.
+    """Sem `capacidade`, `vendidos` nem `setores` — e **com** `aberto`.
 
-    Os três primeiros são inventário e o contador do turno é a Story 5.6 — que
-    vai contar `ingresso.usado_em`, não estoque. O quarto não existe de propósito:
-    o portão das 2h é regra da tela, comparada com o relógio de quem lê.
+    Os três primeiros são inventário e o contador do turno é a Story 5.6, que vai
+    contar `ingresso.usado_em` e não estoque.
+
+    ⚠️ **`aberto` entrou na Story 5.2 e reverte o que este teste travava**: até a
+    5.1 ele estava na lista de chaves proibidas, porque o portão das 2h era regra
+    da tela. Desde que a rota de validação passou a recusar fora da janela, a
+    janela tem um dono só — `ABERTURA_DOS_PORTOES`, no service —, e a tela lê o
+    campo em vez de recalcular.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "chaves@exemplo.com")
     porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "chaves-porta@exemplo.com")
@@ -283,7 +288,42 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
 
     assert resposta.status_code == 200
     (turno,) = resposta.json()
-    assert set(turno) == {"id", "nome", "data_hora", "local", "cidade"}
+    assert set(turno) == {"id", "nome", "data_hora", "local", "cidade", "aberto"}
+
+
+def test_aberto_segue_a_janela_de_duas_horas_do_service(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O campo é `data_hora - ABERTURA_DOS_PORTOES <= agora`, e nada mais.
+
+    Três turnos numa resposta só: um daqui a três horas (fechado), um daqui a uma
+    hora (aberto, dentro da janela) e um que começou há meia hora (aberto, do
+    outro lado do corte que as rotas públicas fazem). O terceiro é o que importa
+    — é a hora em que a fila anda.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "janela@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "janela-porta@exemplo.com")
+    agora = datetime.now(timezone.utc)
+    for nome, quando in (
+        ("Começou faz meia hora", agora - timedelta(minutes=30)),
+        ("Daqui a uma hora", agora + timedelta(hours=1)),
+        ("Daqui a três horas", agora + timedelta(hours=3)),
+    ):
+        _evento_gravado(
+            sessao, organizador, nome=nome, data_hora=quando, portarias=[porteiro]
+        )
+    _entrar(cliente, porteiro)
+
+    resposta = cliente.get("/portaria/eventos")
+
+    assert resposta.status_code == 200
+    assert [(turno["nome"], turno["aberto"]) for turno in resposta.json()] == [
+        ("Começou faz meia hora", True),
+        ("Daqui a uma hora", True),
+        ("Daqui a três horas", False),
+    ]
 
 
 def test_a_ficha_traz_nome_data_casa_e_cidade(

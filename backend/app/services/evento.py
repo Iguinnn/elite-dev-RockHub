@@ -103,6 +103,37 @@ MAXIMO_POR_COMPRA = 6
 # que ficou de fora aqui.
 TETO_DA_PROGRAMACAO = 200
 
+# Quanto antes do show a porta do evento abre (Story 5.2, techspec
+# `docs/techspec-validacao-na-porta.md`).
+#
+# **Nasceu na tela, na Story 5.1, e desceu para cá.** Lá ela era conveniência
+# operacional: a lista de turnos comparava `data_hora` com o relógio do
+# navegador e só então liberava o link. A 5.2 mostrou que isso não bastava —
+# uma chamada à rota de validação três dias antes do show grava `usado_em`, e na
+# noite do evento aquela pessoa é barrada com `JA_UTILIZADO` sem nunca ter
+# entrado. A tela impedia; a rota não, e credencial de portaria mais um `curl`
+# bastavam.
+#
+# **Constante do service, no precedente do `MAXIMO_POR_COMPRA` logo acima**, e
+# num lugar só: com a regra valendo nos dois lados, duas constantes de duas
+# horas em duas camadas discordariam algum dia, e a tela mostraria a porta
+# aberta enquanto a API recusa. A tela lê `TurnoDaPortaria.aberto`, que sai
+# daqui.
+#
+# **Duas horas, e não o instante exato do show.** Um portão em `data_hora` trava
+# o roteiro de avaliação da Story 6.4: `publicar` recusa data no passado, e as
+# rotas públicas escondem o evento a partir de `data_hora` — quem avalia teria
+# de publicar um show, comprar, **esperar o relógio virar** e só então validar.
+# Com a janela, publicar para daqui a uma hora deixa a porta aberta na hora. E é
+# o comportamento certo do mundo real: a portaria chega antes do primeiro
+# acorde, nunca junto com ele.
+#
+# ⚠️ **Não há fechamento**, de propósito. Depois que abre, a porta fica aberta:
+# o show acaba e ainda há gente entrando, e um teto pela duração faria a
+# validação parar de funcionar no meio do turno — sem contar que este projeto
+# não tem coluna de duração nenhuma.
+ABERTURA_DOS_PORTOES = timedelta(hours=2)
+
 
 def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Evento:
     """Grava o evento e seus setores na mesma transação, já publicado.
@@ -313,7 +344,80 @@ def listar_escalados(sessao: Session, portaria: Usuario) -> list[TurnoDaPortaria
         .order_by(Evento.data_hora, Evento.id)
     )
 
-    return [TurnoDaPortaria.model_validate(evento) for evento in eventos]
+    # ⚠️ **Um relógio só para a lista inteira**, e não uma leitura por item. Com
+    # `datetime.now()` dentro do laço, dois turnos na mesma borda das duas horas
+    # podem sair com respostas diferentes na mesma resposta — o mesmo motivo do
+    # `instanteDaRequisicao` com `cache()` que a tela da 5.1 usava antes de o
+    # campo existir.
+    agora = datetime.now(timezone.utc)
+    return [_turno(evento, agora) for evento in eventos]
+
+
+def porta_aberta(evento: Evento, agora: datetime) -> bool:
+    """O portão deste evento já abriu? (Story 5.2)
+
+    **A única fonte da resposta**, e é isso que ela existe para ser: a lista de
+    turnos preenche `TurnoDaPortaria.aberto` com ela, e a dependência
+    `exigir_porta_aberta` recusa `403 EVENTO_NAO_ABERTO` com ela. Duas
+    implementações da mesma janela — uma na tela, outra na rota — discordariam no
+    primeiro ajuste de uma das duas, e o sintoma seria o pior possível: o item
+    aparece clicável e a validação recusa.
+
+    **`agora` é parâmetro, e não `datetime.now()` aqui dentro.** Quem chama já
+    leu o relógio uma vez para a resposta inteira; ler de novo por item faria
+    dois turnos na mesma borda saírem com vereditos diferentes. De quebra, é o
+    que torna a janela testável sem congelar o relógio do processo.
+
+    **Não há fechamento** — ver o comentário de `ABERTURA_DOS_PORTOES`.
+    """
+    return evento.data_hora - ABERTURA_DOS_PORTOES <= agora
+
+
+def _turno(evento: Evento, agora: datetime) -> TurnoDaPortaria:
+    """Projeta o `Evento` no contrato da portaria, com o `aberto` calculado.
+
+    Campo a campo, e não `model_validate(evento)`: `aberto` não é coluna, e o
+    schema deixou de declarar `from_attributes` justamente por isso (o docstring
+    dele explica a troca).
+    """
+    return TurnoDaPortaria(
+        id=evento.id,
+        nome=evento.nome,
+        data_hora=evento.data_hora,
+        local=evento.local,
+        cidade=evento.cidade,
+        aberto=porta_aberta(evento, agora),
+    )
+
+
+def obter_escalado(sessao: Session, portaria: Usuario, evento_id: UUID) -> Evento | None:
+    """O evento em que **esta** conta foi escalada — ou `None` (Story 5.2).
+
+    **As duas condições no mesmo `where`**, e não um `get()` seguido de um `if`:
+    a mesma disciplina do `_carregar_do_cliente` de `services/ingresso.py`. O
+    vínculo do AD-7 fica verdade por construção, não por quem lembrar de checar.
+
+    ⚠️ **Evento inexistente e evento de outra portaria devolvem o mesmo
+    `None`**, e quem chama responde a mesma recusa para os dois. Distinguir os
+    casos transformaria a rota num oráculo de "esse UUID é um evento?" para quem
+    não trabalha nele — a mesma razão do `404` único do `_carregar_do_cliente` e
+    do login da Story 1.4.
+
+    Devolve o `Evento` do ORM, e não o `TurnoDaPortaria`: quem chama é a
+    dependência da validação, que precisa da entidade para o `where` do ingresso
+    e para o relógio do portão. A rota de leitura projeta depois.
+    """
+    return sessao.scalars(
+        select(Evento)
+        .join(evento_portaria, evento_portaria.c.evento_id == Evento.id)
+        .where(
+            Evento.id == evento_id,
+            evento_portaria.c.usuario_id == portaria.id,
+            # Mesmo corte do `listar_escalados`: rascunho não tem porta para
+            # abrir. Sem ele, um turno invisível na lista aceitaria validação.
+            Evento.publicado_em.is_not(None),
+        )
+    ).first()
 
 
 def listar_do_organizador(sessao: Session, organizador: Usuario) -> list[EventoResumo]:

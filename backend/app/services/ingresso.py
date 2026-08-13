@@ -1,10 +1,10 @@
-"""O ingresso como agregado próprio: a leitura de "Meus ingressos" — Stories 4.1 e 4.2.
+"""O ingresso como agregado próprio: "Meus ingressos", o link e a porta.
 
-⚠️ **Este módulo lê, e da Story 4.3 em diante escreve `share_token`. Ele nunca
-cria ingresso.** A emissão é do `services/reserva.py`, dentro da transação que
-marca a reserva `PAGA` (AD-14) — mesmo aviso que aquele arquivo carrega sobre
-si, em espelho. Um `INSERT INTO ingresso` fora daquela transação quebraria a
-garantia inteira da Epic 3.
+⚠️ **Este módulo lê, escreve `share_token` desde a 4.3 e `usado_em` desde a 5.2.
+Ele nunca cria ingresso.** A emissão é do `services/reserva.py`, dentro da
+transação que marca a reserva `PAGA` (AD-14) — mesmo aviso que aquele arquivo
+carrega sobre si, em espelho. Um `INSERT INTO ingresso` fora daquela transação
+quebraria a garantia inteira da Epic 3.
 
 **Por que arquivo próprio, e não mais uma função em `services/reserva.py`.**
 O ingresso tem vida depois de a reserva sair de cena — é lido por várias
@@ -13,18 +13,23 @@ validado na porta (Epic 5) — e `reserva.py` já passa de 800 linhas cobrindo o
 agregado dele. Agrupar por agregado, não por arquivo que cresce.
 """
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.erros import ErroDeDominio
-from app.core.seguranca import gerar_share_token
+from app.core.seguranca import conferir_codigo, gerar_share_token, normalizar_codigo
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import Reserva
 from app.models.usuario import Usuario
-from app.schemas.ingresso import IngressoDetalhe, IngressoNaLista
+from app.schemas.ingresso import (
+    IngressoDetalhe,
+    IngressoNaLista,
+    ResultadoDaValidacao,
+)
 
 
 def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
@@ -89,6 +94,15 @@ def _carregar_do_cliente(
     `Reserva.cliente_id` deixaria alguém compartilhar — ou revogar — o ingresso
     de outra pessoa, e o defeito estaria numa linha idêntica a duas que estão
     certas. Rota nova do dono **usa esta função**; não escreve o `where` de novo.
+
+    ⚠️ **"Do dono" é a parte que importa da frase acima, e a Story 5.2 é a
+    primeira exceção.** O `validar` deste arquivo **não** passa por aqui, e nem
+    poderia: quem chama é um terceiro autorizado — a portaria escalada —, não há
+    dono a conferir, e o `where` de lá é o **código**, não o `cliente_id`. Quem
+    autoriza aquele caminho é a dependência `exigir_porta_aberta`, do AD-7. O
+    aviso está escrito porque a leitura natural desta frase é a errada: sem ele,
+    o próximo leitor supõe que todo `SELECT` de ingresso do arquivo é protegido
+    por esta função, e essa proteção não está lá.
 
     Devolve o objeto ORM, e não o schema: quem escreve na linha (`compartilhar`)
     precisa da entidade viva na sessão, não de uma cópia.
@@ -305,3 +319,117 @@ def obter_por_share_token(sessao: Session, token: str) -> IngressoDetalhe:
         )
 
     return _montar_detalhe(*linha)
+
+
+def validar(
+    sessao: Session, portaria: Usuario, evento: Evento, codigo: str
+) -> ResultadoDaValidacao:
+    """O veredito da porta, e a queima do ingresso quando ele vale (Story 5.2).
+
+    ⚠️ **A primeira função deste arquivo que não passa pelo
+    `_carregar_do_cliente`**, e o docstring daquele diz "toda rota do dono passa
+    por aqui". Aqui não há dono: quem chama é um terceiro autorizado, e o `where`
+    é o código, não o `cliente_id`. Quem autoriza é a dependência
+    `exigir_porta_aberta` (AD-7), **antes** de esta função existir na requisição.
+
+    **Os quatro vereditos são resposta de sucesso**, e o motivo inteiro está no
+    docstring do `ResultadoDaValidacao`: recusar entrada é o trabalho da portaria
+    dando certo.
+
+    A ordem das etapas é a garantia, e cada troca dela tem consequência:
+
+    1. `normalizar_codigo` → `None` ⇒ `INVALIDO`, **sem tocar no banco**. É uma
+       consulta economizada no caminho mais sensível a tempo do produto.
+    2. O ingresso, achado **pelo** código. Sem linha ⇒ `INVALIDO`.
+       ⚠️ Código bem formado que não é de ingresso nenhum é colapsado com
+       assinatura divergente de propósito: o `EXPERIENCE.md` fixa quatro
+       vereditos, e "assinatura não confere" continua verdadeiro — sem linha,
+       não há assinatura que confira. Um quinto veredito transformaria a rota
+       num oráculo de "esse código existe?".
+    3. `conferir_codigo` recalculando o HMAC das colunas (AD-5).
+       ⚠️ **Contra o `evento_id` do ingresso, nunca contra o do caminho.**
+       Conferir contra o contexto faria um código legítimo de outro show falhar
+       como `INVALIDO` em vez de `EVENTO_ERRADO` — dois vereditos trocados, e
+       quem está na fila recebe a palavra errada.
+    4. Evento diferente ⇒ `EVENTO_ERRADO`.
+       ⚠️ **Antes do `UPDATE`, e isso não é ordem estética:** invertido, o
+       ingresso do outro show seria **queimado** por uma portaria que nem podia
+       lê-lo.
+    5. O `UPDATE` condicional do AD-6, e a decisão é o `rowcount`.
+
+    ⚠️ **A dupla validação não se decide em Python.** `if ingresso.usado_em is
+    None` antes de gravar é a linha confortável que passa em todo teste
+    sequencial e perde a corrida — dois leitores no mesmo instante leem `NULL` e
+    os dois deixam entrar. É a mesma armadilha do `setor.vendidos` no AD-3, com
+    a mesma resposta: a condição vai no `where`, e quem responde é o banco.
+
+    ⚠️ **O `RETURNING` não é enfeite.** `SessaoLocal` usa
+    `expire_on_commit=False`, então o objeto em memória continua com `usado_em =
+    None` depois do `UPDATE`: sem ele, o caminho do `VALIDO` responderia
+    `entrada_em: null`. E é por isso que o `JA_UTILIZADO` **relê a linha** — ali
+    não houve `RETURNING` nenhum, e a hora que a fila precisa ouvir é a da
+    primeira entrada. Terceira aparição desta armadilha no projeto, depois do
+    pagamento na Epic 3 e do `share_token` na 4.3.
+    """
+    normalizado = normalizar_codigo(codigo)
+    if normalizado is None:
+        return ResultadoDaValidacao(resultado="INVALIDO")
+
+    # Sem `Evento` no `join`: o nome do show não entra em resposta nenhuma desta
+    # rota — nem no `EVENTO_ERRADO`, e principalmente nele.
+    linha = sessao.execute(
+        select(Ingresso, Setor, Usuario)
+        .join(Reserva, Reserva.id == Ingresso.reserva_id)
+        .join(Setor, Setor.id == Ingresso.setor_id)
+        .join(Usuario, Usuario.id == Reserva.cliente_id)
+        .where(Ingresso.codigo == normalizado)
+    ).first()
+
+    if linha is None:
+        return ResultadoDaValidacao(resultado="INVALIDO")
+
+    ingresso, setor, titular = linha
+
+    if not conferir_codigo(
+        normalizado, ingresso.id, ingresso.evento_id, ingresso.nonce
+    ):
+        return ResultadoDaValidacao(resultado="INVALIDO")
+
+    if ingresso.evento_id != evento.id:
+        return ResultadoDaValidacao(resultado="EVENTO_ERRADO")
+
+    entrada = sessao.execute(
+        update(Ingresso)
+        .where(Ingresso.id == ingresso.id, Ingresso.usado_em.is_(None))
+        .values(usado_em=datetime.now(timezone.utc), validado_por=portaria.id)
+        .returning(Ingresso.usado_em)
+        # Mesmo motivo do `_transicionar` de `services/reserva.py`: o objeto
+        # carregado fica com o valor velho, e quem precisa do novo o pega do
+        # `RETURNING` ou relê. Sincronizar aqui seria manter em dia um objeto
+        # que esta função não consulta mais.
+        .execution_options(synchronize_session=False)
+    ).scalar_one_or_none()
+
+    # O `commit` é daqui: service que escreve abre e fecha a transação
+    # (`ARCHITECTURE-SPINE.md#Convenções`). Ele acontece nos dois caminhos —
+    # quem perdeu a corrida não gravou nada, e fechar a transação é o que solta
+    # a trava da linha para o próximo da fila.
+    sessao.commit()
+
+    if entrada is not None:
+        return ResultadoDaValidacao(
+            resultado="VALIDO",
+            titular_nome=titular.nome,
+            setor_nome=setor.nome,
+            entrada_em=entrada,
+        )
+
+    # Zero linhas: ou já estava usado, ou outro leitor venceu neste instante. Os
+    # dois são a mesma coisa para quem está na porta, e a hora a mostrar é a da
+    # entrada que valeu — que está no banco, não neste objeto.
+    sessao.refresh(ingresso)
+    return ResultadoDaValidacao(
+        resultado="JA_UTILIZADO",
+        titular_nome=titular.nome,
+        entrada_em=ingresso.usado_em,
+    )

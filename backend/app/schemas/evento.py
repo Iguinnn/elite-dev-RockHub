@@ -567,23 +567,36 @@ class TurnoDaPortaria(BaseModel):
     `response_model` da rota, e não a tela: a mesma disciplina que a Story 3.1
     inaugurou.
 
-    **Nenhum campo derivado, nem mesmo `aberto: bool`** (decisão do Igor). O
-    portão que libera a tela do evento duas horas antes do show é regra **da
-    tela**, comparada com o relógio de quem lê — o precedente literal do
-    `MeusEventos` da 2.6: "a API responde quais são os meus eventos; o que
-    interessa agora é leitura". Mandar o booleano no contrato pareceria mais
-    seguro e não é: o portão é conveniência operacional, não invariante. A
-    invariante desta epic é o vínculo do AD-7, e ela se cumpre no `403` da rota,
-    não num campo. Se a Story 5.2 decidir barrar validação fora da janela, ela
-    calcula a própria regra no servidor.
+    ⚠️ **`aberto` entrou na Story 5.2, e ele reverte a decisão que este
+    docstring anunciava.** A redação anterior dizia, com todas as letras, que
+    nenhum campo derivado entraria aqui — que o portão das duas horas era regra
+    **da tela**, comparada com o relógio de quem lê, e que "se a Story 5.2
+    decidir barrar validação fora da janela, ela calcula a própria regra no
+    servidor". A 5.2 decidiu barrar, e é aí que a frase se desfaz sozinha: com a
+    regra valendo **nos dois lados**, duas constantes de duas horas em duas
+    camadas discordariam algum dia, e a tela mostraria a porta aberta enquanto a
+    API recusa com `403 EVENTO_NAO_ABERTO`. Uma regra, um relógio, um lugar — e
+    o lugar passa a ser o `ABERTURA_DOS_PORTOES` de `services/evento.py`.
 
-    **Com `from_attributes`**, ao contrário do `EventoResumo` e dos três
-    schemas públicos: os cinco campos são colunas do `Evento`, sem uma soma nem
-    uma projeção no meio. O critério deste módulo é sempre o mesmo — declarar a
-    conversão só quando ela de fato acontece —, e aqui ela acontece.
+    A alternativa descartada foi duplicar a constante nas duas camadas com um
+    comentário pedindo que ficassem iguais. Comentário não é mecanismo.
+
+    **O que ele continua não devolvendo, e por quê.** Nem `capacidade`, nem
+    `vendidos`, nem `setores`: quantas pessoas já entraram no turno é a Story
+    5.6, e ela vai contar `ingresso.usado_em`, não estoque. Devolver o
+    inventário aqui daria à tela um número que ela não usa e que, no dia em que
+    a 5.6 chegar, seria o número **errado** — vendidos não é entrou. O corte
+    quem garante é o `response_model` da rota, e não a tela: a mesma disciplina
+    que a Story 3.1 inaugurou.
+
+    **Sem `from_attributes`, e a ausência é consequência do `aberto`.** Enquanto
+    os cinco campos eram colunas do `Evento`, a conversão de fato acontecia e a
+    declaração era honesta. `aberto` não é coluna nenhuma: é o relógio comparado
+    com `data_hora`, ou seja, exatamente a projeção que faltava. O critério
+    deste módulo é sempre o mesmo — declarar a conversão só quando ela acontece
+    —, e agora ela não acontece mais: quem monta o schema é `listar_escalados`,
+    campo a campo.
     """
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     nome: str
@@ -593,3 +606,8 @@ class TurnoDaPortaria(BaseModel):
     # a ficha da tela precisa distinguir "sem cidade" de "campo que não veio"
     # para não imprimir um separador solto. Nada de `exclude_none` aqui.
     cidade: str | None
+    # `True` quando `data_hora - ABERTURA_DOS_PORTOES <= agora`. É a **mesma**
+    # função que a dependência `exigir_porta_aberta` chama antes de deixar
+    # validar um ingresso, e é essa identidade que impede a tela e a rota de
+    # discordarem sobre um turno na borda da janela.
+    aberto: bool

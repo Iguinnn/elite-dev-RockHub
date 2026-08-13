@@ -16,8 +16,8 @@ assinatura — juntá-los num arquivo só faria o próximo leitor conferir o
 **O prefixo `/portaria` não tem armadilha de ordem**, ao contrário do
 `/ingressos` da Story 4.3, que passou a morar em dois routers e só se sustenta
 pela contagem de segmentos do caminho. Nada mais neste projeto começa por
-`/portaria`, e a rota da validação (Story 5.2) vai entrar aqui embaixo, com o
-`evento_id` no caminho — é o que permitirá o `403` do AD-7 sair de uma
+`/portaria`, e a rota da validação da Story 5.2 entrou aqui embaixo com o
+`evento_id` no caminho — é o que permite o `403` do AD-7 sair de uma
 dependência, e não de um `if` no corpo do handler.
 """
 
@@ -25,17 +25,20 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
-from app.core.dependencias import exigir_papel
-from app.models.usuario import PapelUsuario, Usuario
+from app.core.dependencias import PORTARIA_DA_SESSAO, exigir_porta_aberta
+from app.models.evento import Evento
+from app.models.usuario import Usuario
 from app.schemas.evento import TurnoDaPortaria
+from app.schemas.ingresso import ResultadoDaValidacao, ValidacaoEntrada
 from app.services import evento as servico_de_evento
+from app.services import ingresso as servico_de_ingresso
 
 router = APIRouter(prefix="/portaria", tags=["portaria"])
 
 
 @router.get("/eventos", response_model=list[TurnoDaPortaria])
 def meus_turnos(
-    portaria: Usuario = Depends(exigir_papel(PapelUsuario.PORTARIA)),
+    portaria: Usuario = Depends(PORTARIA_DA_SESSAO),
     sessao: Session = Depends(obter_sessao),
 ) -> list[TurnoDaPortaria]:
     """Os eventos em que a conta da sessão foi escalada, do mais próximo em diante.
@@ -57,3 +60,38 @@ def meus_turnos(
     respondida com "em lugar nenhum ainda", e quem decide o que dizer é a tela.
     """
     return servico_de_evento.listar_escalados(sessao, portaria)
+
+
+@router.post("/eventos/{evento_id}/validacoes", response_model=ResultadoDaValidacao)
+def validar_ingresso(
+    dados: ValidacaoEntrada,
+    evento: Evento = Depends(exigir_porta_aberta),
+    portaria: Usuario = Depends(PORTARIA_DA_SESSAO),
+    sessao: Session = Depends(obter_sessao),
+) -> ResultadoDaValidacao:
+    """O veredito de um código na porta deste evento — o FR6 inteiro (Story 5.2).
+
+    **`POST` e um subrecurso no plural**, e não `POST /portaria/validacoes` com o
+    `evento_id` no corpo: com o evento no caminho, a dependência resolve as duas
+    recusas **antes de o handler existir**, que é literalmente o AC "recebe `403`
+    antes de qualquer consulta ao ingresso". Com o id no corpo, o `403` do AD-7
+    viraria a primeira linha daqui — e o AD-9 é explícito: papel e autorização se
+    declaram na assinatura, nunca com `if` no corpo.
+
+    **É `POST` porque escreve**, e o que ele escreve é irreversível: `usado_em`
+    grava uma vez e não volta. Nada aqui é idempotente por natureza — é o
+    contrário, a segunda chamada com o mesmo código responde outra coisa de
+    propósito.
+
+    ⚠️ **Os quatro vereditos respondem `200`**, inclusive os três que negam
+    entrada. O motivo está inteiro no docstring do `ResultadoDaValidacao`; o
+    resumo é que recusar entrada é o trabalho da portaria dando certo. Os `403`
+    desta rota são de outra natureza — "você não trabalha aqui" e "a porta ainda
+    não abriu" —, e vêm da dependência.
+
+    **`evento` e `portaria` na mesma assinatura, e o `Usuario` é resolvido uma
+    vez só**: `PORTARIA_DA_SESSAO` é um nome, não uma chamada nova a
+    `exigir_papel` — o comentário dele em `core/dependencias.py` explica por que
+    a diferença importa.
+    """
+    return servico_de_ingresso.validar(sessao, portaria, evento, dados.codigo)

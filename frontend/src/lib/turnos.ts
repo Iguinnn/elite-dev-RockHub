@@ -4,11 +4,17 @@ import { API_URL, cabecalhoDeSessao } from "./servidor";
  * Espelha `app/schemas/evento.py::TurnoDaPortaria` — um evento em que a conta
  * da sessão foi escalada na porta (Story 5.1).
  *
- * **Cinco campos, e nenhum derivado.** Não existe `aberto: boolean` no
- * contrato: o portão que libera a tela do evento duas horas antes do show é
- * regra da página, comparada com o relógio de quem lê. Nem `capacidade`,
- * `vendidos` ou `setores` — inventário é do organizador, e o contador do turno
- * é a Story 5.6, que vai contar entradas e não estoque.
+ * ⚠️ **`aberto` entrou na Story 5.2, e ele reverte o que estava escrito aqui.**
+ * Até a 5.1 o portão das duas horas era regra da página, comparada com o relógio
+ * de quem lê — e a 5.2 passou a recusar validação fora da janela com `403
+ * EVENTO_NAO_ABERTO`. Com a regra valendo dos dois lados, duas constantes de
+ * duas horas em duas camadas discordariam algum dia, e esta tela mostraria a
+ * porta aberta enquanto a API recusa. A janela agora tem um dono só:
+ * `ABERTURA_DOS_PORTOES`, em `services/evento.py`.
+ *
+ * O resto do contrato não mudou: nem `capacidade`, nem `vendidos`, nem
+ * `setores` — inventário é do organizador, e o contador do turno é a Story 5.6,
+ * que vai contar entradas e não estoque.
  */
 export type TurnoDaPortaria = {
   id: string;
@@ -16,6 +22,7 @@ export type TurnoDaPortaria = {
   data_hora: string;
   local: string;
   cidade: string | null;
+  aberto: boolean;
 };
 
 export type ResultadoDosTurnos =

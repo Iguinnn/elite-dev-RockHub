@@ -42,7 +42,7 @@
 #   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (Story 5.1 implementada; suíte em 463)
+last_updated: 2026-08-12 (Story 5.2 implementada; suíte em 492)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -374,7 +374,54 @@ development_status:
   # à mão não invente código com `U` e conclua que a validação quebrou.
   # ⚠️ A migração lê o `TICKET_SIGNING_SECRET` para calcular os códigos: girar o
   # segredo **depois** dela invalida o que ela calculou, como sempre invalidou.
-  5-2-validar-o-ingresso-sem-deixar-passar-duas-vezes: backlog
+  # Techspec em docs/techspec-validacao-na-porta.md, que cobre 5.2 + 5.3 + 5.5:
+  # um endpoint de validação e as duas formas de entrada que o alimentam. O
+  # commit continua um por story — este é o commit 1 dos três.
+  #
+  # Commit 1: `POST /portaria/eventos/{id}/validacoes`, a dependência
+  # `exigir_porta_aberta` (que junta o vínculo do AD-7 e o portão numa recusa
+  # só), `ingresso.validar` com o `UPDATE` condicional do AD-6, e o campo
+  # `aberto` em `TurnoDaPortaria`. **Sem migração** — `usado_em` e `validado_por`
+  # vieram na 4.1, e o código curto veio na spec anterior.
+  # Decisões do Igor: os quatro vereditos respondem `200` (recusar entrada é o
+  # trabalho da portaria dando certo, e o `ErroDeDominio` não teria onde pôr a
+  # hora da primeira entrada); `EVENTO_ERRADO` **não** diz de qual show o
+  # ingresso é, contra o protótipo do EXPERIENCE.md, porque devolver o nome do
+  # evento a quem não foi escalado nele é o que o AD-7 existe para impedir;
+  # código bem formado de ingresso nenhum é colapsado com assinatura divergente,
+  # sem quinto veredito; e o evento vai no **caminho**, não no corpo, que é o que
+  # permite o `403` sair de uma dependência em vez de um `if` no handler (AD-9).
+  # ⚠️ **Esta story reverte duas decisões da 5.1, e as duas reversões são o
+  # ponto.** A spec da 5.1 dizia que o portão de 2h era conveniência da tela e
+  # que o contrato não carregaria campo derivado. Estava errado por um motivo
+  # concreto: uma chamada três dias antes do show grava `usado_em`, e na noite do
+  # evento a pessoa é barrada com `JA_UTILIZADO` sem nunca ter entrado — a tela
+  # impedia, a rota não, e credencial de portaria mais um `curl` bastavam. A
+  # regra desceu para `ABERTURA_DOS_PORTOES` em `services/evento.py`, virou
+  # `403 EVENTO_NAO_ABERTO` e `TurnoDaPortaria.aberto`, e a tela apagou a
+  # constante. Uma regra, um relógio, um lugar: com duas constantes de duas horas
+  # em duas camadas, um dia a tela mostraria a porta aberta e a API recusaria.
+  # ⚠️ `validar` é a primeira função de `services/ingresso.py` que **não** passa
+  # pelo `_carregar_do_cliente`, cujo docstring diz "toda rota do dono passa por
+  # aqui". Aqui não há dono: quem chama é um terceiro autorizado e o `where` é o
+  # código, não o `cliente_id`. O aviso está escrito nos dois docstrings.
+  # ⚠️ A assinatura se confere contra o `evento_id` **do ingresso**, nunca contra
+  # o do caminho — contra o contexto, um código legítimo de outro show sairia
+  # `INVALIDO` em vez de `EVENTO_ERRADO`, dois vereditos trocados. E o
+  # `EVENTO_ERRADO` vem **antes** do `UPDATE`: invertido, o ingresso do outro
+  # show seria queimado por uma portaria que nem podia lê-lo.
+  # ⚠️ `expire_on_commit=False` pela terceira vez (depois do pagamento na Epic 3
+  # e do `share_token` na 4.3): o `RETURNING` resolve o `VALIDO`, e o
+  # `JA_UTILIZADO` **relê a linha** — sem isso a resposta diz "já utilizado" sem
+  # dizer quando, que é a única informação que resolve a discussão na porta.
+  # ✅ **Provado por mutação, não por leitura:** trocar o `UPDATE` condicional
+  # pelo `if ingresso.usado_em is None` em Python passa nos **19** testes
+  # sequenciais do arquivo e falha só no de duas conexões — que é exatamente a
+  # classe de bug que o desafio avalia, e a lição registrada na Epic 4.
+  # ⚠️ Janela consciente de um commit: a tela `/portaria/eventos/{id}` ainda não
+  # existe (nasce na 5.3), então o link do turno aberto continua levando a
+  # lugar nenhum. É a mesma janela que a 5.1 abriu, e ela fecha no commit da 5.3.
+  5-2-validar-o-ingresso-sem-deixar-passar-duas-vezes: done
   5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: backlog
   5-4-ver-o-resultado-a-tres-metros: backlog
   5-5-ler-o-qr-pela-camera: backlog

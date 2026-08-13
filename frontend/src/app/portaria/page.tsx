@@ -1,42 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cache } from "react";
 
 import { partesDaFilaPublica } from "@/lib/formato";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 import { listarTurnos, type TurnoDaPortaria } from "@/lib/turnos";
 
 import estilos from "./page.module.css";
-
-/**
- * Quanto antes do show a porta do evento abre: duas horas (Story 5.1).
- *
- * **A resposta original era "a partir da hora que começa o evento", e eu me
- * afastei dela de propósito** — é a única linha desta story em que isso
- * acontece. Um portão exatamente em `data_hora` trava o roteiro de avaliação:
- * `publicar` recusa data no passado (`EVENTO_NO_PASSADO`, decidido no review da
- * Epic 2), o seed cria só contas, e as rotas públicas escondem o evento assim
- * que ele começa. Quem avalia teria de publicar um show, comprar o ingresso,
- * **esperar o relógio virar** e só então validar. Com a janela de duas horas,
- * publicar para daqui a uma hora deixa a porta aberta na hora.
- *
- * E é o comportamento certo do mundo real: a portaria chega antes de o portão
- * abrir, nunca no instante do primeiro acorde.
- */
-const ANTECEDENCIA_DO_PORTAO_MS = 2 * 60 * 60 * 1000;
-
-/**
- * O instante em que esta requisição foi atendida — o relógio que decide qual
- * turno já abriu.
- *
- * ⚠️ **`cache()` do React, e nunca `Date.now()` solto no corpo do componente.**
- * Ler o relógio no meio da renderização é chamada impura: duas leituras podem
- * discordar sobre o evento que está exatamente na borda das duas horas, e o
- * item apareceria clicável num lugar e travado no outro. Com `cache()` o valor
- * nasce uma vez por requisição e vale para a página inteira — o mesmo
- * `instanteDaRequisicao` de `/organizador/eventos`.
- */
-const instanteDaRequisicao = cache(() => Date.now());
 
 /**
  * "Turnos": os eventos em que esta conta foi escalada na porta (Story 5.1).
@@ -48,12 +17,13 @@ const instanteDaRequisicao = cache(() => Date.now());
  * sumido. O que a API devolve é o inventário de quem lê, ordenado por data
  * crescente; a tela não reordena nem esconde nada.
  *
- * **O que a tela decide é só o portão.** A cada item ela compara `data_hora` com
- * o relógio desta requisição: dentro da janela, o item é link para a tela do
- * evento; fora dela, é um bloco sem link com a frase "O evento ainda não
- * começou". Nenhum campo do contrato diz isso — o backend não devolve `aberto`,
- * porque o portão é conveniência operacional e não invariante. A invariante do
- * AD-7 se cumpre no `403` da rota.
+ * ⚠️ **O portão deixou de ser decisão desta tela na Story 5.2.** Aqui ele era
+ * uma constante de duas horas comparada com o relógio da requisição, e a 5.2
+ * passou a recusar validação fora da janela — com a regra valendo dos dois
+ * lados, as duas constantes discordariam algum dia e esta tela liberaria o link
+ * de um turno que a API recusa. A tela agora **lê `turno.aberto`** e não calcula
+ * nada: dentro da janela o item é link para a tela do evento, fora dela é um
+ * bloco sem link com a frase "O evento ainda não começou".
  *
  * **As mesmas duas guardas de `/organizador/eventos` e `/ingressos`**, com outro
  * papel: sem sessão, `redirect` para o login com o caminho de volta preservado;
@@ -91,7 +61,6 @@ export default async function Turnos() {
   }
 
   const itens = resultado.estado === "ok" ? resultado.itens : [];
-  const agora = instanteDaRequisicao();
 
   return (
     <section className={estilos.pagina}>
@@ -116,7 +85,7 @@ export default async function Turnos() {
       {itens.length > 0 && (
         <div className={estilos.lista}>
           {itens.map((turno) => (
-            <Turno key={turno.id} turno={turno} agora={agora} />
+            <Turno key={turno.id} turno={turno} />
           ))}
         </div>
       )}
@@ -136,14 +105,13 @@ export default async function Turnos() {
  * ⚠️ **`cidade` é anulável** (a Discovery pode não trazê-la). O `filter(Boolean)`
  * é o que impede a ficha de imprimir um separador solto — ou pior, a palavra
  * "null" — quando ela não vem.
+ *
+ * ⚠️ **`turno.aberto` vem pronto do backend, e o componente não recebe mais
+ * relógio nenhum** (Story 5.2). Ele deixou de comparar `data_hora` com
+ * `Date.now()` porque a mesma janela decide o `403` da rota de validação: com o
+ * cálculo aqui, esta tela poderia liberar o link de um turno que a API recusa.
  */
-function Turno({ turno, agora }: { turno: TurnoDaPortaria; agora: number }) {
-  // `Date` contra `Date`, nunca texto contra texto: comparar as strings ISO
-  // funciona por acidente enquanto todos os offsets forem `Z`, e para de
-  // funcionar no primeiro `-03:00`.
-  const comeca = new Date(turno.data_hora).getTime();
-  const aberto = comeca - ANTECEDENCIA_DO_PORTAO_MS <= agora;
-
+function Turno({ turno }: { turno: TurnoDaPortaria }) {
   // `partesDaFilaPublica` e não `partesDaData`: é a única que devolve a **hora**
   // junto, e a hora é o dado que decide o turno de quem lê esta tela. O nome
   // fala da fila da programação porque foi lá que ela nasceu; a função é
@@ -162,7 +130,7 @@ function Turno({ turno, agora }: { turno: TurnoDaPortaria; agora: number }) {
       <div className={estilos.corpo}>
         <h2 className={estilos.nome}>{turno.nome}</h2>
         <div className={estilos.origem}>{origem}</div>
-        {!aberto && (
+        {!turno.aberto && (
           <p className={estilos.fechado}>O evento ainda não começou</p>
         )}
       </div>
@@ -174,7 +142,7 @@ function Turno({ turno, agora }: { turno: TurnoDaPortaria; agora: number }) {
   // Sem link, o elemento é uma `<div>` e não um `<a>` desativado: link que não
   // navega continua recebendo foco de teclado e continua sendo anunciado como
   // link, e a pessoa descobre que não vai a lugar nenhum depois de tentar.
-  return aberto ? (
+  return turno.aberto ? (
     <Link href={`/portaria/eventos/${turno.id}`} className={estilos.turno}>
       {conteudo}
     </Link>
