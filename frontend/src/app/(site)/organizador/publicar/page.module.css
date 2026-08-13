@@ -7,18 +7,22 @@
   padding: 40px 0 96px;
 }
 
+/* ⚠️ **Sem fio embaixo** (decisão do Igor, 2026-08-13). O título da etapa já se
+   separa do que vem abaixo pelo corpo de 27px em serifada contra o versalete de
+   13px do rótulo seguinte — o fio repetia essa separação com tinta. Vale para os
+   **dois** passos: `.secTituloPasso2` compõe esta classe, e deixar o fio só num
+   deles faria os títulos de etapa parecerem inconsistentes. */
 .secTitulo {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
   padding-bottom: 11px;
-  border-bottom: 1px solid var(--fio);
 }
 
 .secTitulo h1,
 .secTitulo h2 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
@@ -44,7 +48,7 @@
 
 .botaoBusca {
   flex-shrink: 0;
-  width: 160px;
+  width: 182px;
   /* `Campo` traz `margin-bottom: 20px` do rótulo — sem isso o botão fica
      mais alto que a entrada, porque ele não tem rótulo acima. */
   margin-bottom: 20px;
@@ -56,7 +60,7 @@
 .aviso {
   max-width: 46ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 .catalogo {
@@ -69,7 +73,7 @@
    mudou, a aparência não podia mudar junto. */
 .item {
   display: grid;
-  grid-template-columns: 70px 1fr auto;
+  grid-template-columns: 80px 1fr auto;
   gap: 20px;
   align-items: center;
   padding: 16px 0;
@@ -91,7 +95,7 @@
 }
 
 .estado {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -107,7 +111,7 @@
      contra a página inteira e o disco cobriria a tela. Não muda o layout: o
      `<img>` continua na mesma célula da grade. */
   position: relative;
-  width: 70px;
+  width: 80px;
   height: 70px;
   aspect-ratio: 1;
   object-fit: cover;
@@ -134,12 +138,12 @@
 }
 
 .nome {
-  font: 400 20px/1.2 var(--serif);
+  font: 400 22px/1.2 var(--serif);
 }
 
 .origem {
   margin-top: 5px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -155,7 +159,7 @@
    ninguém pode editar é campo que não deveria ser campo. */
 .atracao {
   display: grid;
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 80px 1fr;
   gap: 20px;
   align-items: center;
   padding-bottom: 24px;
@@ -167,14 +171,14 @@
    é conteúdo do evento que está sendo publicado. */
 .ondeAcontece {
   margin-top: 6px;
-  font: 17px/1.4 var(--serif);
+  font: 19px/1.4 var(--serif);
 }
 
 /* O mesmo lugar, quando a Discovery não mandou a casa. Fumaça em vez de cal:
    é uma pendência declarada, não um dado. */
 .semCasa {
   margin-top: 6px;
-  font: italic 17px/1.4 var(--serif);
+  font: italic 19px/1.4 var(--serif);
   color: var(--fumaca);
 }
 
@@ -198,7 +202,7 @@
 .colunasDoSetor,
 .linhaSetor {
   display: grid;
-  grid-template-columns: 1fr 120px 130px 44px;
+  grid-template-columns: 1fr 136px 148px 48px;
   gap: 12px;
   align-items: center;
 }
@@ -221,7 +225,7 @@
   border: 1px solid var(--fio);
   color: var(--cal);
   padding: 11px;
-  font: 14px/1 var(--mono);
+  font: 16px/1 var(--mono);
 }
 
 .entrada:focus {
@@ -247,7 +251,7 @@
   background: none;
   border: none;
   color: var(--fumaca);
-  font: 20px/1 var(--mono);
+  font: 22px/1 var(--mono);
   cursor: pointer;
 }
 
@@ -261,7 +265,7 @@
   background: none;
   border: 1px solid var(--fio2);
   color: var(--cal);
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
@@ -299,14 +303,14 @@
 }
 
 .secTituloPasso3 h3 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
 .explicacaoEscala {
   max-width: 52ch;
   margin-top: 16px;
-  font: 17px/1.5 var(--serif);
+  font: 19px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -349,11 +353,11 @@
 }
 
 .nomeDaConta {
-  font: 400 18px/1.2 var(--serif);
+  font: 400 20px/1.2 var(--serif);
 }
 
 .emailDaConta {
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -361,7 +365,7 @@
 
 .contagemEscalados {
   margin-top: 12px;
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--neon);
@@ -375,13 +379,13 @@
 
 .nomePublicado {
   margin-top: 12px;
-  font: 400 30px/1.15 var(--serif);
+  font: 400 33px/1.15 var(--serif);
   letter-spacing: -0.02em;
 }
 
 .linhaDoShow {
   margin-top: 8px;
-  font: 18px/1.5 var(--serif);
+  font: 20px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -394,20 +398,20 @@
    organizador vê inventário, não medidor (UX-DR7). */
 .linhaInventario {
   display: grid;
-  grid-template-columns: 1fr 140px 140px;
+  grid-template-columns: 1fr 160px 160px;
   gap: 12px;
   padding: 13px 0;
   border-bottom: 1px solid var(--fio);
 }
 
 .setorPublicado {
-  font: 600 10px/1.6 var(--mono);
+  font: 600 12px/1.6 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .numero {
-  font: 14px/1.15 var(--mono);
+  font: 16px/1.15 var(--mono);
   text-align: right;
 }
 
@@ -418,7 +422,7 @@
 
 .nomesEscalados {
   margin-top: 7px;
-  font: 18px/1.5 var(--serif);
+  font: 20px/1.5 var(--serif);
 }
 
 /* As duas saídas da confirmação, lado a lado: publicar o próximo ou ir ver o
@@ -433,7 +437,7 @@
 
 .saida {
   color: var(--neon);
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -471,7 +475,7 @@
     overflow: visible;
     clip-path: none;
     display: block;
-    font: 600 10px/1 var(--mono);
+    font: 600 12px/1 var(--mono);
     letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--fumaca);
@@ -531,7 +535,7 @@
 
   .item,
   .atracao {
-    grid-template-columns: 56px 1fr;
+    grid-template-columns: 64px 1fr;
   }
 
   /* Sem a terceira coluna, o estado da fila desce para baixo do nome em vez
@@ -542,11 +546,11 @@
   }
 
   .miniatura {
-    width: 56px;
+    width: 64px;
     height: 56px;
   }
 
   .nomePublicado {
-    font-size: 25px;
+    font-size: 27px;
   }
 }

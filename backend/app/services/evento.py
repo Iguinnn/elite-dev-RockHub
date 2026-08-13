@@ -712,8 +712,24 @@ def listar_programacao(
     # banco. Este parâmetro não é campo de digitação, e tratá-lo como se fosse
     # daria a `?cidade=sao` um resultado que nenhum chip produz. Quem quer
     # digitar tem o `?q=`, que casa cidade também.
+    #
+    # ⚠️ **A igualdade é sobre o normalizado, e isso conserta um filtro que
+    # escondia evento** (13/08/2026). A Ticketmaster manda a mesma cidade em mais
+    # de uma grafia — `São Paulo` em seis eventos e `Sao Paulo`, sem til, num
+    # sétimo —, e nós copiamos o que vem (AD-1). Com `Evento.cidade == "São
+    # Paulo"` o sétimo sumia da lista, **sem nada na tela dizendo que ele
+    # existia**: o pior tipo de defeito de filtro, porque o resultado parece
+    # completo. Comparar `unaccent(lower(...))` dos dois lados junta as grafias
+    # sem reescrever o que está gravado.
+    #
+    # É a mesma normalização que a `listar_cidades_em_cartaz` usa para montar os
+    # chips — as duas precisam concordar, senão o chip oferece uma cidade que o
+    # filtro não acha.
     if cidade.strip():
-        condicoes.append(Evento.cidade == cidade.strip())
+        condicoes.append(
+            _cidade_normalizada(Evento.cidade)
+            == _cidade_normalizada(cidade.strip())
+        )
 
     # Janelas **corridas** a partir de agora, não semana e mês do calendário —
     # o motivo inteiro está no docstring do `PeriodoDaProgramacao`. `TODOS` não
@@ -870,6 +886,22 @@ def obter_destaque(sessao: Session) -> EventoEmDestaque | None:
     )
 
 
+def _cidade_normalizada(valor):
+    """A chave que junta as grafias da mesma cidade — `unaccent` mais `lower`.
+
+    **Uma função porque são dois consumidores que precisam concordar**: o filtro
+    de `listar_programacao` e o agrupamento de `listar_cidades_em_cartaz`. Se as
+    duas normalizações divergirem, o chip passa a oferecer uma cidade que o
+    filtro não acha — e o sintoma seria uma lista vazia depois de um clique num
+    chip que o próprio sistema desenhou.
+
+    ⚠️ **`unaccent` é do Postgres, não do Python.** A extensão já está instalada
+    desde a Story 3.2, que a usa na busca por termo; fazer a dobra em Python
+    obrigaria a trazer a coluna inteira para a memória antes de comparar.
+    """
+    return func.unaccent(func.lower(valor))
+
+
 def listar_cidades_em_cartaz(sessao: Session) -> list[str]:
     """As cidades que têm show na programação — o universo dos chips `ONDE`.
 
@@ -890,22 +922,77 @@ def listar_cidades_em_cartaz(sessao: Session) -> list[str]:
     `NULL` fica fora: a cidade é anulável desde a Story 2.3, e um chip em branco
     não é uma escolha. O evento sem cidade continua na programação — ele só não
     gera chip nem aparece em filtro de cidade nenhum.
+
+    ⚠️ **As grafias da mesma cidade viram um chip só** (13/08/2026). A
+    Ticketmaster não normaliza o `venue.city.name`: o banco de desenvolvimento
+    tem `São Paulo` em seis eventos e `Sao Paulo`, sem til, num sétimo, e nós
+    copiamos o que vem (AD-1). Um `DISTINCT` simples via duas strings diferentes
+    e desenhava **dois chips com o mesmo nome na tela**, um deles achando um
+    evento só.
+
+    A dobra é por `unaccent(lower(...))`, e o que se mostra é a **grafia mais
+    frequente** — `São Paulo`, e não `Sao Paulo`.
+
+    ⚠️ **O empate não desempata por ordem alfabética**, e a primeira versão
+    desta função desempatava: `ORDER BY cidade` parece a escolha óbvia e entrega
+    o rótulo da tela ao *collation* do banco. Com uma grafia por conta cada,
+    `rio de janeiro` vinha antes de `Rio de Janeiro` — porque no glibc a
+    minúscula precede a maiúscula no desempate — e o chip aparecia em caixa
+    baixa. Pior: isso muda com a configuração do cluster, então o mesmo dado
+    daria rótulos diferentes no meu banco, no de teste e na Railway.
+
+    O critério agora é explícito: entre grafias empatadas, **ganha a que tem
+    maiúscula**, que é a que alguém digitou como nome próprio. Sem depender de
+    ordenação de texto nenhuma.
+
+    **A alternativa descartada foi normalizar na publicação**, reescrevendo a
+    cidade para uma grafia canônica antes de gravar. Ela conserta o futuro e
+    deixa o passado como está — os dois `Sao/São Paulo` de hoje continuariam
+    separados até alguém rodar um `UPDATE` — e, pior, decide no ato da gravação
+    qual grafia é a certa, sem ter como saber: a primeira a chegar venceria, e
+    poderia ser a sem acento. Aqui a dobra é de leitura, o dado bruto continua
+    intacto, e a grafia mostrada acompanha o que o catálogo majoritariamente diz.
     """
     agora = datetime.now(timezone.utc)
 
+    # Uma contagem por grafia, para a de fora saber qual mostrar.
+    contagem = (
+        select(
+            Evento.cidade.label("cidade"),
+            _cidade_normalizada(Evento.cidade).label("chave"),
+            func.count().label("quantos"),
+        )
+        .where(
+            Evento.publicado_em.is_not(None),
+            Evento.data_hora >= agora,
+            Evento.cidade.is_not(None),
+        )
+        .group_by(Evento.cidade)
+        .subquery()
+    )
+
     return list(
         sessao.scalars(
-            select(Evento.cidade)
-            .where(
-                Evento.publicado_em.is_not(None),
-                Evento.data_hora >= agora,
-                Evento.cidade.is_not(None),
+            # `DISTINCT ON (chave)` — específico do Postgres, e é ele que permite
+            # escolher **qual linha** sobrevive de cada grupo, coisa que um
+            # `DISTINCT` comum não faz. O `order_by` abaixo é quem decide: a
+            # regra do desempate mora nele, não numa lambda em Python.
+            select(contagem.c.cidade)
+            .distinct(contagem.c.chave)
+            # Alfabética pela chave sem acento, e não por quantidade de shows: a
+            # ordem da **lista** precisa ser estável entre visitas para o chip
+            # não trocar de lugar debaixo do cursor a cada evento publicado. Os
+            # dois termos seguintes escolhem a grafia **dentro** de cada grupo,
+            # que é o que o `DISTINCT ON` exige.
+            .order_by(
+                contagem.c.chave,
+                contagem.c.quantos.desc(),
+                # `cidade = lower(cidade)` é verdadeiro só para a grafia toda em
+                # caixa baixa, e `FALSE` ordena antes de `TRUE` no Postgres — ou
+                # seja, a grafia com maiúscula ganha. É o desempate explicado no
+                # docstring, e o motivo de não haver `order_by(cidade)` aqui.
+                contagem.c.cidade == func.lower(contagem.c.cidade),
             )
-            .distinct()
-            # Alfabética, e não por quantidade de shows: a ordem precisa ser
-            # estável entre visitas para o chip não trocar de lugar debaixo do
-            # cursor a cada evento publicado.
-            .order_by(Evento.cidade)
         )
     )
 

@@ -13,12 +13,12 @@
 .explicacao {
   max-width: 56ch;
   margin-top: 10px;
-  font: 400 16px/1.55 var(--serif);
+  font: 400 18px/1.55 var(--serif);
   color: var(--fumaca);
 }
 
 .acao {
-  width: 210px;
+  width: 236px;
   margin-top: 16px;
 }
 
@@ -41,7 +41,7 @@
   padding: 12px 14px;
   border: 1px solid var(--fio);
   background: var(--breu2);
-  font: 13px/1.5 var(--mono);
+  font: 15px/1.5 var(--mono);
   color: var(--cal);
   overflow-wrap: anywhere;
 }
@@ -55,7 +55,7 @@
   border: 1px solid var(--fio2);
   background: none;
   color: var(--fumaca);
-  font: 600 11px/1 var(--mono);
+  font: 600 13px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;

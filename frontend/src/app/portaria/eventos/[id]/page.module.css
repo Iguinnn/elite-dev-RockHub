@@ -30,7 +30,7 @@
 
 .nome {
   margin-top: 8px;
-  font: 400 29px/1.15 var(--serif);
+  font: 400 32px/1.15 var(--serif);
   letter-spacing: -0.02em;
   /* O nome vem da Ticketmaster e pode ser longo ("Baco Exu do Blues — Turnê
      …"). Sem isto ele estoura a caixa num celular de 360px. */
@@ -39,7 +39,7 @@
 
 .ficha {
   margin-top: 9px;
-  font: 10px/1.5 var(--mono);
+  font: 12px/1.5 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -51,5 +51,5 @@
 .aviso {
   max-width: 52ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }

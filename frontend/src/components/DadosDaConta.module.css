@@ -1,6 +1,7 @@
-/* Dados da conta: kicker, nome em serifada, fio, pares rótulo/valor em mono,
-   fio, botão. Raio zero, sombra zero, nenhum card, nenhum avatar — círculo com
-   inicial dentro é justamente o vocabulário que este projeto não tem.
+/* Dados da conta: kicker, nome em serifada, pares rótulo/valor em mono com um
+   filete vertical à esquerda, botão. Raio zero, sombra zero, nenhum card,
+   nenhum avatar — círculo com inicial dentro é justamente o vocabulário que
+   este projeto não tem.
    [Fonte: DESIGN.md#Typography, #Spacing & Grid, UX-DR1, UX-DR2]
 
    **Este arquivo era `(site)/conta/page.module.css`** e veio junto com o
@@ -15,33 +16,43 @@
 
 .nome {
   margin-top: 12px;
-  font: 400 34px/1.2 var(--serif);
+  font: 400 37px/1.2 var(--serif);
   /* `word-break` não: nome próprio não se parte no meio. Em 375px um nome
      comprido quebra entre palavras e, no pior caso, encolhe — nunca transborda. */
   overflow-wrap: break-word;
 }
 
-/* Fio simples separando o nome dos dados de máquina, e outro fechando o bloco
-   antes da ação: o mesmo papel estrutural que os fios têm no masthead. */
+/* ⚠️ **Eram dois fios horizontais, e viraram um filete vertical** (decisão do
+   Igor, 2026-08-13). Os dois cortavam a página inteira para delimitar quatro
+   linhas de texto, e numa tela com três blocos ao todo isso é mais tinta do que
+   estrutura. O filete à esquerda faz o mesmo trabalho — dizer onde o bloco
+   começa e termina — sem atravessar o caminho da leitura.
+
+   **Continua sendo fio**, e é de propósito: é o vocabulário que o produto já
+   tem. O que mudou foi a direção, não o material. `--fio2` e não `--neon`,
+   porque o acento único é da ação e do item ativo (UX-DR1), e dado de conta não
+   é nem um nem outro.
+
+   ⚠️ **Isto aparece em duas telas**: a `/conta` do `(site)` e a
+   `/portaria/conta` renderizam este mesmo componente. */
 .dados {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
+  grid-template-columns: 104px minmax(0, 1fr);
   gap: 10px 20px;
-  margin-top: 22px;
-  padding: 20px 0;
-  border-top: 1px solid var(--fio);
-  border-bottom: 1px solid var(--fio);
+  margin-top: 26px;
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--fio2);
 }
 
 .dados dt {
-  font: 600 10px/1.6 var(--mono);
+  font: 600 12px/1.6 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .dados dd {
-  font: 12px/1.6 var(--mono);
+  font: 14px/1.6 var(--mono);
   color: var(--cal);
   /* E-mail longo quebra dentro da própria coluna em vez de empurrar a página:
      é o que segura a ausência de rolagem horizontal em 375px. */
@@ -52,7 +63,7 @@
    da tela, e não numa prop nova do `Botao`: largura é decisão do contexto,
    não do componente. */
 .saida {
-  max-width: 220px;
+  max-width: 248px;
   margin-top: 28px;
 }
 

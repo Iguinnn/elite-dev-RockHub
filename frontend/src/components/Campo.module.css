@@ -11,7 +11,7 @@
 .rotulo {
   display: block;
   margin-bottom: 7px;
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -23,7 +23,7 @@
   border: 1px solid var(--fio);
   color: var(--cal);
   padding: 14px;
-  font: 16px/1 var(--mono);
+  font: 18px/1 var(--mono);
 }
 
 /* ALÉM do :focus-visible global neon, nunca em vez dele: o contorno de foco

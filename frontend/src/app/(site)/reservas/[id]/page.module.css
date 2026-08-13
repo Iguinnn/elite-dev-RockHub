@@ -12,13 +12,13 @@
 }
 
 /* Anatomia do `.voltar` da página do evento, sem uma diferença sequer: mono
-   versalete em 14px, com `padding` dando alvo de toque sem virar botão. */
+   versalete em 16px, com `padding` dando alvo de toque sem virar botão. */
 .voltar {
   display: inline-block;
   margin: 20px 0 6px;
   padding: 6px 12px;
   color: var(--fumaca);
-  font: 600 14px/1.2 var(--mono);
+  font: 600 16px/1.2 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   text-decoration: none;
@@ -32,7 +32,7 @@
   max-width: 52ch;
   margin-top: 28px;
   padding: 0 12px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 /* ---- cabeçalho: o show à esquerda, o cronômetro à direita --------------- */
@@ -49,17 +49,17 @@
   border-bottom: 1px solid var(--fio);
 }
 
-/* Serifada grande, como na página do evento — mas 40px e não 52: aqui o `<h1>` é
+/* Serifada grande, como na página do evento — mas 44px e não 57: aqui o `<h1>` é
    a referência do que foi reservado, e a decisão já foi tomada na tela anterior. */
 .nomeDoEvento {
   margin: 8px 0 6px;
-  font: 400 40px/1.05 var(--serif);
+  font: 400 44px/1.05 var(--serif);
   letter-spacing: -0.03em;
 }
 
 .data {
   margin: 0;
-  font: 400 16px/1.5 var(--serif);
+  font: 400 18px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -73,7 +73,7 @@
    da outra — o mesmo desenho da lista de setores da página do evento. */
 .item {
   display: grid;
-  grid-template-columns: 1fr auto 130px;
+  grid-template-columns: 1fr auto 150px;
   gap: 20px;
   align-items: baseline;
   padding: 18px 12px;
@@ -81,19 +81,19 @@
 }
 
 .nomeDoSetor {
-  font: 400 23px/1.2 var(--serif);
+  font: 400 25px/1.2 var(--serif);
   letter-spacing: -0.02em;
 }
 
 .quantidade {
-  font: 600 12px/1.4 var(--mono);
+  font: 600 14px/1.4 var(--mono);
   letter-spacing: 0.1em;
   color: var(--fumaca);
   white-space: nowrap;
 }
 
 .subtotal {
-  font: 400 20px/1 var(--serif);
+  font: 400 22px/1 var(--serif);
   text-align: right;
   white-space: nowrap;
 }
@@ -113,14 +113,14 @@
 }
 
 .rotuloDoTotal {
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .total {
-  font: 400 30px/1 var(--serif);
+  font: 400 33px/1 var(--serif);
   white-space: nowrap;
 }
 
@@ -130,7 +130,7 @@
   max-width: 52ch;
   margin: 0 0 8px;
   padding: 0 12px;
-  font: 16px/1.6 var(--serif);
+  font: 18px/1.6 var(--serif);
   color: var(--fumaca);
 }
 
@@ -153,7 +153,7 @@
   max-width: 52ch;
   margin: 22px 12px 4px;
   padding: 2px 0 2px 14px;
-  font: 17px/1.6 var(--serif);
+  font: 19px/1.6 var(--serif);
   color: var(--fumaca);
 }
 
@@ -190,7 +190,7 @@
   }
 
   .nomeDoEvento {
-    font-size: 30px;
+    font-size: 33px;
   }
 
   /* O item empilha em duas linhas: setor acima; `2 × R$ 120,00` e o subtotal
@@ -204,6 +204,6 @@
   }
 
   .total {
-    font-size: 25px;
+    font-size: 27px;
   }
 }

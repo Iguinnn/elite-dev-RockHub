@@ -35,7 +35,7 @@
    deixa claro que ele é identificação de turno, não o título da tela. */
 .quem {
   margin-top: 8px;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--fumaca);

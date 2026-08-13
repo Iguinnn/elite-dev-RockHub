@@ -75,7 +75,7 @@
    `.nome` do `portaria/eventos/[id]` já leva, pelo mesmo motivo — palavra longa
    e indivisível dentro de caixa estreita. */
 .palavra {
-  font: 700 clamp(38px, 11vw, 46px) / 1.05 var(--mono);
+  font: 700 clamp(41px, 11vw, 50px) / 1.05 var(--mono);
   letter-spacing: 0.06em;
   overflow-wrap: break-word;
 }
@@ -92,6 +92,6 @@
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--fio);
-  font: 18px/1.4 var(--serif);
+  font: 20px/1.4 var(--serif);
   color: var(--cal);
 }

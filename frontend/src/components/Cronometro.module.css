@@ -13,7 +13,7 @@
 }
 
 .rotulo {
-  font: 600 10px/1.8 var(--mono);
+  font: 600 12px/1.8 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -23,7 +23,7 @@
    a linha inteira dança a cada tique. `font-variant-numeric: tabular-nums` é o
    que trava a largura do dígito mesmo dentro da mono. */
 .numero {
-  font: 600 22px/1 var(--mono);
+  font: 600 24px/1 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   color: var(--cal);

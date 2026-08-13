@@ -52,7 +52,24 @@
      Serifada é a voz do jornal: nome de artista, título, valor, corpo.
      Monoespaçada é tudo que é máquina ou etiqueta: código, kicker, rótulo,
      hora, estado — sempre em versalete com entreletra larga.
-     Nunca serifada em etiqueta, nunca monoespaçada em nome próprio.        */
+     Nunca serifada em etiqueta, nunca monoespaçada em nome próprio.
+
+     ⚠️ **A escala inteira subiu um degrau em 13/08/2026** (decisão do Igor), e
+     o corpo passou de 16px para 18px. O problema estava na monoespaçada: 40 das
+     185 declarações do frontend eram 10px e outras 20 eram 11px — e é justamente
+     nesse tamanho que moram os rótulos em `--fumaca` (`CASA`, `CIDADE`, `A
+     PARTIR DE`, o kicker de toda seção). Versalete cinza com 0,15em de entreletra
+     em 10px não é discrição, é texto que não se lê.
+
+     A regra aplicada: **até 24px soma 2px, acima disso multiplica por 1,09**. O
+     pequeno cresce 20% e o display cresce 9% — se a manchete subisse na mesma
+     proporção do rótulo, a hierarquia continuaria idêntica e nada teria sido
+     resolvido; o que precisava encurtar era a distância entre os dois extremos.
+
+     As larguras fixas que seguram esse texto subiram junto (coluna de data da
+     fila, coluna de rótulo da ficha, célula do stepper, largura dos botões):
+     tipografia maior dentro de caixa do tamanho antigo é como se quebra linha
+     onde antes não quebrava.                                               */
   --serif: Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -69,7 +86,7 @@ html,
 body {
   background: var(--breu);
   color: var(--cal);
-  font: 16px/1.55 var(--serif);
+  font: 18px/1.55 var(--serif);
 }
 
 /* ---- interface nativa do navegador --------------------------------------
@@ -140,7 +157,7 @@ a {
 
 /* Etiqueta que abre um bloco. Sempre acima do conteúdo que nomeia. */
 .kicker {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -152,9 +169,22 @@ a {
 
 /* ---- medida do texto ----------------------------------------------------
    Largura única da aplicação. O masthead e o conteúdo compartilham a mesma
-   coluna para que os fios se alinhem de ponta a ponta.                     */
+   coluna para que os fios se alinhem de ponta a ponta.
+
+   ⚠️ **Era 1180px, e virou 1440px** (decisão do Igor, 13/08/2026). Num monitor
+   de 1900px sobravam ~360px de breu de cada lado, e a capa lia como uma coluna
+   estreita no meio de uma tela vazia — não como um jornal aberto. Aqui a sobra
+   cai para ~230px de cada lado, que é margem de página e não terreno baldio.
+
+   **Não virou largura total**: as linhas de texto corrido continuam presas aos
+   `52ch`/`46ch` de cada tela, porque medida de leitura é medida de leitura, e é
+   a grade (capa, fila de quatro colunas, ficha do evento) que ganha o espaço.
+
+   O recuo lateral subiu junto, de 18px para 28px: com a coluna mais larga, o
+   fio precisa de mais folga até a borda da janela para não parecer que o
+   conteúdo está encostado nela.                                            */
 .conteudo {
-  max-width: 1180px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 18px;
+  padding: 0 28px;
 }

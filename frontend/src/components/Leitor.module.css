@@ -83,7 +83,7 @@
   border: 1px solid var(--fio2);
   background: none;
   color: var(--fumaca);
-  font: 700 12px/1 var(--mono);
+  font: 700 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
@@ -129,7 +129,7 @@
 .avisoCamera {
   max-width: 46ch;
   margin-top: 14px;
-  font: 15px/1.5 var(--serif);
+  font: 17px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -143,7 +143,7 @@
 .rotulo {
   display: block;
   margin-bottom: 8px;
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -162,7 +162,7 @@
   border: 1px solid var(--fio);
   color: var(--cal);
   padding: 17px;
-  font: 20px/1.2 var(--mono);
+  font: 22px/1.2 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -182,7 +182,7 @@
    valida é a única coisa que a pessoa precisa saber para usar esta tela. */
 .dica {
   margin: 10px 0 18px;
-  font: 13px/1.5 var(--serif);
+  font: 15px/1.5 var(--serif);
   color: var(--fumaca);
 }
 

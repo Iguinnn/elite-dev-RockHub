@@ -35,7 +35,7 @@
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  max-width: 360px;
+  max-width: 400px;
   padding: 16px 18px;
   border: 1px solid var(--brasa);
   background: var(--breu2);
@@ -50,7 +50,7 @@
 .texto {
   margin: 0;
   color: var(--cal);
-  font: 11px/1.7 var(--mono);
+  font: 13px/1.7 var(--mono);
 }
 
 /* O `<strong>` da primeira frase ("Esgotou enquanto você decidia") é o que
@@ -74,7 +74,7 @@
   border: none;
   color: var(--fumaca);
   cursor: pointer;
-  font: 18px/1 var(--mono);
+  font: 20px/1 var(--mono);
 }
 
 .fechar:hover {

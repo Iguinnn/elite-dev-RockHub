@@ -15,7 +15,7 @@
 .rotulo {
   display: block;
   margin-bottom: 7px;
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -41,7 +41,7 @@
   border: 0;
   color: var(--cal);
   padding: 14px;
-  font: 16px/1 var(--mono);
+  font: 18px/1 var(--mono);
 }
 
 /* ⚠️ **É esta regra que apaga o popup feio do navegador.** O indicador é o
@@ -65,8 +65,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 44px de alvo, como todo botão do produto (UX-DR9). */
-  width: 44px;
+  /* 48px de alvo, acima dos 44px de todo botão do produto (UX-DR9). */
+  width: 48px;
   background: none;
   border: 0;
   border-left: 1px solid var(--fio);
@@ -127,13 +127,13 @@
   --rdp-animation_duration: 0s;
 
   color: var(--cal);
-  font: 13px/1 var(--mono);
+  font: 15px/1 var(--mono);
 }
 
 /* O mês em versalete mono, como todo kicker do sistema — a biblioteca escreve
    "agosto de 2026" em caixa baixa e serifada do navegador. */
 .popover :global(.rdp-month_caption) {
-  font: 600 11px/1 var(--mono);
+  font: 600 13px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--cal);
@@ -142,14 +142,14 @@
 /* As iniciais dos dias da semana: a mesma etiqueta em `--fumaca` das colunas de
    setor. */
 .popover :global(.rdp-weekday) {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .popover :global(.rdp-day_button) {
-  font: 13px/1 var(--mono);
+  font: 15px/1 var(--mono);
   color: var(--cal);
 }
 

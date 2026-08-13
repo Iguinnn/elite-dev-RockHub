@@ -1,9 +1,20 @@
 /* Anatomia do masthead — DESIGN.md#Components/masthead.
 
-   RockHub                      ← serifada 44px, "Hub" itálico neon
-   ────────────────────────────  ← fio simples
-   INÍCIO  MEUS INGRESSOS  ...   ← mono versalete, ativo com fio neon embaixo
-   ────────────────────────────  ← fio simples, fecha o bloco                */
+   RockHub    INÍCIO  MEUS INGRESSOS  ...   ← logotipo e menu na MESMA linha
+   ──────────────────────────────────────   ← fio simples, fecha o bloco
+
+   ⚠️ **O menu descia embaixo do logotipo, com um fio entre os dois** (decisão do
+   Igor, 2026-08-13), e é assim que o `DESIGN.md` desenha — que **não** foi
+   atualizado, por ser artefato de planejamento congelado. O motivo da troca é
+   contagem: a tela inicial abria com quatro fios nos primeiros 200px (logotipo,
+   menu, busca, chips de período), e o jornal noturno vive de fio — quando todo
+   bloco tem um, nenhum separa nada. Juntar as duas faixas numa só apaga um fio
+   sem custar informação: o logotipo e o menu nunca disseram coisas diferentes.
+
+   O fio de baixo **fica**, e é compartilhado com todas as telas do grupo
+   `(site)`: ele é o que separa o cabeçalho do conteúdo em `/conta`,
+   `/ingressos` e `/organizador/*`, onde não há barra de busca logo abaixo para
+   assumir esse papel.                                                       */
 
 /* ⚠️ **O fio de baixo era `3px double`, e virou simples** (decisão do Igor,
    2026-08-12). O duplo é convenção de jornal impresso e está assim no
@@ -15,15 +26,23 @@
    masthead do conteúdo passou a ser o espaço em volta dele. */
 .masthead {
   padding-top: 26px;
+  /* Era `padding` do `.navbar`, que agora divide a faixa com o logotipo. */
+  padding-bottom: 13px;
   border-bottom: 1px solid var(--fio);
 }
 
+/* `align-items: flex-end` alinha o menu pela **base** do logotipo, não pelo
+   centro dele: o versalete sentado na linha de base da serifada é o que faz os
+   dois lerem como uma faixa só, e não como duas coisas empilhadas por acaso.
+
+   `flex-wrap` porque em tela estreita o menu não cabe ao lado — ali ele volta a
+   descer para baixo do logotipo, agora sem fio no meio. */
 .topo {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-end;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--fio);
+  gap: 10px 32px;
 }
 
 /* O logotipo mora em `Logotipo.module.css` — ele é compartilhado com a casca
@@ -37,14 +56,13 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 26px;
-  padding: 9px 0;
 }
 
 /* A borda transparente já ocupa o espaço do fio neon do item ativo: a linha
    não muda de altura quando a navegação troca de página. */
 .navLink {
   padding-bottom: 3px;
-  font: 600 11px/1 var(--mono);
+  font: 600 13px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);

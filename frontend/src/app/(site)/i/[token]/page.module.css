@@ -29,7 +29,7 @@
   margin: 18px 12px 0;
   padding: 2px 0 2px 14px;
   border-left: 2px solid var(--fio2);
-  font: 17px/1.6 var(--serif);
+  font: 19px/1.6 var(--serif);
   color: var(--fumaca);
 }
 
@@ -43,7 +43,7 @@
   max-width: 52ch;
   margin-top: 28px;
   padding: 0 12px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 /* O link que não vale mais (Story 4.4). Mesmo padrão de estado vazio do
@@ -55,13 +55,13 @@
 .frase {
   max-width: 46ch;
   margin: 12px 12px 0;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 .detalhe {
   max-width: 46ch;
   margin: 10px 12px 0;
-  font: 16px/1.55 var(--serif);
+  font: 18px/1.55 var(--serif);
   color: var(--fumaca);
 }
 

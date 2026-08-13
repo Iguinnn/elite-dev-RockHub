@@ -39,7 +39,7 @@
 }
 
 .secTitulo h1 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
@@ -47,7 +47,7 @@
 .aviso {
   max-width: 52ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 .lista {
@@ -62,7 +62,7 @@
    diferença entre acertar e errar o toque com uma mão, no escuro. */
 .turno {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) auto;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
   gap: 4px 18px;
   align-items: center;
   padding: 18px 8px 18px 4px;
@@ -93,14 +93,14 @@
 
 .diaDaSemana,
 .mesEAno {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .dia {
-  font: 400 30px/1 var(--serif);
+  font: 400 33px/1 var(--serif);
 }
 
 .corpo {
@@ -108,13 +108,13 @@
 }
 
 .nome {
-  font: 400 21px/1.2 var(--serif);
+  font: 400 23px/1.2 var(--serif);
   overflow-wrap: break-word;
 }
 
 .origem {
   margin-top: 5px;
-  font: 10px/1.4 var(--mono);
+  font: 12px/1.4 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -125,7 +125,7 @@
    escala normal da noite parecer um problema. */
 .fechado {
   margin-top: 8px;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.1em;
   color: var(--fumaca);
 }
@@ -141,14 +141,14 @@
    rodapé. */
 .entradas {
   margin-top: 8px;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cal);
 }
 
 .hora {
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
   letter-spacing: 0.06em;
   align-self: center;
 }
@@ -166,7 +166,7 @@
    sai da terceira coluna e vai para baixo do dia, onde há espaço sobrando. */
 @media (max-width: 380px) {
   .turno {
-    grid-template-columns: 54px minmax(0, 1fr);
+    grid-template-columns: 62px minmax(0, 1fr);
   }
 
   .hora {
