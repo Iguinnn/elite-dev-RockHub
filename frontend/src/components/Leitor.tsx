@@ -4,13 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
+import Veredito from "@/components/Veredito";
 import { ErroDaApi } from "@/lib/api";
-import { horaDeEntrada } from "@/lib/formato";
-import {
-  validarCodigo,
-  type ResultadoDaValidacao,
-  type Veredito,
-} from "@/lib/validacao";
+import { validarCodigo, type ResultadoDaValidacao } from "@/lib/validacao";
 
 import estilos from "./Leitor.module.css";
 
@@ -61,8 +57,9 @@ type EstadoDaCamera =
  * no susto. O que o limpa é a submissão seguinte — ação explícita de quem está
  * lendo, não um `setTimeout`.
  *
- * **A apresentação a três metros — cor, símbolo e corpo enorme — é a Story
- * 5.4.** Aqui é palavra e detalhe em texto, que é o que o AC da 5.3 pede.
+ * **A apresentação a três metros — cor, símbolo e corpo de 46px — mora no
+ * `<Veredito>`** desde a Story 5.4. Este arquivo decide *quando* há veredito;
+ * o outro decide como ele se lê.
  *
  * ⚠️ **A tela não reinterpreta o veredito.** Ela desenha o que veio. A tentação
  * é "se `INVALIDO` e o código tiver 8 caracteres, então…" — não há "então": o
@@ -293,6 +290,23 @@ export default function Leitor({ eventoId }: { eventoId: string }) {
         )}
       </div>
 
+      {/* ⚠️ **A região existe no DOM sempre, mesmo vazia**, e é isso que faz o
+          `aria-live` funcionar: leitor de tela só anuncia mudança dentro de uma
+          região que já estava lá — inserir a região junto com o texto não
+          dispara anúncio nenhum. É a mesma regra que o `AvisoDeErro` carrega.
+
+          ⚠️ **Ela fica ACIMA do formulário desde a Story 5.4**, e a razão é de
+          leitura a três metros: o que se lê à distância é o topo da tela, e o
+          campo com a dica empurrava o resultado para a dobra no celular. Aqui
+          ele ocupa o vão que o `<video>` deixa ao desmontar — a câmera lê, se
+          desliga, e o veredito nasce onde a mira estava.
+
+          A ordem de foco por teclado não sofre: o bloco não é focável, e quem o
+          anuncia é o `aria-live`, não a posição. */}
+      <div className={estilos.painel} aria-live="assertive">
+        {resultado && <Veredito resultado={resultado} />}
+      </div>
+
       <form
         className={estilos.formulario}
         onSubmit={(submissao) => {
@@ -349,49 +363,10 @@ export default function Leitor({ eventoId }: { eventoId: string }) {
         </Botao>
       </form>
 
-      {/* ⚠️ **A região existe no DOM sempre, mesmo vazia**, e é isso que faz o
-          `aria-live` funcionar: leitor de tela só anuncia mudança dentro de uma
-          região que já estava lá — inserir a região junto com o texto não
-          dispara anúncio nenhum. É a mesma regra que o `AvisoDeErro` carrega. */}
-      <div className={estilos.painel} aria-live="assertive">
-        {resultado && <Veredicto resultado={resultado} />}
-      </div>
-
       <AvisoDeErro mensagem={erro} />
     </div>
   );
 }
-
-/**
- * A palavra e o detalhe — o veredito em texto (Story 5.3).
- *
- * **Palavra e detalhe saem de duas tabelas**, e as duas vêm do
- * `EXPERIENCE.md#Os quatro vereditos da portaria`. A cor, o símbolo e o corpo de
- * 46px são o terceiro e o quarto canais, e entram na Story 5.4 — aqui o veredito
- * já é legível e já é completo, só não é legível a três metros.
- *
- * ⚠️ **`EVENTO_ERRADO` não nomeia o outro show**, e é a única linha em que esta
- * tela se afasta da tabela do `EXPERIENCE.md` (decisão do Igor). O detalhe lá é
- * "de qual show o ingresso é"; devolver o nome de um evento a uma portaria que
- * não foi escalada nele é exatamente o que o AD-7 existe para impedir. A resposta
- * da API nem carrega o dado — não há como esta tela mudar de ideia sozinha.
- */
-function Veredicto({ resultado }: { resultado: ResultadoDaValidacao }) {
-  return (
-    <div className={estilos.veredito}>
-      <p className={estilos.palavra}>{PALAVRA[resultado.resultado]}</p>
-      <p className={estilos.detalhe}>{detalhe(resultado)}</p>
-    </div>
-  );
-}
-
-/** As quatro palavras do `EXPERIENCE.md`, sem sinônimo e sem tradução livre. */
-const PALAVRA: Record<Veredito, string> = {
-  VALIDO: "VÁLIDO",
-  INVALIDO: "INVÁLIDO",
-  JA_UTILIZADO: "JÁ UTILIZADO",
-  EVENTO_ERRADO: "EVENTO ERRADO",
-};
 
 /**
  * O rótulo do botão em cada estado.
@@ -444,42 +419,6 @@ function motivoDaFalha(falha: unknown): EstadoDaCamera {
 
   if (nome === "NotAllowedError" || nome === "SecurityError") return "negada";
   return "ausente";
-}
-
-/**
- * O detalhe de cada veredito, montado dos campos que vieram.
- *
- * ⚠️ **`filter(Boolean)` nos dois primeiros casos, e não interpolação direta.**
- * `titular_nome` e `setor_nome` são anuláveis no contrato; sem o filtro, um
- * campo ausente imprimiria " · " solto ou a palavra "null" no meio da frase que
- * a portaria lê em voz alta — o mesmo cuidado que a `cidade` recebe na lista de
- * turnos.
- */
-function detalhe(resultado: ResultadoDaValidacao): string {
-  switch (resultado.resultado) {
-    case "VALIDO":
-      return (
-        [resultado.setor_nome, resultado.titular_nome]
-          .filter(Boolean)
-          .join(" · ") || "Pode entrar."
-      );
-    case "JA_UTILIZADO":
-      return (
-        [
-          resultado.entrada_em && `Entrou às ${horaDeEntrada(resultado.entrada_em)}`,
-          resultado.titular_nome,
-        ]
-          .filter(Boolean)
-          .join(" · ") || "Este ingresso já foi utilizado."
-      );
-    case "EVENTO_ERRADO":
-      // Sem o nome do outro show, de propósito — ver o docstring do `Veredicto`.
-      return "Este ingresso é de outro show.";
-    case "INVALIDO":
-      // A frase é a do `EXPERIENCE.md`, e ela vale também para o código que não
-      // é de ingresso nenhum: sem linha no banco, não há assinatura que confira.
-      return "Assinatura não confere.";
-  }
 }
 
 const MENSAGEM_GENERICA =

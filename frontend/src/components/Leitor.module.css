@@ -1,4 +1,4 @@
-/* O leitor da porta: câmera (Story 5.5) e campo manual (5.3).
+/* O leitor da porta: câmera (5.5), veredito (5.4) e campo manual (5.3).
 
    ┌──────────────────────────────────────────┐
    │ ┌──────────────────────────────────────┐ │
@@ -10,6 +10,13 @@
    │ │                                      │ │
    │ └──────────────────────────────────────┘ │
    │ ─────────────────────────────────────────│
+   │ ╔══════════════════════════════════════╗ │
+   │ ║                  ✓                   ║ │  ← o `<Veredito>` (5.4): ele
+   │ ║              V Á L I D O             ║ │     ocupa o vão que a mira
+   │ ║ ──────────────────────────────────── ║ │     deixa ao desmontar
+   │ ║        Pista · Igor Duarte           ║ │
+   │ ╚══════════════════════════════════════╝ │
+   │ ─────────────────────────────────────────│
    │ CÓDIGO DO INGRESSO                       │  ← rótulo visível, mono versalete
    │ ┌──────────────────────────────────────┐ │
    │ │ 9K4M7QX2                             │ │  ← mono grande, alvo de 56px
@@ -18,20 +25,17 @@
    │ ┌──────────────────────────────────────┐ │
    │ │              VALIDAR                 │ │  ← largura da coluna
    │ └──────────────────────────────────────┘ │
-   │ ─────────────────────────────────────────│
-   │ VÁLIDO                                   │  ← palavra, mono
-   │ Pista · Igor Duarte                      │  ← detalhe, serifada
    └──────────────────────────────────────────┘
 
    **Coluna única, sempre** — o `EXPERIENCE.md#Responsive` não dá alternativa
    para esta superfície, e não é preferência: é uma mão só, em pé, no escuro.
    Única, porém **não** da largura da casca: ver o `.leitor` logo abaixo.
 
-   ⚠️ **O veredito aqui é palavra e detalhe, e mais nada.** Cor, símbolo e corpo
-   de 46px são os três canais do `EXPERIENCE.md`, e eles entram **juntos** na
-   Story 5.4 — meio caminho seria pior que nenhum: um veredito colorido sem
-   símbolo transmite por cor sozinha, que é exatamente o que a regra dos três
-   canais proíbe.
+   ⚠️ **O veredito subiu para o meio da coluna na Story 5.4**, entre a câmera e o
+   campo. A três metros o que se lê é o topo da tela, e o campo com a dica
+   empurrava o resultado para a dobra no celular. A aparência dele mora inteira
+   no `Veredito.module.css`; aqui sobrou só o espaçamento da região que o
+   contém.
 
    Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
 
@@ -185,26 +189,17 @@
 /* A região do `aria-live`: existe sempre, e vazia não ocupa espaço nenhum. Sem
    `min-height` reservado — a tela é curta e um vão em branco esperando resultado
    pareceria conteúdo que não carregou (EXPERIENCE.md#Carregando: nada gira, nada
-   pulsa, e nada fica reservando lugar). */
+   pulsa, e nada fica reservando lugar).
+
+   ⚠️ **`border-bottom`, e era `border-top` até a Story 5.4.** O fio acompanhou a
+   mudança de lugar: quem a região separa agora está **embaixo** dela — o rótulo
+   do campo —, e o de cima já é fechado pelo `border-bottom` do `.bloco`. Sem a
+   troca, o veredito sairia com dois fios colados no topo e nenhum na base.
+
+   `:not(:empty)` continua fazendo o trabalho que importa: sem resultado não há
+   fio nem folga, e a câmera encosta no campo como encostava antes da 5.4. */
 .painel:not(:empty) {
-  margin-top: 26px;
-  padding-top: 20px;
-  border-top: 1px solid var(--fio);
-}
-
-/* ⚠️ **Sem cor e sem símbolo, de propósito.** Ver o cabeçalho deste arquivo: os
-   três canais entram juntos na Story 5.4. O que existe aqui é hierarquia — a
-   palavra pesa, o detalhe explica —, e ela já é legível de perto. */
-.palavra {
-  font: 700 27px/1.1 var(--mono);
-  letter-spacing: 0.1em;
-}
-
-/* Serifada porque o detalhe carrega **nome próprio** (o titular) e nome de setor
-   — a regra de tipografia do DESIGN.md é literal: nunca monoespaçada em nome
-   próprio. A palavra do veredito acima é etiqueta, e por isso é mono. */
-.detalhe {
-  margin-top: 9px;
-  font: 18px/1.4 var(--serif);
-  color: var(--cal);
+  margin-bottom: 26px;
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--fio);
 }
