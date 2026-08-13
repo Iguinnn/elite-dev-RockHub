@@ -42,7 +42,7 @@
 #   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-12 (Story 5.2 implementada; suíte em 492)
+last_updated: 2026-08-12 (Story 5.3 implementada; suíte em 498)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -422,7 +422,52 @@ development_status:
   # existe (nasce na 5.3), então o link do turno aberto continua levando a
   # lugar nenhum. É a mesma janela que a 5.1 abriu, e ela fecha no commit da 5.3.
   5-2-validar-o-ingresso-sem-deixar-passar-duas-vezes: done
-  5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: backlog
+  # Commit 2 da mesma techspec: `GET /portaria/eventos/{id}`, a tela
+  # `/portaria/eventos/{id}` e a ilha `<Leitor>` com o campo manual, mais
+  # `lib/validacao.ts`. **Sem migração.**
+  # A rota nova existe porque `GET /eventos/{id}` **não serve**: ela corta em
+  # `data_hora >= agora` e responde `404` exatamente durante o show, que é quando
+  # a portaria trabalha. Descartado buscar a lista inteira e achar o item pelo id
+  # na tela — funciona, e faz a tela de um turno depender de uma rota que fala de
+  # todos os outros. O handler é o mais curto da API: a dependência do commit
+  # anterior já traz as duas recusas, sem uma linha nova.
+  # ⚠️ **`lib/validacao.ts` é separado do `lib/turnos.ts` por razão física**, não
+  # de estilo: turnos importa `servidor.ts` → `next/headers`, e `next/headers`
+  # alcançado por um componente `"use client"` quebra o build. O leitor é ilha.
+  # ⚠️ **Todo `403` da tela vira redirect para `/portaria`**, e os códigos não são
+  # separados: `SEM_ESCALA_NO_EVENTO` e `EVENTO_NAO_ABERTO` são o mesmo fato para
+  # quem lê — este turno não é seu, agora. Um `notFound()` diria que o show não
+  # existe, o que é falso, e mandaria procurar o defeito no lugar errado.
+  # `indisponivel` é o único que **não** redireciona: vaivém entre duas telas que
+  # não carregam nada é pior que uma frase.
+  # ⚠️ **A tela não reconfere `turno.aberto`.** Se a API respondeu `200`, a
+  # dependência já deixou passar; conferir de novo aqui seria ressuscitar a
+  # segunda constante de duas horas que a 5.2 acabou de eliminar.
+  # Decisões desta tela: `<form onSubmit>` em vez de `onKeyDown`, porque a
+  # submissão implícita de formulário de um campo só é nativa e já funciona com o
+  # "Ir" do teclado do celular; botão *Validar* **além** do Enter, de largura
+  # inteira (EXPERIENCE.md#Responsive), porque nem todo teclado de celular oferece
+  # a tecla de confirmar; e o `<h1>` é o **nome do show**, não a palavra "Leitor"
+  # — é ele que responde à única pergunta antes de começar, "é este o show
+  # certo?", e quem trabalha em duas casas na mesma noite abre o leitor errado
+  # com facilidade.
+  # ⚠️ **O foco volta ao campo no `finally`, nos dois caminhos.** Sem isso, depois
+  # de clicar em *Validar* o foco fica no botão e o Enter seguinte reenvia o mesmo
+  # código — defeito que só aparece para quem usa o botão, que é justamente quem
+  # está com uma mão só.
+  # ⚠️ **O veredito sai da tela na submissão seguinte, não por tempo**
+  # (EXPERIENCE.md#veredito). E ele é limpo no **início** da chamada, não quando a
+  # resposta chega: durante a ida à rede ele estaria respondendo pela leitura
+  # errada, e a fila lê o que está na tela.
+  # **Fora de propósito, e vai junto na 5.4:** cor, símbolo e corpo de 46px. Meio
+  # caminho seria pior que nenhum — veredito colorido sem símbolo transmite por
+  # cor sozinha, que é o que a regra dos três canais proíbe. O `aria-live=
+  # "assertive"` **entrou agora**, contra o que a spec previa: é piso de
+  # acessibilidade do EXPERIENCE.md, e uma tela que anuncia nada para leitor de
+  # tela não é "simples", é incompleta.
+  # ✅ **A janela aberta pela 5.1 fechou:** o link do turno chega numa tela que
+  # existe. Eram dois commits, a mesma forma da janela entre a 2.4 e a 2.5.
+  5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: done
   5-4-ver-o-resultado-a-tres-metros: backlog
   5-5-ler-o-qr-pela-camera: backlog
   5-6-acompanhar-as-entradas-do-turno: backlog

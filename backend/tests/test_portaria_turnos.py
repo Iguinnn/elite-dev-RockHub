@@ -410,3 +410,158 @@ def test_o_openapi_declara_turno_da_portaria_na_rota(cliente: TestClient) -> Non
     rota = especificacao["paths"]["/portaria/eventos"]["get"]
     schema = rota["responses"]["200"]["content"]["application/json"]["schema"]
     assert schema["items"]["$ref"].endswith("/TurnoDaPortaria")
+
+
+# --------------------------------------------------------------------------- #
+# `GET /portaria/eventos/{id}` — o cabeçalho do leitor (Story 5.3)
+# --------------------------------------------------------------------------- #
+
+
+def test_o_turno_de_um_evento_so_traz_a_mesma_ficha_da_lista(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Mesmo schema da lista, e é de propósito: é a mesma ficha, de um item só.
+
+    A tela do leitor precisa do nome do show no cabeçalho, e a rota pública
+    `GET /eventos/{id}` não serve — ela corta em `data_hora >= agora` e responde
+    `404` **exatamente durante o show**, que é quando a portaria trabalha.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "um@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "um-porta@exemplo.com")
+    evento = _evento_gravado(
+        sessao,
+        organizador,
+        nome="Sepultura",
+        data_hora=datetime.now(timezone.utc) + timedelta(hours=1),
+        portarias=[porteiro],
+    )
+    _entrar(cliente, porteiro)
+
+    resposta = cliente.get(f"/portaria/eventos/{evento.id}")
+
+    assert resposta.status_code == 200
+    turno = resposta.json()
+    assert set(turno) == {"id", "nome", "data_hora", "local", "cidade", "aberto"}
+    assert turno["id"] == str(evento.id)
+    assert turno["nome"] == "Sepultura"
+    assert turno["aberto"] is True
+
+
+def test_o_turno_de_um_evento_que_ja_comecou_continua_atendendo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ **A asserção que justifica a rota existir.**
+
+    `GET /eventos/{id}` responderia `404` aqui, porque as rotas públicas escondem
+    o evento a partir de `data_hora`. É o horário em que a fila anda.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "andando@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "andando-porta@exemplo.com")
+    evento = _evento_gravado(
+        sessao,
+        organizador,
+        nome="Começou às 21h",
+        data_hora=datetime.now(timezone.utc) - timedelta(minutes=30),
+        portarias=[porteiro],
+    )
+    _entrar(cliente, porteiro)
+
+    publica = cliente.get(f"/eventos/{evento.id}")
+    da_portaria = cliente.get(f"/portaria/eventos/{evento.id}")
+
+    assert publica.status_code == 404
+    assert da_portaria.status_code == 200
+    assert da_portaria.json()["nome"] == "Começou às 21h"
+
+
+def test_o_turno_de_um_evento_sem_escala_responde_403(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A mesma dependência da validação, e a mesma recusa — sem uma linha nova.
+
+    É o que a tela usa para mandar de volta a `/portaria`: quem não trabalha
+    naquele evento não abre o leitor dele.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "alheio@exemplo.com")
+    de_fora = fabricar_usuario(PapelUsuario.PORTARIA, "alheio-porta@exemplo.com")
+    evento = _evento_gravado(sessao, organizador, portarias=[])
+    _entrar(cliente, de_fora)
+
+    resposta = cliente.get(f"/portaria/eventos/{evento.id}")
+
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "SEM_ESCALA_NO_EVENTO"
+
+
+def test_o_turno_antes_da_porta_abrir_responde_403(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O leitor não abre antes da hora — a mesma janela que recusa a validação.
+
+    Sem isso, a tela do leitor renderizaria e o primeiro código digitado
+    receberia `403` da validação: a recusa apareceria depois de a portaria já ter
+    começado a trabalhar, em vez de antes.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "cedo@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "cedo-porta@exemplo.com")
+    evento = _evento_gravado(
+        sessao,
+        organizador,
+        data_hora=datetime.now(timezone.utc) + timedelta(days=3),
+        portarias=[porteiro],
+    )
+    _entrar(cliente, porteiro)
+
+    resposta = cliente.get(f"/portaria/eventos/{evento.id}")
+
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_NAO_ABERTO"
+
+
+def test_o_turno_exige_sessao_e_papel_de_portaria(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """`401` antes de `403`, e o organizador do próprio show também não entra."""
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "dono@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "dono-porta@exemplo.com")
+    evento = _evento_gravado(sessao, organizador, portarias=[porteiro])
+
+    sem_sessao = cliente.get(f"/portaria/eventos/{evento.id}")
+    assert sem_sessao.status_code == 401
+    assert sem_sessao.json()["erro"]["codigo"] == "NAO_AUTENTICADO"
+
+    _entrar(cliente, organizador)
+    resposta = cliente.get(f"/portaria/eventos/{evento.id}")
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "SEM_PERMISSAO"
+
+
+def test_a_rota_da_lista_nao_e_engolida_pela_do_turno(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    """⚠️ **`/portaria/eventos` e `/portaria/eventos/{id}` convivem**, e a prova
+    é barata.
+
+    O `/ingressos` da Story 4.3 passou a morar em dois routers e só se sustenta
+    pela contagem de segmentos do caminho; aqui o risco é o vizinho — uma rota de
+    um segmento e outra de dois sob o mesmo prefixo. Elas não colidem, e esta
+    asserção é o que garante que continuam não colidindo se alguém reordenar as
+    declarações do arquivo.
+    """
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "ordem-porta@exemplo.com")
+    _entrar(cliente, porteiro)
+
+    lista = cliente.get("/portaria/eventos")
+
+    assert lista.status_code == 200
+    assert lista.json() == []

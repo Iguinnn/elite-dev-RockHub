@@ -62,6 +62,30 @@ def meus_turnos(
     return servico_de_evento.listar_escalados(sessao, portaria)
 
 
+@router.get("/eventos/{evento_id}", response_model=TurnoDaPortaria)
+def meu_turno(evento: Evento = Depends(exigir_porta_aberta)) -> TurnoDaPortaria:
+    """O turno de um evento só — o cabeçalho da tela do leitor (Story 5.3).
+
+    **Ela existe porque `GET /eventos/{id}` não serve**, e o motivo é o mesmo
+    que fez `listar_escalados` não cortar por tempo: a rota pública corta em
+    `data_hora >= agora` e responde `404` **exatamente durante o show**, que é
+    quando a portaria trabalha. O cabeçalho do leitor diria "esse evento não
+    existe" no minuto em que a fila começa a andar.
+
+    **Descartei buscar a lista inteira e achar o item pelo id na tela.**
+    Funciona, e faz a tela de um turno depender de uma rota que fala de todos os
+    outros — quem abre o leitor do show de hoje carregaria a agenda do mês.
+
+    **Sem `sessao` na assinatura, e sem `portaria` também.** A dependência já
+    consultou o banco e já sabe quem está na sessão; o handler não tem uma
+    pergunta a mais a fazer. É a rota mais curta da API, e é assim que ela
+    demonstra o que a dependência do commit anterior comprou: as duas recusas do
+    AD-7 e do portão valem aqui **sem uma linha nova** — quem não está escalado
+    não abre o leitor, e quem chega três dias antes também não.
+    """
+    return servico_de_evento.montar_turno(evento)
+
+
 @router.post("/eventos/{evento_id}/validacoes", response_model=ResultadoDaValidacao)
 def validar_ingresso(
     dados: ValidacaoEntrada,

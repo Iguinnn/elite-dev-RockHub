@@ -350,7 +350,7 @@ def listar_escalados(sessao: Session, portaria: Usuario) -> list[TurnoDaPortaria
     # `instanteDaRequisicao` com `cache()` que a tela da 5.1 usava antes de o
     # campo existir.
     agora = datetime.now(timezone.utc)
-    return [_turno(evento, agora) for evento in eventos]
+    return [montar_turno(evento, agora) for evento in eventos]
 
 
 def porta_aberta(evento: Evento, agora: datetime) -> bool:
@@ -373,12 +373,20 @@ def porta_aberta(evento: Evento, agora: datetime) -> bool:
     return evento.data_hora - ABERTURA_DOS_PORTOES <= agora
 
 
-def _turno(evento: Evento, agora: datetime) -> TurnoDaPortaria:
+def montar_turno(evento: Evento, agora: datetime | None = None) -> TurnoDaPortaria:
     """Projeta o `Evento` no contrato da portaria, com o `aberto` calculado.
 
     Campo a campo, e não `model_validate(evento)`: `aberto` não é coluna, e o
     schema deixou de declarar `from_attributes` justamente por isso (o docstring
     dele explica a troca).
+
+    **`agora` opcional, e os dois modos de chamar são de propósito.** A lista
+    passa o relógio que leu uma vez para a resposta inteira; a rota de um turno
+    só (`GET /portaria/eventos/{id}`, Story 5.3) não tem o que sincronizar e
+    deixa a função ler. Sem o parâmetro, a lista precisaria montar o schema à
+    mão para não ler o relógio N vezes — e aí haveria duas projeções do mesmo
+    `Evento` no arquivo, que é exatamente a divergência que esta função existe
+    para não acontecer.
     """
     return TurnoDaPortaria(
         id=evento.id,
@@ -386,7 +394,7 @@ def _turno(evento: Evento, agora: datetime) -> TurnoDaPortaria:
         data_hora=evento.data_hora,
         local=evento.local,
         cidade=evento.cidade,
-        aberto=porta_aberta(evento, agora),
+        aberto=porta_aberta(evento, agora or datetime.now(timezone.utc)),
     )
 
 

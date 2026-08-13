@@ -1,3 +1,5 @@
+import { unstable_rethrow } from "next/navigation";
+
 import { API_URL, cabecalhoDeSessao } from "./servidor";
 
 /**
@@ -73,6 +75,75 @@ export async function listarTurnos(): Promise<ResultadoDosTurnos> {
     return { estado: "ok", itens };
   } catch (erro) {
     console.error(`[RockHub] Lista de turnos indisponível em ${API_URL}:`, erro);
+    return { estado: "indisponivel" };
+  }
+}
+
+/**
+ * Quatro estados, um a mais que os do `obterIngresso` — e o novo é `sem-turno`.
+ *
+ * Ele existe porque a recusa desta rota **não** é "não encontrado": a API
+ * responde `403` para quem não foi escalado no evento e para quem chegou antes
+ * de a porta abrir, e a tela precisa mandar essa pessoa de volta a `/portaria`,
+ * onde a lista dela está. Um `notFound()` diria que o show não existe, o que é
+ * falso e manda a portaria procurar o defeito no lugar errado.
+ */
+export type ResultadoDoTurno =
+  | { estado: "ok"; turno: TurnoDaPortaria }
+  | { estado: "sem-turno" }
+  | { estado: "sem-sessao" }
+  | { estado: "indisponivel" };
+
+/**
+ * O turno de um evento só — o cabeçalho da tela do leitor (Story 5.3).
+ *
+ * **Não se busca a lista inteira para achar o item pelo id**, e não se usa
+ * `GET /eventos/{id}`: aquela é pública e corta em `data_hora >= agora`, ou
+ * seja, responde `404` justamente durante o show. O motivo inteiro está no
+ * docstring da rota, em `app/api/portaria.py`.
+ *
+ * ⚠️ **Todo `403` cai em `sem-turno`, e os três códigos possíveis não são
+ * separados.** `SEM_ESCALA_NO_EVENTO` e `EVENTO_NAO_ABERTO` são o mesmo fato
+ * para quem lê — este turno não é seu, agora —, e `SEM_PERMISSAO` (papel
+ * errado) não chega aqui: a página já conferiu o papel antes de chamar, e quem
+ * cair em `/portaria` pelo redirect encontra a guarda de lá. Distinguir os três
+ * daria três frases para uma tela que não chega a ser desenhada.
+ *
+ * **Nunca levanta**, como todas as funções de leitura do `lib/`.
+ */
+export async function obterTurno(id: string): Promise<ResultadoDoTurno> {
+  const cabecalho = await cabecalhoDeSessao();
+
+  try {
+    const resposta = await fetch(
+      `${API_URL}/portaria/eventos/${encodeURIComponent(id)}`,
+      { headers: cabecalho ?? undefined, cache: "no-store" },
+    );
+
+    // ⚠️ **Os dois status antes do `!resposta.ok` genérico**, como no
+    // `obterIngresso`. Juntos no mesmo ramo, "você não está escalado" viraria
+    // "a API não respondeu" e a tela pediria para tentar de novo em instantes —
+    // o que nunca daria certo.
+    if (resposta.status === 401) {
+      return { estado: "sem-sessao" };
+    }
+    // O `422` entra aqui, e não num estado próprio: um `id` que não é UUID veio
+    // da barra de endereço, e para quem lê é a mesma coisa que um turno que não
+    // é seu.
+    if (resposta.status === 403 || resposta.status === 422) {
+      return { estado: "sem-turno" };
+    }
+
+    if (!resposta.ok) {
+      return { estado: "indisponivel" };
+    }
+
+    const turno = (await resposta.json()) as TurnoDaPortaria;
+    return { estado: "ok", turno };
+  } catch (erro) {
+    unstable_rethrow(erro);
+
+    console.error(`[RockHub] Turno indisponível em ${API_URL}:`, erro);
     return { estado: "indisponivel" };
   }
 }

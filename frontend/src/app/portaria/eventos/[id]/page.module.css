@@ -1,0 +1,52 @@
+/* O cabeçalho do leitor (Story 5.3). O campo e o veredito moram no
+   `Leitor.module.css` — este arquivo é só a moldura da tela.
+
+   ┌──────────────────────────────────────────┐
+   │ LEITOR                                   │  ← kicker
+   │ Baco Exu do Blues                        │  ← serifada, o dado que confirma
+   │ SEX, 15 AGO 2026 · 21H00 · ESPAÇO UNIMED │  ← ficha em mono versalete
+   │ ─────────────────────────────────────────│
+   └──────────────────────────────────────────┘
+
+   **Sem título "Leitor" em serifada grande**, ao contrário de `/portaria`: o
+   `<h1>` aqui é o **nome do show**, porque é ele que responde à única pergunta
+   que esta tela precisa responder antes de começar — é este o show certo? Um
+   título genérico grande empurraria o nome do evento para baixo e gastaria a
+   primeira dobra da tela mais apertada do produto.
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
+
+.pagina {
+  padding: 40px 0 96px;
+}
+
+.cabecalho {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--fio);
+}
+
+.nome {
+  margin-top: 8px;
+  font: 400 29px/1.15 var(--serif);
+  letter-spacing: -0.02em;
+  /* O nome vem da Ticketmaster e pode ser longo ("Baco Exu do Blues — Turnê
+     …"). Sem isto ele estoura a caixa num celular de 360px. */
+  overflow-wrap: break-word;
+}
+
+.ficha {
+  margin-top: 9px;
+  font: 10px/1.5 var(--mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* Indisponibilidade (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração e sem
+   botão grande — não há nada que esta pessoa possa fazer daqui além de esperar,
+   e o caminho de volta é o cabeçalho da casca. */
+.aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  font: 19px/1.5 var(--serif);
+}
