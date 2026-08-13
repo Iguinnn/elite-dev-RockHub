@@ -9,10 +9,17 @@ nominalmente: uma revisão com o `downgrade()` quebrado só é notada se alguém
 acrescentar a tabela dela à lista.
 """
 
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
 from alembic import command
 from sqlalchemy import Engine, inspect, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.seguranca import conferir_codigo, gerar_hash, gerar_nonce
+from app.models.evento import Evento, Setor
+from app.models.reserva import EstadoReserva, Reserva
+from app.models.usuario import PapelUsuario, Usuario
 from tests.conftest import _config_alembic
 
 
@@ -330,6 +337,12 @@ def test_upgrade_cria_a_tabela_ingresso_com_as_dez_colunas(
     leitura de `GET /ingressos`, não a porta. `share_token` entrou na da 4.3
     (`ed0bb0dad2a3`): é o endereço do link compartilhável, e `NULL` nele é
     "nunca compartilhado" **ou** "revogado".
+
+    A `97672aee94c4` trocou duas das dez sem mudar a contagem: `assinatura` saiu e
+    `codigo` entrou (8 símbolos de Crockford em vez dos 43 de base64), e
+    `titular_nome` virou `pagador_nome` — o ingresso passou a estar no nome da
+    conta, e a coluna guarda quem pagou (techspec
+    `docs/techspec-codigo-curto.md`).
     """
     inspetor = inspect(engine_teste)
 
@@ -339,8 +352,8 @@ def test_upgrade_cria_a_tabela_ingresso_com_as_dez_colunas(
         "reserva_id",
         "evento_id",
         "setor_id",
-        "titular_nome",
-        "assinatura",
+        "pagador_nome",
+        "codigo",
         "nonce",
         "usado_em",
         "validado_por",
@@ -470,3 +483,174 @@ def test_validado_por_referencia_usuario_sem_cascade_e_sem_indice(
         for coluna in indice["column_names"]
     }
     assert "validado_por" not in colunas_indexadas
+
+
+def test_codigo_tem_oito_caracteres_e_indice_unico(engine_teste: Engine) -> None:
+    """A coluna que a portaria usa como `where` (`97672aee94c4`).
+
+    **`String(8)` sem folga**, ao contrário do `String(64)` que a `assinatura`
+    tinha: ali a folga era para o dia em que o algoritmo mudasse; aqui o tamanho
+    **é** o contrato, porque é ele que torna o campo manual usável na fila.
+
+    ⚠️ **Índice único, e é ele que faz a colisão acontecer no lugar certo.** Com 40
+    bits, dois códigos iguais deixaram de ser impossíveis; sem o único, as duas
+    linhas conviveriam e a validação — que acha a linha *pelo* código — escolheria
+    uma em silêncio. Com ele, a emissão recebe `IntegrityError` e sorteia outro
+    `nonce`. Um `--autogenerate` distraído que trocasse `unique=True` por `False`
+    não quebraria teste de comportamento nenhum; quebra este.
+    """
+    inspetor = inspect(engine_teste)
+    colunas = {c["name"]: c for c in inspetor.get_columns("ingresso")}
+
+    assert colunas["codigo"]["nullable"] is False
+    assert colunas["codigo"]["type"].length == 8
+
+    (indice,) = [
+        i for i in inspetor.get_indexes("ingresso") if i["column_names"] == ["codigo"]
+    ]
+    assert indice["unique"] is True
+
+
+def test_ingresso_emitido_antes_da_migracao_continua_valido(
+    engine_teste: Engine,
+) -> None:
+    """⚠️ **O teste que autoriza a frase "nenhum ingresso foi invalidado".**
+
+    A `97672aee94c4` não zera a tabela: o código novo é derivável das colunas que
+    já existiam (`id`, `evento_id`, `nonce`), e ela **calcula** o valor de cada
+    linha. Sem este teste, a alternativa descartada na techspec — apagar os
+    ingressos existentes — seria indistinguível da escolhida para quem lê a suíte,
+    e um `UPDATE` errado no meio da migração só apareceria na fila da porta.
+
+    O caminho é o de um ingresso de verdade emitido antes da mudança: volta-se à
+    revisão anterior, grava-se a linha **no formato antigo** (`assinatura` e
+    `titular_nome`, por SQL cru — o modelo de hoje não sabe escrever essas
+    colunas), roda-se `upgrade head` e confere-se o código resultante com o mesmo
+    `conferir_codigo` que a portaria vai chamar.
+
+    ⚠️ **Ele comita, então ele limpa** — mesma disciplina dos testes de corrida:
+    roda fora da transação revertida do `conftest.py`, e o `finally` devolve o
+    banco ao `head` mesmo se a asserção falhar.
+    """
+    cfg = _config_alembic()
+    Fabrica = sessionmaker(bind=engine_teste, expire_on_commit=False)
+
+    organizador_id = uuid4()
+    cliente_id = uuid4()
+    evento_id = uuid4()
+    setor_id = uuid4()
+    reserva_id = uuid4()
+    ingresso_id = uuid4()
+    nonce = gerar_nonce()
+
+    try:
+        # Volta ao schema de antes: `ingresso` com `assinatura` e `titular_nome`.
+        command.downgrade(cfg, "ed0bb0dad2a3")
+
+        with Fabrica() as preparo:
+            preparo.add_all(
+                [
+                    Usuario(
+                        id=organizador_id,
+                        nome="Organizador da migração",
+                        email=f"org-mig-{organizador_id}@exemplo.com",
+                        senha_hash=gerar_hash("rockhub"),
+                        papel=PapelUsuario.ORGANIZADOR.value,
+                    ),
+                    Usuario(
+                        id=cliente_id,
+                        nome="Cliente da migração",
+                        email=f"cli-mig-{cliente_id}@exemplo.com",
+                        senha_hash=gerar_hash("rockhub"),
+                        papel=PapelUsuario.CLIENTE.value,
+                    ),
+                ]
+            )
+            preparo.flush()
+            preparo.add(
+                Evento(
+                    id=evento_id,
+                    organizador_id=organizador_id,
+                    nome="Show de antes da migração",
+                    data_hora=datetime.now(timezone.utc) + timedelta(days=30),
+                    local="Espaço Unimed",
+                    cidade="São Paulo",
+                    origem_externa_id="G5vYZ9a1kd",
+                    publicado_em=datetime.now(timezone.utc),
+                    setores=[
+                        Setor(
+                            id=setor_id,
+                            nome="Pista",
+                            capacidade=10,
+                            vendidos=1,
+                            preco_centavos=12000,
+                        )
+                    ],
+                )
+            )
+            preparo.flush()
+            preparo.add(
+                Reserva(
+                    id=reserva_id,
+                    cliente_id=cliente_id,
+                    evento_id=evento_id,
+                    estado=EstadoReserva.PAGA.value,
+                    expira_em=datetime.now(timezone.utc) + timedelta(minutes=10),
+                    total_centavos=12000,
+                )
+            )
+            preparo.flush()
+            # SQL cru: o `Ingresso` de hoje tem `codigo` e `pagador_nome`, que
+            # nesta revisão do schema não existem. A `assinatura` gravada aqui é
+            # texto qualquer de propósito — a migração **não** a lê, ela recalcula
+            # do `nonce`, e é isso que este teste está afirmando.
+            preparo.execute(
+                text(
+                    "INSERT INTO ingresso "
+                    "(id, reserva_id, evento_id, setor_id, titular_nome, "
+                    " assinatura, nonce) "
+                    "VALUES (:id, :reserva, :evento, :setor, :titular, "
+                    " :assinatura, :nonce)"
+                ),
+                {
+                    "id": ingresso_id,
+                    "reserva": reserva_id,
+                    "evento": evento_id,
+                    "setor": setor_id,
+                    "titular": "Nome do formato antigo",
+                    "assinatura": "assinatura-do-formato-antigo",
+                    "nonce": nonce,
+                },
+            )
+            preparo.commit()
+
+        command.upgrade(cfg, "head")
+
+        with Fabrica() as leitura:
+            codigo, pagador = leitura.execute(
+                text("SELECT codigo, pagador_nome FROM ingresso WHERE id = :id"),
+                {"id": ingresso_id},
+            ).one()
+
+        # O ingresso emitido antes da mudança passa na porta depois dela.
+        assert conferir_codigo(codigo, ingresso_id, evento_id, nonce) is True
+        # E o `RENAME COLUMN` preservou o conteúdo: quem pagou continua gravado.
+        assert pagador == "Nome do formato antigo"
+    finally:
+        with Fabrica() as limpeza:
+            limpeza.execute(
+                text("DELETE FROM ingresso WHERE id = :id"), {"id": ingresso_id}
+            )
+            limpeza.execute(
+                text("DELETE FROM reserva WHERE id = :id"), {"id": reserva_id}
+            )
+            limpeza.execute(text("DELETE FROM setor WHERE id = :id"), {"id": setor_id})
+            limpeza.execute(text("DELETE FROM evento WHERE id = :id"), {"id": evento_id})
+            limpeza.execute(
+                text("DELETE FROM usuario WHERE id IN (:um, :outro)"),
+                {"um": cliente_id, "outro": organizador_id},
+            )
+            limpeza.commit()
+        # Devolve o banco ao `head` mesmo se a asserção acima falhou: os testes
+        # seguintes contam com o schema atual.
+        command.upgrade(cfg, "head")

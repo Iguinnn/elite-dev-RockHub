@@ -352,6 +352,28 @@ development_status:
   # escondem o evento a partir de `data_hora`, então portão exato travaria o
   # roteiro de avaliação da 6.4. É constante de uma linha na tela.
   5-1-ver-onde-eu-trabalho-hoje: done
+  # Fora da numeração, entre a 5.1 e a 5.2: **o código do ingresso encolheu de 80
+  # para 8 caracteres**. Commit `feat` avulso, spec em
+  # docs/techspec-codigo-curto.md. Toca `core/seguranca.py`,
+  # `models/ingresso.py`, a emissão em `services/reserva.py`,
+  # `services/ingresso.py` e uma migração — todos de outras epics. Não vira story
+  # porque nenhuma das 38 previu isto: é consequência de uma decisão de produto
+  # tomada ao escrever a spec da validação na porta, e o campo manual da 5.3 é
+  # inutilizável com 80 caracteres na fila.
+  # Decisões do Igor: 8 caracteres (40 bits) em base32 de Crockford, com o HMAC
+  # **truncado** e não sorteado — é o que mantém a frase do AD-5 de pé; e o
+  # ingresso passa a estar no nome da **conta**, com `titular_nome` virando
+  # `pagador_nome` na coluna. Nenhum ingresso emitido foi invalidado: a migração
+  # calcula o código de cada linha em vez de zerar a tabela.
+  # ⚠️ A `docs/techspec-validacao-na-porta.md` **assume este commit aplicado**.
+  # ⚠️ Colisão de código deixou de ser impossível com 40 bits: a emissão sorteia
+  # outro `nonce` dentro de um `begin_nested()`. Sem o SAVEPOINT o
+  # `IntegrityError` mata a transação que acabou de marcar a reserva `PAGA`, e o
+  # pagamento aprovado termina em `500`.
+  # ⚠️ O `U` não está no alfabeto de Crockford (nem `I`, `L` e `O`). Quem testar
+  # à mão não invente código com `U` e conclua que a validação quebrou.
+  # ⚠️ A migração lê o `TICKET_SIGNING_SECRET` para calcular os códigos: girar o
+  # segredo **depois** dela invalida o que ela calculou, como sempre invalidou.
   5-2-validar-o-ingresso-sem-deixar-passar-duas-vezes: backlog
   5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: backlog
   5-4-ver-o-resultado-a-tres-metros: backlog

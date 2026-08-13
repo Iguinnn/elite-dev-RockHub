@@ -4,7 +4,13 @@
 validados no formato, usados na tela e descartados: não existe coluna para eles
 e não vou criar. Guardar CPF de gente é dado sensível sem nenhum consumidor
 neste sistema — o único campo que sobrevive à requisição é o `nome`, que a Story
-3.9 grava como `ingresso.titular_nome`.
+3.9 grava como `ingresso.pagador_nome`.
+
+⚠️ **Este `nome` é o de quem paga, e não o titular do ingresso** (decisão do
+Igor, techspec `docs/techspec-codigo-curto.md`). A coluna se chamava
+`titular_nome` até 2026-08-12; o titular passou a ser o nome da **conta**, porque
+o cartão pode ser de outra pessoa. O que ele grava continua não tendo leitor
+nenhum em tela — é o registro de quem pagou, e fica por isso.
 
 ⚠️ **O CPF valida só o formato, sem dígito verificador — e isso é decisão, não
 esquecimento.** O algoritmo do DV rejeita `111.111.111-11` e a maioria dos
@@ -70,9 +76,10 @@ SoDigitos = Annotated[str, BeforeValidator(_so_digitos)]
 
 
 class PagamentoEntrada(BaseModel):
-    # O nome do comprador, que vira `ingresso.titular_nome` na Story 3.9. A tela
-    # o entrega preenchido com o nome da conta e deixa editar: quem compra pode
-    # estar comprando para outra pessoa.
+    # O nome de quem paga, que vira `ingresso.pagador_nome`. A tela o entrega
+    # preenchido com o nome da conta e deixa editar: quem compra pode estar
+    # pagando pelo ingresso de outra pessoa — e o ingresso continua sendo da
+    # conta, não deste campo.
     nome: NomeLimpo = Field(min_length=1, max_length=120)
     email: EmailNormalizado = Field(max_length=255)
     cpf: SoDigitos

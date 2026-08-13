@@ -46,10 +46,17 @@ ele, `uq_item_reserva_reserva_id_setor_id` estouraria como `IntegrityError` no
 `commit`, subiria até o handler genérico e viraria `500` — erro de cliente
 virando "erro interno do servidor".
 
-**Não há `try/except IntegrityError` aqui**, pelo mesmo argumento escrito no
-topo de `services/evento.py`: as violações possíveis vêm do próprio corpo, num
-instante só, e as quatro recusas já as pegam na memória. Um `except` genérico
-neste ponto só transformaria bug de verdade em `422` bonito.
+**Não há `try/except IntegrityError` na criação da reserva**, pelo mesmo
+argumento escrito no topo de `services/evento.py`: as violações possíveis vêm do
+próprio corpo, num instante só, e as quatro recusas já as pegam na memória. Um
+`except` genérico neste ponto só transformaria bug de verdade em `422` bonito.
+
+⚠️ **O único `except IntegrityError` do arquivo está no `_emitir`, e ele não
+contradiz o parágrafo acima**: lá a violação não vem do corpo da requisição — vem
+de dois códigos de 40 bits sorteados iguais —, não há como recusá-la na memória
+antes de tentar gravar, e ela é **recuperável** sorteando outro `nonce`. Ele
+também não é genérico: `_e_colisao_de_codigo` confere o nome da restrição, e
+qualquer outra violação sobe.
 """
 
 import logging
@@ -58,10 +65,11 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
-from app.core.seguranca import assinar_ingresso, gerar_nonce, montar_codigo
+from app.core.seguranca import gerar_codigo, gerar_nonce
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
@@ -500,7 +508,7 @@ def obter(sessao: Session, cliente: Usuario, reserva_id: UUID) -> ReservaSaida:
     # Os canhotos entram aqui também, e não só na resposta do pagamento: a tela
     # da reserva paga precisa sobreviver a recarregar, e ela é servida por esta
     # função. Em `PENDENTE` a lista sai vazia sem ida ao banco.
-    return _para_saida(reserva, evento, _ingressos(sessao, reserva, evento))
+    return _para_saida(reserva, evento, _ingressos(sessao, reserva, evento, cliente))
 
 
 def pagar(
@@ -664,27 +672,7 @@ def pagar(
     # não, que é o comportamento inteiro da Epic 5.
     for item in reserva.itens:
         for _ in range(item.quantidade):
-            # O id é gerado **aqui**, e não deixado para o `default` do modelo:
-            # ele entra na assinatura (AD-5), então precisa existir antes do
-            # INSERT. Esperar o banco devolvê-lo obrigaria a um `flush` e a um
-            # segundo `UPDATE` só para gravar a assinatura.
-            ingresso_id = uuid4()
-            nonce = gerar_nonce()
-            sessao.add(
-                Ingresso(
-                    id=ingresso_id,
-                    reserva_id=reserva.id,
-                    evento_id=reserva.evento_id,
-                    setor_id=item.setor_id,
-                    # O nome digitado no checkout, congelado — trocar o nome da
-                    # conta amanhã não reescreve ingresso já emitido.
-                    titular_nome=dados.nome,
-                    assinatura=assinar_ingresso(
-                        ingresso_id, reserva.evento_id, nonce
-                    ),
-                    nonce=nonce,
-                )
-            )
+            _emitir(sessao, reserva, item, dados.nome)
 
     sessao.commit()
 
@@ -713,11 +701,108 @@ def pagar(
             status_http=404,
         )
 
-    return _para_saida(reserva, evento, _ingressos(sessao, reserva, evento))
+    return _para_saida(reserva, evento, _ingressos(sessao, reserva, evento, cliente))
+
+
+# Quantas vezes a emissão sorteia outro `nonce` antes de deixar o erro subir.
+# Cinco é generoso: cada tentativa é independente e a chance de uma colidir já é
+# de uma em bilhões. O número existe para o laço ter fim, não porque se espere
+# chegar perto dele.
+_TENTATIVAS_DE_CODIGO = 5
+
+# O nome do índice único de `ingresso.codigo`, como o Postgres o reporta. Escrito
+# aqui porque é o que distingue "dois códigos iguais" — que se resolve sorteando
+# outro `nonce` — de qualquer outra violação de integridade, que é bug e precisa
+# subir.
+_INDICE_DO_CODIGO = "ix_ingresso_codigo"
+
+
+def _e_colisao_de_codigo(erro: IntegrityError) -> bool:
+    """Se a violação foi o único de `codigo`, e não outra restrição da tabela.
+
+    ⚠️ **Sem esta distinção o `except` viraria uma rede que engole bug.** Uma FK
+    quebrada ou um `NOT NULL` esquecido também chegam como `IntegrityError`, e
+    tentar de novo com outro `nonce` não os resolve — só os transformaria em cinco
+    tentativas idênticas e um erro no fim, longe da causa.
+
+    O `diag.constraint_name` do psycopg é a resposta estruturada; o texto é o
+    fallback para o dia em que o driver mudar.
+    """
+    restricao = getattr(getattr(erro.orig, "diag", None), "constraint_name", None)
+    if restricao is not None:
+        return restricao == _INDICE_DO_CODIGO
+    return _INDICE_DO_CODIGO in str(erro.orig)
+
+
+def _emitir(
+    sessao: Session, reserva: Reserva, item: ItemReserva, pagador_nome: str
+) -> None:
+    """Grava **um** ingresso, sorteando outro `nonce` se o código colidir.
+
+    ⚠️ **Colisão de código é um `500` no meio do pagamento se ninguém a tratar,
+    e é o desfecho mais feio do produto**: pagamento aprovado que estoura. Com o
+    código em 40 bits (techspec `docs/techspec-codigo-curto.md`) a chance deixou
+    de ser zero, e o índice único a transforma em `IntegrityError` dentro da mesma
+    transação que acabou de marcar a reserva `PAGA`. Sortear outro `nonce` e
+    recalcular é a saída — o código é derivado dele, então trocá-lo dá um código
+    novo sem mexer em mais nada.
+
+    ⚠️ **O `begin_nested()` não é enfeite: sem o SAVEPOINT não há o que
+    reaproveitar.** Um `IntegrityError` sem savepoint invalida a transação
+    inteira, e com ela o `UPDATE` que levou a reserva a `PAGA` e os ingressos
+    irmãos já gravados — a segunda tentativa gravaria num contexto morto e a
+    requisição terminaria em `PendingRollbackError`, apontando para longe da
+    causa. O savepoint limita o estrago à linha que colidiu.
+
+    O id é gerado **aqui**, e não deixado para o `default` do modelo: ele entra
+    no HMAC (AD-5), então precisa existir antes do INSERT. Esperar o banco
+    devolvê-lo obrigaria a um `flush` e a um segundo `UPDATE` só para gravar o
+    código.
+    """
+    ingresso_id = uuid4()
+
+    for tentativa in range(_TENTATIVAS_DE_CODIGO):
+        nonce = gerar_nonce()
+        ponto = sessao.begin_nested()
+        try:
+            sessao.add(
+                Ingresso(
+                    id=ingresso_id,
+                    reserva_id=reserva.id,
+                    evento_id=reserva.evento_id,
+                    setor_id=item.setor_id,
+                    # Quem **pagou**, e não o titular: o ingresso é da conta, e o
+                    # cartão pode ser de outra pessoa (decisão do Igor). O valor
+                    # é o digitado no checkout, congelado — trocar o nome da
+                    # conta amanhã não reescreve ingresso já emitido.
+                    pagador_nome=pagador_nome,
+                    codigo=gerar_codigo(ingresso_id, reserva.evento_id, nonce),
+                    nonce=nonce,
+                )
+            )
+            # `flush` dentro do `try`, `commit` do savepoint fora: assim a
+            # exceção aparece na linha que a provoca — mesma disciplina do
+            # `cadastrar` de `services/autenticacao.py`.
+            sessao.flush()
+        except IntegrityError as erro:
+            ponto.rollback()
+            ultima = tentativa == _TENTATIVAS_DE_CODIGO - 1
+            if ultima or not _e_colisao_de_codigo(erro):
+                raise
+            logger.warning(
+                "código de ingresso colidiu na emissão da reserva %s "
+                "(tentativa %d); sorteando outro nonce",
+                reserva.id,
+                tentativa + 1,
+            )
+            continue
+
+        ponto.commit()
+        return
 
 
 def _ingressos(
-    sessao: Session, reserva: Reserva, evento: Evento
+    sessao: Session, reserva: Reserva, evento: Evento, cliente: Usuario
 ) -> list[IngressoSaida]:
     """Os canhotos de uma reserva paga — vazio em qualquer outro estado.
 
@@ -742,13 +827,17 @@ def _ingressos(
 
     return [
         IngressoSaida(
+            # ⚠️ **O titular é a conta, e não o nome do checkout** (decisão do
+            # Igor). O `cliente` é o dono da reserva por construção — as duas
+            # rotas que chegam aqui filtram por `cliente_id` —, então não há join
+            # a fazer: quem comprou é quem está na sessão.
             id=ingresso.id,
-            titular_nome=ingresso.titular_nome,
+            titular_nome=cliente.nome,
             setor_nome=setores_por_id[ingresso.setor_id].nome,
-            # ⚠️ Montado a partir da coluna, **sem recalcular**. Recalcular aqui
-            # daria o mesmo valor e escondia o ponto: a coluna existe para esta
-            # linha, e a validação da portaria é que nunca a consulta (AD-5).
-            codigo=montar_codigo(ingresso.id, ingresso.assinatura),
+            # ⚠️ Lido da coluna, **sem recalcular**. Recalcular aqui daria o mesmo
+            # valor e escondia o ponto: a coluna existe para esta linha, e a
+            # validação da portaria recalcula sempre (AD-5).
+            codigo=ingresso.codigo,
         )
         for ingresso in sorted(
             ingressos, key=lambda i: (posicao[i.setor_id], str(i.id))

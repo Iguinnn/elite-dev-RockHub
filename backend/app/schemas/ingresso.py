@@ -49,10 +49,17 @@ class IngressoNaLista(BaseModel):
 class IngressoDetalhe(BaseModel):
     """O canhoto cheio — `GET /ingressos/{id}` (Story 4.2), o que vira QR.
 
-    **`codigo` entra aqui, e só aqui.** É `ID.ASSINATURA` (AD-5), montado a
-    partir da coluna `assinatura` sem recalcular — o mesmo aviso do
+    **`codigo` entra aqui, e só aqui.** São os 8 símbolos de base32 de Crockford
+    do AD-5, lidos da coluna `codigo` sem recalcular — o mesmo aviso do
     `_ingressos()` de `services/reserva.py`: a validação da portaria é quem
-    sempre recalcula (AD-5), esta rota só monta o texto que vira QR.
+    sempre recalcula (AD-5), esta rota só entrega o texto que vira QR.
+
+    ⚠️ **`titular_nome` é o nome da conta que comprou** (decisão do Igor,
+    techspec `docs/techspec-codigo-curto.md`), buscado pelo join
+    `Ingresso → Reserva → Usuario`. Não é o nome digitado no checkout: aquele é de
+    quem **pagou**, mora em `ingresso.pagador_nome` e não é desenhado em tela
+    nenhuma. Ele muda quando o nome da conta muda, ao contrário do preço e do
+    pagador, que são congelados na compra.
 
     **`usado_em` entra também aqui**, e não só na lista: um canhoto já
     utilizado que parecesse válido mandaria alguém para a fila da porta à

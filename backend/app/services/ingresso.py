@@ -19,7 +19,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.erros import ErroDeDominio
-from app.core.seguranca import gerar_share_token, montar_codigo
+from app.core.seguranca import gerar_share_token
 from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import Reserva
@@ -72,8 +72,8 @@ def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
 
 def _carregar_do_cliente(
     sessao: Session, cliente: Usuario, ingresso_id: UUID
-) -> tuple[Ingresso, Evento, Setor]:
-    """O ingresso de quem está na sessão, com o evento e o setor — ou `404`.
+) -> tuple[Ingresso, Evento, Setor, Usuario]:
+    """O ingresso de quem está na sessão, com evento, setor e a conta — ou `404`.
 
     **As duas condições no mesmo `where`**, e não um `get()` seguido de um
     `if`: mesma disciplina do `obter()` de `services/reserva.py`. "Só vejo o
@@ -92,12 +92,20 @@ def _carregar_do_cliente(
 
     Devolve o objeto ORM, e não o schema: quem escreve na linha (`compartilhar`)
     precisa da entidade viva na sessão, não de uma cópia.
+
+    ⚠️ **O `Usuario` vem do join, e não do parâmetro `cliente`.** Neste caminho os
+    dois são a mesma pessoa — o `where` filtra por `Reserva.cliente_id` —, e
+    devolver `cliente` daria o mesmo nome com uma linha menos. O join é para o
+    titular do canhoto sair da **reserva** por construção: no dia em que uma rota
+    carregar ingresso sem ser o dono, ela mostra o nome de quem comprou em vez do
+    de quem está olhando, sem ninguém precisar lembrar da diferença.
     """
     linha = sessao.execute(
-        select(Ingresso, Evento, Setor)
+        select(Ingresso, Evento, Setor, Usuario)
         .join(Reserva, Reserva.id == Ingresso.reserva_id)
         .join(Evento, Evento.id == Ingresso.evento_id)
         .join(Setor, Setor.id == Ingresso.setor_id)
+        .join(Usuario, Usuario.id == Reserva.cliente_id)
         .where(Ingresso.id == ingresso_id, Reserva.cliente_id == cliente.id)
     ).first()
 
@@ -108,16 +116,26 @@ def _carregar_do_cliente(
             status_http=404,
         )
 
-    ingresso, evento, setor = linha
-    return ingresso, evento, setor
+    ingresso, evento, setor, usuario = linha
+    return ingresso, evento, setor, usuario
 
 
-def _montar_detalhe(ingresso: Ingresso, evento: Evento, setor: Setor) -> IngressoDetalhe:
-    """O canhoto cheio, montado a partir das três entidades.
+def _montar_detalhe(
+    ingresso: Ingresso, evento: Evento, setor: Setor, usuario: Usuario
+) -> IngressoDetalhe:
+    """O canhoto cheio, montado a partir das quatro entidades.
 
-    `codigo` sai da coluna `assinatura`, **sem recalcular**: a validação da
-    portaria (Epic 5) é quem sempre recalcula (AD-5); estas rotas só montam o
-    texto que a tela desenha em QR.
+    `codigo` é a coluna, lida **sem recalcular**: a validação da portaria (Epic 5)
+    é quem sempre recalcula (AD-5); estas rotas só montam o texto que a tela
+    desenha em QR.
+
+    ⚠️ **`titular_nome` vem de `usuario.nome`, e não de `ingresso.pagador_nome`**
+    (decisão do Igor, techspec `docs/techspec-codigo-curto.md`). O ingresso está
+    no nome de quem tem a conta; a coluna guarda quem **pagou**, que pode ser
+    outra pessoa — a namorada compra na conta dela, eu ponho meu cartão. Se o
+    canhoto mostrasse o pagador, a tela de quem chega e a de quem valida diriam
+    nomes diferentes do mesmo ingresso, e a conferência com o documento ficaria
+    sem resposta.
 
     ⚠️ **Um lugar só monta o canhoto, e ele serve a rota pública também.** As
     três rotas do ingresso respondem `IngressoDetalhe` pelo mesmo caminho, e é
@@ -133,8 +151,8 @@ def _montar_detalhe(ingresso: Ingresso, evento: Evento, setor: Setor) -> Ingress
         evento_local=evento.local,
         evento_cidade=evento.cidade,
         setor_nome=setor.nome,
-        titular_nome=ingresso.titular_nome,
-        codigo=montar_codigo(ingresso.id, ingresso.assinatura),
+        titular_nome=usuario.nome,
+        codigo=ingresso.codigo,
         usado_em=ingresso.usado_em,
         share_token=ingresso.share_token,
     )
@@ -192,7 +210,9 @@ def compartilhar(
     nas duas leituras puras seria cobrar de toda a epic o preço de uma corrida
     que só existe aqui.
     """
-    ingresso, evento, setor = _carregar_do_cliente(sessao, cliente, ingresso_id)
+    ingresso, evento, setor, usuario = _carregar_do_cliente(
+        sessao, cliente, ingresso_id
+    )
 
     if ingresso.share_token is None:
         sessao.execute(
@@ -205,7 +225,7 @@ def compartilhar(
         # de outra que chegou primeiro. As duas respostas são o valor gravado.
         sessao.refresh(ingresso)
 
-    return _montar_detalhe(ingresso, evento, setor)
+    return _montar_detalhe(ingresso, evento, setor, usuario)
 
 
 def revogar_compartilhamento(
@@ -232,7 +252,7 @@ def revogar_compartilhamento(
     ingresso inexistente ou de outra pessoa vem do `_carregar_do_cliente`, o
     mesmo das duas irmãs.
     """
-    ingresso, _, _ = _carregar_do_cliente(sessao, cliente, ingresso_id)
+    ingresso, _, _, _ = _carregar_do_cliente(sessao, cliente, ingresso_id)
 
     if ingresso.share_token is not None:
         ingresso.share_token = None
@@ -256,14 +276,24 @@ def obter_por_share_token(sessao: Session, token: str) -> IngressoDetalhe:
     Epic 5. Validar assinatura neste caminho daria a impressão de que o token
     prova alguma coisa sobre o ingresso.
 
-    **Sem `join` com `Reserva`**, ao contrário do `_carregar_do_cliente`: não há
-    dono a conferir, e a reserva não tem nada a dizer sobre um canhoto que já
-    existe.
+    ⚠️ **O `join` com `Reserva` entrou aqui, e este docstring dizia o contrário**
+    (techspec `docs/techspec-codigo-curto.md`). A redação antiga — *não há dono a
+    conferir, e a reserva não tem nada a dizer sobre um canhoto que já existe* —
+    valia enquanto o titular era uma coluna do próprio ingresso. Desde que ele
+    passou a ser o nome da **conta**, a reserva é o único caminho até ela:
+    `Ingresso → Reserva → Usuario`. A reserva continua não sendo consultada para
+    **autorizar** nada — o `where` é o `share_token` e nada mais.
+
+    Consequência assumida: o link compartilhado mostra o nome da conta que
+    comprou, em vez do nome digitado no checkout. É a mesma classe de exposição de
+    nome que ele já fazia, com outro nome dentro.
     """
     linha = sessao.execute(
-        select(Ingresso, Evento, Setor)
+        select(Ingresso, Evento, Setor, Usuario)
+        .join(Reserva, Reserva.id == Ingresso.reserva_id)
         .join(Evento, Evento.id == Ingresso.evento_id)
         .join(Setor, Setor.id == Ingresso.setor_id)
+        .join(Usuario, Usuario.id == Reserva.cliente_id)
         .where(Ingresso.share_token == token)
     ).first()
 

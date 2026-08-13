@@ -88,10 +88,15 @@ class ItemDaReservaSaida(BaseModel):
 class IngressoSaida(BaseModel):
     """Um canhoto — o que a tela desenha e o que a portaria vai ler (Story 3.9).
 
-    **`codigo` é `ID.ASSINATURA`** (AD-5), e é ele que vira QR. A `assinatura` e
-    o `nonce` **não** entram separados: o código já os carrega no formato que a
-    validação espera, e expor as partes convidaria alguém a recombiná-las por
-    fora.
+    **`codigo` são os 8 símbolos de base32 de Crockford** que viram QR — o HMAC
+    do AD-5 truncado a 40 bits (techspec `docs/techspec-codigo-curto.md`; até
+    2026-08-12 era `ID.ASSINATURA`, 80 caracteres). O `nonce` **não** entra: ele é
+    ingrediente secreto da fórmula e nunca sai do servidor, e expor as partes
+    convidaria alguém a recombiná-las por fora.
+
+    ⚠️ **`titular_nome` é o nome da conta, e não o digitado no checkout** (decisão
+    do Igor). O ingresso é de quem tem a conta; quem pagou fica em
+    `ingresso.pagador_nome`, que não tem leitor nenhum hoje.
 
     **`setor_nome` e não `setor_id`**: quem lê o canhoto quer saber onde vai
     ficar. O id não é desenhado em lugar nenhum desta tela.

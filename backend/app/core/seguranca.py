@@ -10,7 +10,6 @@ consegue forjar. Espalhá-los deixaria a comparação de tempo constante do cód
 de ingresso longe da conferência de senha, que é a vizinha natural dela.
 """
 
-import base64
 import hashlib
 import hmac
 import secrets
@@ -84,19 +83,45 @@ def ler_token_sessao(token: str) -> dict | None:
 # O código do ingresso (AD-5)
 # --------------------------------------------------------------------------- #
 
-# O separador entre id e assinatura. `.` porque não aparece em UUID nem em
-# base64url — os dois lados do código são recuperáveis por um `split` que não
-# tem caso ambíguo.
-SEPARADOR_DO_CODIGO = "."
+# Base32 de Crockford: 32 símbolos **sem `I`, `L`, `O` e `U`**. Os três
+# primeiros saem porque `1`/`I` e `0`/`O` se confundem quando alguém lê o código
+# em voz alta na fila da porta; o `U` sai para o gerador não produzir palavrão
+# por acaso.
+#
+# ⚠️ **É a escolha do alfabeto que resolve o AC de "não diferencia maiúsculas de
+# minúsculas"**, e com base64url ele era fisicamente impossível: `aB` e `Ab` são
+# bytes diferentes, e um `.upper()` na entrada destruiria toda assinatura
+# legítima. Aqui não existe minúscula no alfabeto, então normalizar a entrada é
+# o comportamento correto, e não um risco.
+_ALFABETO = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+# 8 símbolos de 5 bits — 40 bits —, e o número é decisão de produto (techspec
+# `docs/techspec-codigo-curto.md`). O campo manual da portaria existe para
+# quando a câmera falha, e com os 80 caracteres do formato antigo ninguém
+# conseguia usá-lo na fila: um fallback que não se usa é um fallback que não
+# existe. Sobre os 40 bits: adivinhar um código exige **já estar logado como uma
+# conta de portaria escalada naquele evento** (AD-7), e quem tem essa credencial
+# não precisa forjar código nenhum — está autorizado a validar.
+TAMANHO_DO_CODIGO = 8
+
+# Os símbolos que a leitura em voz alta confunde, na direção que o alfabeto
+# aceita. `L` → `1` é convenção da própria base32 de Crockford, não invenção
+# daqui.
+_CONFUSOS = str.maketrans({"I": "1", "L": "1", "O": "0"})
 
 
 def gerar_nonce() -> str:
     """32 caracteres de aleatoriedade por ingresso.
 
     É o que faz dois ingressos da mesma reserva, do mesmo setor e do mesmo
-    evento terem assinaturas diferentes. Sem ele, `HMAC(segredo, id + evento)`
-    já seria único por causa do id — mas o nonce é o que o AD-5 fixa, e ele dá
-    margem para o dia em que o id deixar de entrar na conta.
+    evento terem códigos diferentes. Ele é o que o AD-5 fixa, e ele dá margem
+    para o dia em que o id deixar de entrar na conta.
+
+    ⚠️ **Ele passou a valer mais desde que o código encolheu para 40 bits.** Com
+    os 43 caracteres de base64 do formato antigo, o id já bastava para nenhum par
+    de ingressos colidir; com o HMAC truncado, colisão de código é possível — é
+    o `nonce` que a emissão sorteia de novo para sair dela (techspec
+    `docs/techspec-codigo-curto.md`).
 
     ⚠️ **Este valor nunca sai do servidor.** Ele é ingrediente do HMAC, e o
     `gerar_share_token()` do fim deste arquivo sai do **mesmo gerador** com a
@@ -107,79 +132,122 @@ def gerar_nonce() -> str:
     return secrets.token_urlsafe(24)
 
 
-def assinar_ingresso(ingresso_id: UUID, evento_id: UUID, nonce: str) -> str:
-    """`HMAC-SHA256(TICKET_SIGNING_SECRET, id + evento + nonce)` em base64url.
+def _hmac_do_ingresso(ingresso_id: UUID, evento_id: UUID, nonce: str) -> bytes:
+    """`HMAC-SHA256(TICKET_SIGNING_SECRET, id + evento + nonce)`, em bytes.
 
     Exatamente a fórmula do AD-5, e o segredo vive só no ambiente do backend.
     Sem ele, nem adivinhar UUID nem incrementar id produz código válido.
 
-    O `=` do padding sai fora: ele não acrescenta informação, e um código de QR
-    sem caractere de preenchimento é um código mais curto — o que importa quando
-    ele vira imagem lida por câmera de celular na fila da porta.
+    **Extraído para que a geração e a conferência partam do mesmo cálculo por
+    construção.** Com a fórmula escrita duas vezes, uma das duas montando a
+    mensagem em outra ordem produz divergência que nenhum caso feliz revela — ela
+    aparece na fila da porta, num ingresso legítimo recusado.
     """
     mensagem = f"{ingresso_id}{evento_id}{nonce}".encode()
-    bruto = hmac.new(
+    return hmac.new(
         obter_settings().ticket_signing_secret.encode(),
         mensagem,
         hashlib.sha256,
     ).digest()
-    return base64.urlsafe_b64encode(bruto).decode().rstrip("=")
 
 
-def montar_codigo(ingresso_id: UUID, assinatura: str) -> str:
-    """O conteúdo do QR: `ID.ASSINATURA` (AD-5)."""
-    return f"{ingresso_id}{SEPARADOR_DO_CODIGO}{assinatura}"
+def gerar_codigo(ingresso_id: UUID, evento_id: UUID, nonce: str) -> str:
+    """O código do ingresso: o HMAC truncado a 40 bits, em base32 de Crockford.
 
+    **Truncado, não sorteado**, e é essa palavra que mantém o AD-5 de pé — *o
+    código do ingresso é um token assinado, **não** um identificador*. É o mesmo
+    que o TOTP faz há vinte anos: HMAC truncado a poucos dígitos (RFC 4226). Um
+    valor aleatório à moda do `gerar_share_token()` seria mais simples e, no
+    mesmo tamanho, indistinguível em segurança; ele foi **descartado** porque
+    custaria justamente essa frase — com o truncamento eu reescrevo a
+    representação do AD-5, com o sorteio eu o revogo.
 
-def conferir_codigo(codigo: str, evento_id: UUID, nonce: str) -> bool:
-    """Recalcula a assinatura e compara com a do código (AD-5).
-
-    ⚠️ **`hmac.compare_digest`, nunca `==`.** A comparação byte a byte do `==`
-    para no primeiro caractere diferente, e o tempo que ela leva conta quantos
-    caracteres estavam certos: com paciência, isso deixa alguém descobrir a
-    assinatura correta um caractere por vez. `compare_digest` gasta o mesmo
-    tempo sempre.
-
-    ⚠️ **Recalcular é o mecanismo, e a coluna `assinatura` não participa.**
-    Comparar contra o que está gravado transformaria o banco em oráculo de
-    assinatura e desfaria a garantia inteira: bastaria a alguém conseguir
-    escrever na coluna. A coluna existe só para montar o QR sem recalcular. É
-    **este** recálculo — e não a ausência de I/O — que torna o código não
-    forjável, e é a garantia que o AD-5 realmente entrega.
-
-    ⚠️ **A redação antiga dizia "sem consultar o banco", e isso não se sustenta**
-    (code review da Epic 3, decisão do Igor). O QR carrega `ID.ASSINATURA` e nada
-    mais, enquanto esta função exige o `nonce`, que só existe na coluna
-    `ingresso.nonce`: quem valida tem de buscar a linha pelo `id` **antes** de
-    conseguir recalcular. Consultar o banco é pré-requisito da verificação, não
-    uma etapa posterior a ela. A alternativa considerada — tirar o `nonce` da
-    fórmula para recuperar a promessa literal — foi descartada: ela custaria a
-    entropia por ingresso, que é o que impede dois ingressos do mesmo evento de
-    compartilharem assinatura. O `nonce` fica; a promessa é que foi corrigida.
-
-    O `evento_id` e o `nonce` vêm de quem chama — a portaria, na Epic 5, depois
-    de carregar o ingresso pelo id lido no QR.
+    ⚠️ **Os 5 primeiros bytes do digest, e não os 5 últimos nem uma soma dos
+    32.** A escolha é arbitrária e precisa continuar exatamente esta: mudá-la
+    invalida todo ingresso já emitido, do mesmo jeito que girar o
+    `TICKET_SIGNING_SECRET` invalida.
     """
-    id_bruto, separador, assinatura = codigo.partition(SEPARADOR_DO_CODIGO)
-    if not separador or not assinatura:
-        return False
+    valor = int.from_bytes(
+        _hmac_do_ingresso(ingresso_id, evento_id, nonce)[:5], "big"
+    )
+    # Do símbolo mais significativo para o menos: 8 fatias de 5 bits, sempre 8
+    # caracteres — `int.from_bytes` de 5 bytes nunca passa de 40 bits.
+    return "".join(
+        _ALFABETO[(valor >> (5 * posicao)) & 0b11111]
+        for posicao in reversed(range(TAMANHO_DO_CODIGO))
+    )
 
-    # ⚠️ **`compare_digest` com `str` só aceita ASCII** — fora dele ele levanta
-    # `TypeError`, não devolve `False` (code review da Epic 3). Sem esta linha, um
-    # QR que decodifique como `<uuid>.çç` sobe até o handler genérico e vira
-    # `500 ERRO_INTERNO` na fila da porta, para um código simplesmente inválido.
-    # A assinatura legítima é base64 urlsafe, que é ASCII por construção: nada
-    # que passe aqui deixa de passar por ser válido.
-    if not assinatura.isascii():
-        return False
 
-    try:
-        ingresso_id = UUID(id_bruto)
-    except ValueError:
+def normalizar_codigo(bruto: str) -> str | None:
+    """O que a câmera leu ou a portaria digitou, reduzido ao código — ou `None`.
+
+    Aceita `9k4m 7qx2`, `9K4M-7QX2` e `9K4M7QX2` como o mesmo valor: sobem as
+    letras, caem espaços e hífens, e os símbolos que a leitura em voz alta
+    confunde viram os do alfabeto (`I` e `L` → `1`, `O` → `0`).
+
+    `None` é "isto não é um código deste sistema", e é a resposta para tamanho
+    errado, símbolo fora do alfabeto e entrada não-ASCII. **Quem chama decide o
+    que fazer com o `None`**, e é por isso que ela existe separada da
+    conferência: a portaria recusa o código malformado **sem tocar no banco**,
+    que é uma consulta economizada no caminho mais sensível a tempo do produto.
+
+    ⚠️ **É aqui que a guarda de não-ASCII passou a morar** (code review da Epic
+    3). `hmac.compare_digest` com `str` só aceita ASCII: fora dele ele levanta
+    `TypeError` em vez de devolver `False`, e um QR que decodificasse com acento
+    virava `500 ERRO_INTERNO` na fila da porta, para um código simplesmente
+    inválido. Nada legítimo é barrado — o alfabeto de Crockford é ASCII por
+    construção.
+    """
+    if not bruto.isascii():
+        return None
+
+    limpo = bruto.replace(" ", "").replace("-", "").upper().translate(_CONFUSOS)
+
+    if len(limpo) != TAMANHO_DO_CODIGO:
+        return None
+
+    if any(simbolo not in _ALFABETO for simbolo in limpo):
+        return None
+
+    return limpo
+
+
+def conferir_codigo(
+    codigo: str, ingresso_id: UUID, evento_id: UUID, nonce: str
+) -> bool:
+    """Recalcula o código do ingresso e compara com o que chegou (AD-5).
+
+    ⚠️ **Recalcular é o mecanismo, e a coluna `codigo` não participa da
+    comparação.** Quem valida acha a linha **pelo** código e então recalcula o
+    HMAC a partir das colunas (`id`, `evento_id`, `nonce`); divergência é
+    `INVALIDO`. Comparar contra o valor gravado transformaria o banco em oráculo
+    de assinatura e desfaria a garantia inteira: bastaria a alguém conseguir
+    escrever na coluna. É **este** recálculo que torna o código não forjável, e é
+    a garantia que o AD-5 realmente entrega.
+
+    ⚠️ **`hmac.compare_digest`, nunca `==`.** A comparação do `==` para no
+    primeiro caractere diferente, e o tempo que ela leva conta quantos estavam
+    certos: com paciência, isso deixa alguém descobrir o código correto um
+    caractere por vez. `compare_digest` gasta o mesmo tempo sempre.
+
+    ⚠️ **A promessa do AD-5 é o recálculo, e não "sem consultar o banco"** (code
+    review da Epic 3, decisão do Igor). O `nonce` só existe na coluna
+    `ingresso.nonce` e entra na fórmula: quem valida tem de carregar a linha
+    **antes** de conseguir recalcular. Consultar o banco é pré-requisito da
+    verificação, não uma etapa posterior a ela. A alternativa considerada — tirar
+    o `nonce` da fórmula para recuperar a promessa literal — foi descartada:
+    custaria a entropia por ingresso. O `nonce` fica; a promessa é que foi
+    corrigida.
+
+    Lixo que a câmera leu sai `False`, nunca exceção: quem barra é o
+    `normalizar_codigo` acima, antes de chegar ao `compare_digest`.
+    """
+    normalizado = normalizar_codigo(codigo)
+    if normalizado is None:
         return False
 
     return hmac.compare_digest(
-        assinar_ingresso(ingresso_id, evento_id, nonce), assinatura
+        gerar_codigo(ingresso_id, evento_id, nonce), normalizado
     )
 
 
