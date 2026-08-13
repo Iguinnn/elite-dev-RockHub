@@ -1,13 +1,38 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import EscolhaDeIngressos from "@/components/EscolhaDeIngressos";
+import EscolhaDeIngressos, {
+  type AcaoDeCompra,
+} from "@/components/EscolhaDeIngressos";
 import { ARTE_DE_RESERVA } from "@/lib/arte";
 import { dataDaChamada } from "@/lib/formato";
 import { obterEvento } from "@/lib/programacao";
-import { obterUsuarioDaSessao } from "@/lib/sessao";
+import { obterUsuarioDaSessao, type UsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
+
+/**
+ * Quem vê o quê no rodapé da compra — a tradução de papel em desfecho.
+ *
+ * **`Record` fechado, e não uma cadeia de ternários** (mesma disciplina do
+ * `ESTADO` e do `PREENCHIMENTO` da ilha): no dia em que um quarto papel entrar
+ * no `UsuarioDaSessao`, é o **build** que reclama da falta de tradução, em vez
+ * de o papel novo cair calado no ramo do visitante e ganhar um link de login que
+ * não serve para ele. Foi assim que o organizador ficou com "Entrar para
+ * reservar" na tela até 13/08/2026.
+ *
+ * `VISITANTE` não é papel do backend — é o `null` da sessão com nome, para o
+ * mapa poder ser total.
+ */
+const ACAO_POR_PAPEL: Record<
+  UsuarioDaSessao["papel"] | "VISITANTE",
+  AcaoDeCompra
+> = {
+  CLIENTE: "reservar",
+  ORGANIZADOR: "recusar",
+  PORTARIA: "recusar",
+  VISITANTE: "entrar",
+};
 
 /**
  * A página de um evento: a ficha, a arte e os setores com o seletor de quantidade
@@ -185,10 +210,24 @@ export default async function PaginaDoEvento({
           eventoId={evento.id}
           setores={evento.setores}
           maximoPorCompra={evento.maximo_por_compra}
-          // Só o papel `CLIENTE` reserva (AD-9, e a rota cobra o mesmo).
-          // Organizador e portaria caem no mesmo caminho do visitante: um link
-          // para entrar com a conta certa.
-          podeReservar={usuario?.papel === "CLIENTE"}
+          // ⚠️ **Três desfechos, e quem escolhe continua sendo a página** — era um
+          // `podeReservar: boolean` até 13/08/2026. Só o papel `CLIENTE` reserva
+          // (AD-9, e a rota cobra o mesmo); o que mudou é que "não reserva"
+          // deixou de ser um caso só.
+          //
+          // O organizador **precisa** ver esta tela: é assim que ele confere como
+          // o show dele ficou listado (decisão do Igor). Mandá-lo para o login,
+          // como era antes, era pedir que entrasse numa conta em que ele já
+          // estava — o link dizia "Entrar para reservar" para quem estava
+          // logado. Agora ele vê o botão e recebe a recusa em palavras.
+          //
+          // ⚠️ **A portaria entra pela mesma porta que o organizador**, e não é
+          // descuido: ela quase nunca chega aqui — a tela dela é `/portaria`, e
+          // não a programação —, mas a URL de um evento é pública e digitável.
+          // Deixá-la no `"entrar"` seria manter, para ela, exatamente o link
+          // errado que esta mudança veio consertar. O aviso fala de quem **pode**
+          // reservar, não de quem clicou, então serve igual às duas.
+          acaoDeCompra={ACAO_POR_PAPEL[usuario?.papel ?? "VISITANTE"]}
         />
       )}
     </section>

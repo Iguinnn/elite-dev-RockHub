@@ -145,6 +145,8 @@ export default function FormularioDePagamento({
   // estado precisa acompanhar para o cursor não pular.
   const [cpf, setCpf] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [numeroCartao, setNumeroCartao] = useState("");
+  const [validade, setValidade] = useState("");
 
   function escolher(novoMeio: Meio) {
     setMeio(novoMeio);
@@ -279,8 +281,8 @@ export default function FormularioDePagamento({
         </section>
       )}
 
-      {/* ⚠️ **Escondido, e não desmontado.** Metade dos campos é não-controlada
-          (nome, e-mail e os quatro do cartão vivem no DOM), então tirar o
+      {/* ⚠️ **Escondido, e não desmontado.** Parte dos campos é não-controlada
+          (nome, e-mail, o nome impresso e o CVV vivem no DOM), então tirar o
           formulário da árvore apagaria tudo o que foi digitado — e um `422` de
           validade mal digitada devolveria a pessoa a um formulário vazio, tendo
           que redigitar o cartão inteiro. Com `display: none` o DOM continua lá e
@@ -385,6 +387,10 @@ export default function FormularioDePagamento({
               terminado em <code>0002</code>.
             </p>
 
+            {/* `minLength={16}` são os 13 dígitos mínimos que o backend exige,
+                mais os 3 espaços que a máscara insere até ali. Ele existe para a
+                recusa acontecer no navegador, com o campo em foco, em vez de
+                voltar como `DADOS_INVALIDOS` depois da ida à rede. */}
             <Campo
               id="numero_cartao"
               name="numero_cartao"
@@ -392,7 +398,10 @@ export default function FormularioDePagamento({
               inputMode="numeric"
               placeholder="0000 0000 0000 0000"
               autoComplete="off"
-              maxLength={23}
+              maxLength={19}
+              minLength={16}
+              value={numeroCartao}
+              onChange={(e) => setNumeroCartao(mascararCartao(e.target.value))}
               required
             />
             <Campo
@@ -405,13 +414,20 @@ export default function FormularioDePagamento({
             />
 
             <div className={estilos.dupla}>
+              {/* `minLength={5}` é o `MM/AA` completo. O mês inválido já não
+                  chega aqui — a máscara não deixa digitá-lo —, então o que este
+                  atributo pega é o campo pela metade, tipo `12/3`. */}
               <Campo
                 id="validade"
                 name="validade"
                 rotulo="Validade"
+                inputMode="numeric"
                 placeholder="MM/AA"
                 autoComplete="off"
                 maxLength={5}
+                minLength={5}
+                value={validade}
+                onChange={(e) => setValidade(mascararValidade(e.target.value))}
                 required
               />
               <Campo
@@ -526,6 +542,58 @@ function mascararCpf(valor: string): string {
     .replace(/^(\d{3})(\d)/, "$1.$2")
     .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
     .replace(/\.(\d{3})(\d{1,2})$/, ".$1-$2");
+}
+
+/**
+ * `0000 0000 0000 0000`, em grupos de quatro, até 19 dígitos.
+ *
+ * ⚠️ **Dezesseis, e não os 19 que o backend aceita** (decisão do Igor). Visa,
+ * Mastercard e Elo têm 16; Maestro chega a 19, e é por ele que o schema aceita
+ * até lá. A máscara ficar mais estreita que o contrato é seguro — o backend
+ * continua sendo quem decide, e nada que passe aqui é recusado lá. O que se
+ * perde é digitar um Maestro, que não existe no roteiro de avaliação.
+ *
+ * ⚠️ **O espaço só entra quando há um dígito depois dele** (`(?=\d)`). Sem essa
+ * condição, digitar o quarto dígito produziria `0000 ` com espaço no fim, e o
+ * backspace seguinte apagaria o espaço em vez do dígito — a pessoa aperta uma
+ * vez e nada parece acontecer.
+ */
+function mascararCartao(valor: string): string {
+  const digitos = valor.replace(/\D/g, "").slice(0, 16);
+  return digitos.replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+
+/**
+ * `MM/AA`, com o mês recusado enquanto se digita.
+ *
+ * O mês inválido não é aceito e depois marcado em vermelho: ele simplesmente
+ * não entra no campo. Digitar `1` e depois `3` deixa o campo em `1`, porque
+ * `13` não é mês — e a tecla seguinte ainda pode fazer `12`.
+ *
+ * ⚠️ **`2` a `9` no primeiro dígito viram `02`…`09`.** Quem digita `4` querendo
+ * abril não vai digitar `04`; sem isto, o `4` ficaria parado esperando um
+ * segundo dígito que nunca é válido, e o campo pareceria travado.
+ *
+ * ⚠️ **A barra some ao voltar para dois dígitos**, e é de propósito: mantê-la
+ * fixa depois do mês faz o backspace apagar a barra, a máscara repô-la no mesmo
+ * quadro, e o campo nunca encolher — a armadilha clássica deste tipo de máscara.
+ * Aqui `12/3` → backspace → `12`, e o próximo backspace chega no `2`.
+ */
+function mascararValidade(valor: string): string {
+  let digitos = valor.replace(/\D/g, "").slice(0, 4);
+  if (digitos.length === 0) return "";
+
+  if (digitos[0] > "1") digitos = `0${digitos.slice(0, 3)}`;
+
+  if (digitos.length >= 2) {
+    const mes = Number(digitos.slice(0, 2));
+    // `00` e `13`–`19` são os únicos dois dígitos que a linha acima deixa
+    // passar e que não são mês. O segundo dígito é descartado.
+    if (mes < 1 || mes > 12) digitos = digitos[0];
+  }
+
+  if (digitos.length <= 2) return digitos;
+  return `${digitos.slice(0, 2)}/${digitos.slice(2)}`;
 }
 
 /** `(00) 00000-0000`, com o nono dígito opcional. */

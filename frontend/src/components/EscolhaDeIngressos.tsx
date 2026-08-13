@@ -45,23 +45,42 @@ import type { ReservaSaida } from "@/lib/reservas";
  * `409 ESTOQUE_INSUFICIENTE`, que é a única resposta desta tela capaz de dizer
  * algo que a pessoa não sabia — o setor esgotou entre a escolha e o clique.
  *
- * ⚠️ **Quem decide se há botão é a página, não este componente.** `podeReservar`
- * chega pronto de um Server Component que já leu a sessão: visitante,
- * organizador e portaria veem um link para o login no lugar do botão, e isso é
- * decidido **antes** de renderizar — sem uma ida à rede para ouvir `401` sobre
- * algo que a página já sabia.
+ * ⚠️ **Quem decide o desfecho é a página, não este componente.** `acaoDeCompra`
+ * chega pronto de um Server Component que já leu a sessão, e isso é decidido
+ * **antes** de renderizar — sem uma ida à rede para ouvir `403` sobre algo que a
+ * página já sabia.
+ *
+ * **Eram dois desfechos até 13/08/2026, e agora são quatro** (decisão do Igor).
+ * O `podeReservar: boolean` mandava organizador e portaria para o mesmo link de
+ * login do visitante — ou seja, dizia "Entrar para reservar" a quem já estava
+ * logado, e o clique levava a uma tela de entrar numa conta em que a pessoa já
+ * estava. O organizador **precisa** desta página: é onde ele confere como o show
+ * dele aparece para quem compra. O que ele não pode é comprar (AD-9), e agora é
+ * isso que a tela diz, em palavras, no lugar de fingir que ele é um visitante.
  */
+/**
+ * O que o rodapé oferece a quem está olhando — calculado pela página, a partir
+ * do papel da sessão.
+ *
+ * **`recusar` é um valor só para organizador e portaria**, e chegou a ser dois:
+ * enquanto cada conta tinha a sua frase, a diferença precisava atravessar a
+ * fronteira. Com o texto único, separá-las seria carregar aqui uma distinção que
+ * nada lê — e a página continua sendo quem decide, porque é ela quem traduz
+ * papel em desfecho.
+ */
+export type AcaoDeCompra = "reservar" | "recusar" | "entrar";
+
 export default function EscolhaDeIngressos({
   eventoId,
   setores,
   maximoPorCompra,
-  podeReservar,
+  acaoDeCompra,
 }: {
   eventoId: string;
   setores: SetorPublico[];
   maximoPorCompra: number;
-  /** Verdadeiro só para sessão de `CLIENTE` — a página é quem calcula. */
-  podeReservar: boolean;
+  /** O desfecho do rodapé — a página é quem calcula, a partir do papel. */
+  acaoDeCompra: AcaoDeCompra;
 }) {
   const router = useRouter();
 
@@ -397,10 +416,25 @@ export default function EscolhaDeIngressos({
               de `?destino=`. E a escolha do stepper **se perde** nessa ida
               (decisão do Igor): o estoque pode ter mudado nesses segundos, e
               reescolher é ver o preço e a disponibilidade de agora. */}
-          {podeReservar ? (
+          {acaoDeCompra === "reservar" ? (
             <div className={estilos.acao}>
               <Botao type="button" onClick={reservar} disabled={enviando}>
                 {enviando ? "Reservando…" : "Reservar e pagar"}
+              </Botao>
+            </div>
+          ) : acaoDeCompra !== "entrar" ? (
+            /* ⚠️ **O botão existe e é clicável de verdade, e é essa a decisão.**
+               Ele podia vir `disabled` — a regra é conhecida antes do clique —,
+               mas botão apagado não diz por quê, e a pergunta de quem publicou o
+               show é exatamente essa. Um clique, uma frase, nenhuma ida à rede: a
+               recusa já é do backend (`Depends(exigir_papel(CLIENTE))`, AD-9), e
+               aqui ela só chega antes, em português.
+
+               `type="button"`, como em todo botão desta ilha: não há formulário,
+               e o default de `<button>` é `submit`. */
+            <div className={estilos.acao}>
+              <Botao type="button" onClick={() => setErro(RECUSA_DE_COMPRA)}>
+                Reservar e pagar
               </Botao>
             </div>
           ) : (
@@ -463,6 +497,26 @@ function mensagemParaCodigo(codigo: string, tetoDaCompra: number): string {
   }
   return MENSAGEM_GENERICA;
 }
+
+/**
+ * A recusa de quem está logado e não é cliente (13/08/2026).
+ *
+ * **Ela não vem do servidor, e é a primeira mensagem desta tela que não vem.**
+ * Todas as outras nascem de um `codigo` de resposta — é a convenção do projeto
+ * desde a Story 1.4. Esta é anterior à requisição: a página já sabe o papel, e
+ * gastar uma ida à rede para ouvir o `403 SEM_PERMISSAO` que a rota devolveria
+ * (AD-9) seria perguntar o que já se sabe. A regra continua sendo do backend; o
+ * que mora aqui é só a tradução dela para quem clicou.
+ *
+ * **Uma frase, sem `<strong>`, e sem uma versão por papel** (texto do Igor). A
+ * primeira redação abria com um título em versalete e explicava a cada conta por
+ * que ela não compra — o organizador ouvia que esta é a mesma página que o
+ * público vê, a portaria que ela valida na porta. Ficou comprido para um aviso
+ * que responde a um clique só: quem clicou quer saber o que houve, não ler um
+ * parágrafo sobre o próprio papel. A regra é a mesma para os dois, então o texto
+ * também é.
+ */
+const RECUSA_DE_COMPRA = "Somente contas de clientes podem reservar ingressos.";
 
 /**
  * A palavra de cada estado, em português e fora do componente.

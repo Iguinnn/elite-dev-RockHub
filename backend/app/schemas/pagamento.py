@@ -28,6 +28,7 @@ desconhecido **ignorado** é garantia mais forte que campo desconhecido recusado
 """
 
 import re
+from datetime import datetime, timezone
 from typing import Annotated, Self
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
@@ -41,9 +42,32 @@ from app.services.pagamento import MeioDePagamento
 # passaria ou reprovaria conforme quem digitou tivesse usado máscara.
 _NAO_DIGITO = re.compile(r"\D")
 
-# `MM/AA`, com mês entre 01 e 12. Não confere se a data já passou: cartão de
-# teste com validade vencida é exatamente o que alguém digita ao inventar dados.
+# `MM/AA`, com mês entre 01 e 12.
+#
+# ⚠️ **A validade vencida passou a ser recusada** (decisão do Igor, 2026-08-13),
+# e este comentário dizia o contrário: "não confere se a data já passou — cartão
+# de teste com validade vencida é exatamente o que alguém digita ao inventar
+# dados". A troca tem motivo concreto: cartão vencido aprovando a compra é das
+# primeiras coisas que quem avalia tenta, e um `12/20` que passa lê como um
+# checkout que não valida nada. O risco que o comentário antigo temia continua
+# tratado, mas na tela: a dica do formulário manda inventar o **número**, não a
+# data, e a máscara já impede o mês inválido.
 _FORMATO_DE_VALIDADE = re.compile(r"^(0[1-9]|1[0-2])/\d{2}$")
+
+
+def _esta_vencida(validade: str) -> bool:
+    """`MM/AA` já passou? O cartão vale até o **último dia** do mês impresso.
+
+    ⚠️ **A comparação é por `(ano, mês)`, nunca por data completa.** Um cartão
+    `08/26` vale durante agosto de 2026 inteiro, inclusive no dia 31 — comparar
+    contra a data de hoje o recusaria já no dia 2.
+
+    Dois dígitos viram `20AA`, que é a leitura de todo cartão impresso. O limite
+    dela é o ano 2099, e isso não é problema deste código.
+    """
+    mes, ano = validade.split("/")
+    agora = datetime.now(timezone.utc)
+    return (2000 + int(ano), int(mes)) < (agora.year, agora.month)
 
 
 # ⚠️ **Teto do valor BRUTO, e é por isso que ele mora aqui e não num
@@ -141,6 +165,11 @@ class PagamentoEntrada(BaseModel):
 
         if not self.validade or not _FORMATO_DE_VALIDADE.match(self.validade):
             raise ValueError("validade: informe no formato MM/AA")
+
+        # Depois do formato, nunca antes: `_esta_vencida` faz `split("/")` e
+        # `int()`, e um valor que não passou pelo regex quebraria os dois.
+        if _esta_vencida(self.validade):
+            raise ValueError("validade: este cartão está vencido")
 
         if not self.cvv or not (3 <= len(self.cvv) <= 4):
             raise ValueError("cvv: informe 3 ou 4 dígitos")

@@ -537,3 +537,79 @@ def test_a_resposta_nao_carrega_estoque_nem_dados_do_comprador(
     bruto = resposta.text.lower()
     for palavra in PALAVRAS_DE_ESTOQUE + PALAVRAS_DO_COMPRADOR:
         assert palavra not in bruto, f"'{palavra}' vazou no corpo do pagamento"
+
+# ⚠️ **A regra é `(ano, mês)`, e as duas bordas abaixo é que provam isso.** Um
+# teste só com `12/20` passaria igual se alguém escrevesse a comparação contra a
+# data de hoje — e aí um cartão que vence neste mês seria recusado a partir do
+# dia 2, que é o defeito caro e invisível desta regra
+
+def _validade_de(quando: datetime) -> str:
+    return f"{quando.month:02d}/{quando.year % 100:02d}"
+
+
+def test_cartao_vencido_recusa_e_nao_toca_a_reserva(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """O `12/20` que aprovava antes desta decisão.
+
+    A reserva tem que sobrar intacta: recusa de formato acontece no schema,
+    antes de o service existir na requisição, então nada pode ter sido gravado.
+    """
+    comprador, setor, reserva = _cenario(sessao, fabricar_usuario, "18")
+    _entrar(cliente, comprador)
+
+    resposta = cliente.post(
+        f"/reservas/{reserva.id}/pagamento", json=_corpo(validade="12/20")
+    )
+
+    assert resposta.status_code == 422
+    sessao.expire(reserva)
+    assert reserva.estado == EstadoReserva.PENDENTE.value
+    assert sessao.get(Setor, setor.id).vendidos == 2
+
+
+def test_cartao_que_vence_neste_mes_ainda_aprova(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A borda que importa: o cartão vale até o **último dia** do mês impresso."""
+    comprador, _, reserva = _cenario(sessao, fabricar_usuario, "19")
+    _entrar(cliente, comprador)
+    agora = datetime.now(timezone.utc)
+
+    resposta = cliente.post(
+        f"/reservas/{reserva.id}/pagamento",
+        json=_corpo(validade=_validade_de(agora)),
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["estado"] == EstadoReserva.PAGA.value
+
+
+def test_cartao_do_mes_passado_recusa(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A outra borda, e ela atravessa a virada do ano sozinha.
+
+    `dia 1 menos um dia` cai em dezembro do ano anterior quando estamos em
+    janeiro — que é exatamente o caso em que uma comparação escrita só com
+    `mês - 1` erraria.
+    """
+    comprador, setor, reserva = _cenario(sessao, fabricar_usuario, "20")
+    _entrar(cliente, comprador)
+    mes_passado = datetime.now(timezone.utc).replace(day=1) - timedelta(days=1)
+
+    resposta = cliente.post(
+        f"/reservas/{reserva.id}/pagamento",
+        json=_corpo(validade=_validade_de(mes_passado)),
+    )
+
+    assert resposta.status_code == 422
+    sessao.expire(reserva)
+    assert reserva.estado == EstadoReserva.PENDENTE.value
+    assert sessao.get(Setor, setor.id).vendidos == 2
