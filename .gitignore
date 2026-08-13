@@ -276,8 +276,20 @@ next-env.d.ts
 .swc/
 *.tsbuildinfo
 
+# Arte original, fora do repositório
+# O PNG entregue tem 1254×1254 e 2,8 MB — mais que todo o resto da aplicação
+# somado. O que a aplicação serve são os dois JPGs de `frontend/public/`
+# (302 KB juntos), esses sim versionados; este aqui é o material de origem, e
+# repositório não é lugar de guardá-lo.
+#
+# Ancorado com `/` e nomeado inteiro, pela regra do topo deste arquivo: um
+# padrão como `*.png` casaria em qualquer profundidade e engoliria o
+# `logotipo-rockhub.png` e o `src/app/icon.png`, que precisam estar no clone.
+/frontend/Disco Rock Hub.png
+
 # Lixo do sistema operacional
 .DS_Store
 Thumbs.db
 ehthumbs.db
 desktop.ini
+

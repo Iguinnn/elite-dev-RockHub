@@ -208,10 +208,9 @@
 /* 16/10 como o DESIGN.md pede. `position: relative` para o selo e o degradê se
    ancorarem nela; `overflow: hidden` para a imagem não vazar do quadro.
 
-   O fundo em `--breu2` está aqui **sempre**, e não só no `.arteVazia`: ele é o
-   piso do quadro. Enquanto a imagem carrega, e se ela nunca carregar, o que se
-   vê é o mesmo bloco cinza do evento sem arte — nunca o breu da página com um
-   buraco no meio da grade. */
+   O fundo em `--breu2` é o piso do quadro: enquanto a imagem carrega, e se ela
+   nunca carregar, o que se vê é o cinza — nunca o breu da página com um buraco
+   no meio da grade. */
 .arte {
   position: relative;
   aspect-ratio: 16 / 10;
@@ -233,13 +232,10 @@
   background: linear-gradient(to top, var(--breu), transparent 65%);
 }
 
-/* Evento sem arte (`imagem_url` é anulável desde a Story 2.3): o bloco liso do
-   **mesmo tamanho** que o `.arte` já pinta, para a grade não dançar conforme o
-   evento tem ou não tem foto. Mesma solução da miniatura do catálogo. Aqui só
-   sai o degradê — sobre um bloco chapado ele seria uma sombra sem origem. */
-.arteVazia::after {
-  content: none;
-}
+/* ⚠️ **O `.arteVazia` foi removido em 13/08/2026.** Ele existia para tirar o
+   degradê do evento sem foto: sobre um bloco chapado, a sombra não tinha
+   origem. Desde a arte de reserva (`lib/arte.ts`) não há mais bloco chapado —
+   o quadro tem imagem nos dois casos, e o degradê vale para os dois. */
 
 .imagemDaArte {
   position: relative;
@@ -249,7 +245,7 @@
   object-fit: cover;
 }
 
-/* ⚠️ **A arte que não carrega vira o mesmo bloco cinza, e isto é CSS, não
+/* ⚠️ **A arte que não carrega vira o disco do RockHub, e isto é CSS, não
    JavaScript.**
 
    A URL vem da Ticketmaster e é servida direto do domínio deles: não é nossa, e
@@ -260,10 +256,21 @@
    O truque é que **pseudo-elemento em `<img>` só ganha caixa quando a imagem
    falha**: enquanto ela carrega bem, o `<img>` é um elemento substituído e o
    `::after` não renderiza. Ou seja, esta regra é invisível no caso feliz e cobre
-   o ícone quebrado no caso ruim, com a mesma cor do quadro vazio. Safari não
-   gera pseudo-elemento em imagem nenhuma — e lá o resultado é o mesmo por outro
-   caminho, porque ele não desenha placeholder para `alt` vazio e o `--breu2` do
-   `.arte` aparece sozinho.
+   o ícone quebrado no caso ruim. Safari não gera pseudo-elemento em imagem
+   nenhuma — e lá o que aparece é o `--breu2` do `.arte`, que continua sendo o
+   piso do quadro.
+
+   ⚠️ **Desde 13/08/2026 ela pinta a arte de reserva, e não mais o cinza chapado**
+   — e é isso que fecha o segundo caso. O `??` do JSX cobre `imagem_url` nulo; a
+   URL que existe e **morre** não passa por ele, porque não é nula. Aconteceu de
+   verdade na conferência: um evento com `.../x_SOURCE` no banco, 403 na
+   Ticketmaster, e a capa virava um retângulo cinza — que é justamente o que a
+   arte de reserva veio eliminar. Dois caminhos diferentes, o mesmo desenho no
+   fim.
+
+   O caminho é absoluto (`/disco-rockhub.jpg`, servido do `public/`) e não passa
+   pelo empacotador — é a mesma URL que o `<img>` do JSX usa, e as duas apontam
+   para o arquivo único de `lib/arte.ts`.
 
    **A alternativa era um `onError`**, e ela custava `"use client"` na capa —
    ilha de cliente, hidratação e um `useState` na tela mais visitada do produto,
@@ -273,7 +280,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--breu2);
+  background: var(--breu2) url("/disco-rockhub.jpg") center / cover;
 }
 
 /* Vazado em `--brasa` como o `.selo` da fila, e sobre a arte. `background` é o

@@ -103,13 +103,34 @@
 }
 
 .miniatura {
+  /* Âncora do `::after` logo abaixo — sem ela o pseudo-elemento se posiciona
+     contra a página inteira e o disco cobriria a tela. Não muda o layout: o
+     `<img>` continua na mesma célula da grade. */
+  position: relative;
   width: 70px;
   height: 70px;
   aspect-ratio: 1;
   object-fit: cover;
-  /* Bloco vazio do mesmo tamanho quando não há `imagem_url` — a grade não
-     pode dançar entre uma fila e outra. */
+  /* Piso do quadro: o cinza aparece enquanto a imagem carrega, e a grade não
+     dança entre uma fila e outra. Desde 13/08/2026 ele não é mais o que se vê
+     no item sem arte — esse caso agora tem a arte de reserva (`lib/arte.ts`). */
   background: var(--breu2);
+}
+
+/* ⚠️ **A arte morta também vira o disco, e aqui a proteção é nova.** As telas
+   públicas já cobriam o `<img>` quebrado desde a Story 3.3; esta lista nunca
+   cobriu, e o ícone de imagem faltando aparecia na fila do catálogo. Ele fica
+   mais provável aqui do que em qualquer outro lugar: as URLs vêm da Discovery
+   ao vivo, uma por fila, e nenhuma delas passou por nós antes.
+
+   Mesmo mecanismo do `.imagemDaArte::after` da raiz — pseudo-elemento em `<img>`
+   só ganha caixa quando a imagem falha —, com a arte **quadrada**, que é a
+   proporção deste quadro de 70px. */
+.miniatura::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--breu2) url("/disco-rockhub-quadrado.jpg") center / cover;
 }
 
 .nome {
@@ -124,7 +145,7 @@
   color: var(--fumaca);
 }
 
-/* ---- passo 2: data, local e setores (Story 2.4) -------------------------- */
+/* ---- passo 2: data e setores (Story 2.4) --------------------------------- */
 
 .formulario {
   margin-top: 26px;
@@ -139,6 +160,22 @@
   align-items: center;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--fio);
+}
+
+/* Onde o show acontece — dois campos do formulário até 13/08/2026, texto daqui
+   em diante. Serifada, e não o mono de `.origem`: procedência é etiqueta, isto
+   é conteúdo do evento que está sendo publicado. */
+.ondeAcontece {
+  margin-top: 6px;
+  font: 17px/1.4 var(--serif);
+}
+
+/* O mesmo lugar, quando a Discovery não mandou a casa. Fumaça em vez de cal:
+   é uma pendência declarada, não um dado. */
+.semCasa {
+  margin-top: 6px;
+  font: italic 17px/1.4 var(--serif);
+  color: var(--fumaca);
 }
 
 .colunas {

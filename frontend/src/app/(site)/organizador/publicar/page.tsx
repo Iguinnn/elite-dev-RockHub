@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
 import FormularioPublicacao from "@/components/FormularioPublicacao";
+import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
 import { buscarNoCatalogo } from "@/lib/catalogo";
 import { listarPortarias, type ResultadoDasPortarias } from "@/lib/portarias";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
@@ -12,7 +13,11 @@ import estilos from "./page.module.css";
 
 /**
  * Fluxo de publicação: passo 1, buscar a atração no catálogo da Ticketmaster;
- * passo 2, preencher data, local e setores; passo 3, escalar a portaria.
+ * passo 2, preencher data e setores; passo 3, escalar a portaria.
+ *
+ * ⚠️ **A casa de show e a cidade deixaram de ser campos em 13/08/2026** — o
+ * motivo inteiro está no topo do `FormularioPublicacao`. O que muda aqui é só o
+ * título do passo 2, e ele muda porque o passo mudou de tamanho.
  * Server Component — a busca vive na URL (`?q=`) **e a escolha também**
  * (`?escolhido=`), não em estado de cliente, e por isso a página é
  * recarregável, compartilhável e o botão voltar funciona.
@@ -188,22 +193,22 @@ export default async function PublicarEvento({
                 className={`${estilos.item} ${selecionado ? estilos.itemEscolhido : ""}`}
                 aria-current={selecionado ? "true" : undefined}
               >
-                {item.imagem_url ? (
-                  // A Discovery serve imagem de mais de um host
-                  // (`s1.ticketm.net`, `media.ticketmaster.com`), e
-                  // `next/image` exige `remotePatterns` declarado por host —
-                  // errar um produz erro em tempo de execução. `<img>` com
-                  // dimensão fixa no CSS resolve sem essa dependência.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.imagem_url}
-                    alt=""
-                    loading="lazy"
-                    className={estilos.miniatura}
-                  />
-                ) : (
-                  <div className={estilos.miniatura} />
-                )}
+                {/* A Discovery serve imagem de mais de um host
+                    (`s1.ticketm.net`, `media.ticketmaster.com`), e `next/image`
+                    exige `remotePatterns` declarado por host — errar um produz
+                    erro em tempo de execução. `<img>` com dimensão fixa no CSS
+                    resolve sem essa dependência.
+
+                    Sem arte no catálogo, entra o disco do RockHub na versão
+                    **quadrada** — a 16/10 espremida em 70×70 viraria borrão
+                    (ver `lib/arte.ts`). O bloco cinza vazio saiu daqui. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.imagem_url ?? ARTE_DE_RESERVA_QUADRADA}
+                  alt=""
+                  loading="lazy"
+                  className={estilos.miniatura}
+                />
                 <div>
                   <h4 className={estilos.nome}>{item.nome}</h4>
                   <div className={estilos.origem}>{origem}</div>
@@ -223,7 +228,7 @@ export default async function PublicarEvento({
             id="passo-2"
             className={`${estilos.secTitulo} ${estilos.secTituloPasso2}`}
           >
-            <h2>2 · Data, local e setores</h2>
+            <h2>2 · Data e setores</h2>
           </div>
           <FormularioPublicacao item={escolhido} portarias={portarias} />
         </>

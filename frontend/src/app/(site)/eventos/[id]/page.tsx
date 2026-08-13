@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import EscolhaDeIngressos from "@/components/EscolhaDeIngressos";
+import { ARTE_DE_RESERVA } from "@/lib/arte";
 import { dataDaChamada } from "@/lib/formato";
 import { obterEvento } from "@/lib/programacao";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
@@ -136,12 +137,9 @@ export default async function PaginaDoEvento({
         </div>
 
         {/* A arte **ao lado do cabeçalho** (decisão do Igor), no mesmo padrão da
-            capa da 3.3: bloco `--breu2` do mesmo tamanho quando não há
-            `imagem_url`, para a grade não dançar conforme o evento tem ou não tem
-            foto. */}
-        <div
-          className={`${estilos.arte} ${evento.imagem_url ? "" : estilos.arteVazia}`}
-        >
+            capa da 3.3. O quadro sempre tem foto desde 13/08/2026 — o `.arteVazia`
+            saiu junto com o caso nulo, aqui e na capa. */}
+        <div className={estilos.arte}>
           {/* ⚠️ **`<img>` comum, e não `next/image`** — não existe
               `images.remotePatterns` no `next.config.ts`, e o componente do Next
               estoura em tempo de execução com host não declarado. Mesmo
@@ -153,11 +151,16 @@ export default async function PaginaDoEvento({
 
               A imagem morta é coberta pelo `.imagemDaArte::after` do CSS, e não
               por um `onError` — que obrigaria esta metade da página a virar ilha
-              de cliente. O motivo inteiro está no `page.module.css` da raiz. */}
-          {evento.imagem_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={evento.imagem_url} alt="" className={estilos.imagemDaArte} />
-          )}
+              de cliente. O motivo inteiro está no `page.module.css` da raiz.
+
+              O `??` cobre o evento sem arte com o disco do RockHub, o mesmo
+              arquivo 16/10 da capa (ver `lib/arte.ts`). */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={evento.imagem_url ?? ARTE_DE_RESERVA}
+            alt=""
+            className={estilos.imagemDaArte}
+          />
         </div>
       </div>
 

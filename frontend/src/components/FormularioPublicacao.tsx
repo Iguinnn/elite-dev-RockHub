@@ -7,6 +7,7 @@ import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
+import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { ItemDoCatalogo } from "@/lib/catalogo";
 // O que o `POST /organizador/eventos` devolve é o mesmo `EventoSaida` que o
@@ -23,8 +24,21 @@ import { centavosParaReais, dataPorExtenso, momentoDaPublicacao } from "@/lib/fo
 import type { ResultadoDasPortarias } from "@/lib/portarias";
 
 /**
- * Passos 2 e 3 da publicação: data, local e setores; e quem valida na porta —
- * mais a confirmação que toma o lugar dos dois quando dá certo.
+ * Passos 2 e 3 da publicação: data e setores; e quem valida na porta — mais a
+ * confirmação que toma o lugar dos dois quando dá certo.
+ *
+ * ⚠️ **A casa de show e a cidade deixaram de ser campos** (decisão do Igor,
+ * 13/08/2026). Eles nasceram editáveis para o caso da turnê que troca de cidade
+ * a cada data; a Ticketmaster resolve isso antes de nós, mandando **um evento
+ * por cidade** — três datas de uma turnê chegam como três itens do catálogo,
+ * cada um com o seu `venue`. Editar aqui só criava a chance de o evento
+ * publicado divergir do item que o originou, e o nome do show já carrega a casa.
+ * Agora os dois viajam escondidos, junto com `nome` e `imagem_url`, como o AD-1
+ * manda: dado do catálogo vira cópia no banco, não campo de formulário.
+ *
+ * A alternativa descartada foi deixá-los como `<input readOnly>`: campo que
+ * ninguém pode editar é campo que não deveria ser campo — é a mesma régua que o
+ * bloco da atração escolhida já seguia, e agora eles moram lá, como texto.
  *
  * **A primeira ilha `"use client"` fora das telas de acesso**, e ela existe
  * por um motivo que dá para apontar: `+ Adicionar setor` e o `×` de remover
@@ -54,6 +68,32 @@ type LinhaDeSetor = { chave: number; nome: string; capacidade: string; preco: st
 
 const MENSAGEM_GENERICA =
   "Não foi possível publicar o evento agora. Tente de novo em instantes.";
+
+/**
+ * ⚠️ **O que se grava quando nem o catálogo nem o organizador sabem a casa.**
+ *
+ * `ItemDoCatalogo.local` é anulável — a Discovery às vezes devolve um evento sem
+ * `_embedded.venues` —, e `EventoEntrada.local` é obrigatório (`min_length=1`).
+ * Enquanto a casa era um campo do formulário, um item sem `venue` era só um
+ * campo vazio para preencher; com o valor vindo do catálogo, ele viraria um
+ * `422` sobre um campo que a tela **não mostra e ninguém pode editar** — beco
+ * sem saída, e a única mensagem possível seria "confira os dados do
+ * formulário". É a mesma armadilha do nome com mais de 200 caracteres,
+ * encontrada no code review da Epic 2 (ver `schemas/catalogo.py`).
+ *
+ * A saída é a regra que vale também para a arte: **o formulário preenche
+ * buraco, nunca sobrescreve.** Faltando a casa, e só nesse caso, o campo
+ * reaparece — quem publica costuma saber onde o show é. Em branco, grava-se
+ * esta frase, que é uma pendência dita em português.
+ *
+ * A alternativa descartada foi tornar `local` anulável e deixar cada tela
+ * escrever a frase. É o modelo mais honesto — o banco diria "não sei" em vez de
+ * guardar texto de interface —, e custaria migração, `str | None` em sete
+ * schemas e a frase repetida em oito telas, com o risco de esquecer uma e
+ * imprimir um separador solto na ficha. Não paga, para um caso que o próprio
+ * catálogo quase nunca produz.
+ */
+const LOCAL_EM_CONFIRMACAO = "Local ainda em confirmação";
 
 /** Espelha `_MAXIMO_INT4` do `schemas/evento.py` — o tipo da coluna. */
 const MAXIMO_CAPACIDADE = 2_147_483_647;
@@ -227,8 +267,14 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     const dados = new FormData(evento.currentTarget);
     const data = String(dados.get("data") ?? "");
     const hora = String(dados.get("hora") ?? "");
-    const local = String(dados.get("local") ?? "").trim();
-    const cidade = String(dados.get("cidade") ?? "").trim();
+
+    // A casa vem do catálogo (ver o topo do arquivo). O `FormData` só é
+    // consultado no caso em que o campo existe — isto é, quando a Discovery não
+    // mandou `venue` —, e mesmo aí o vazio tem resposta: `LOCAL_EM_CONFIRMACAO`.
+    // `dados.get` devolveria `null` para um campo que não está no DOM, e o
+    // `String(null)` seria a string `"null"` gravada no banco.
+    const local =
+      item.local ?? (String(dados.get("local") ?? "").trim() || LOCAL_EM_CONFIRMACAO);
 
     // ⚠️ A junção não é estética. `new Date("2026-08-14")` — data sozinha — é
     // lida como **UTC** pela especificação; `new Date("2026-08-14T21:00")` —
@@ -286,16 +332,18 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
       const criado = await chamarApi<MeuEventoDetalhe>("/organizador/eventos", {
         method: "POST",
         body: JSON.stringify({
-          // Os três campos do catálogo viajam escondidos: o organizador não os
-          // digitou e não pode editá-los (AD-1).
+          // **Cinco** campos do catálogo viajam escondidos desde 13/08/2026: o
+          // organizador não digitou nenhum deles e não pode editá-los (AD-1).
+          // `local` e `cidade` eram os dois últimos que ele preenchia à mão.
           origem_externa_id: item.id_externo,
           nome: item.nome,
           imagem_url: item.imagem_url,
           data_hora: instante.toISOString(),
           local,
-          // Vazio vira `null`: a coluna é anulável, e `""` seria um segundo
-          // jeito de dizer a mesma coisa.
-          cidade: cidade || null,
+          // Já chega `null` do catálogo quando a Discovery não manda a cidade —
+          // a coluna é anulável, e não há campo de texto para produzir o `""`
+          // que esta linha antes precisava normalizar.
+          cidade: item.cidade,
           setores: setoresConvertidos,
           portaria_ids: [...escalados],
         }),
@@ -379,14 +427,27 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
       {/* Travado, e **não** é `<input readOnly>`: campo que ninguém pode
           editar é campo que não deveria ser campo. É texto. */}
       <div className={estilos.atracao}>
-        {item.imagem_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.imagem_url} alt="" className={estilos.miniatura} />
-        ) : (
-          <div className={estilos.miniatura} />
-        )}
+        {/* Mesma miniatura quadrada do passo 1, com a mesma arte de reserva
+            quando o catálogo não trouxe foto (ver `lib/arte.ts`). */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.imagem_url ?? ARTE_DE_RESERVA_QUADRADA}
+          alt=""
+          className={estilos.miniatura}
+        />
         <div>
           <h3 className={estilos.nome}>{item.nome}</h3>
+          {/* A casa e a cidade, que até 13/08/2026 eram dois campos do passo 2.
+              Aqui elas mudam de papel: não são mais procedência, são **o que
+              vai ser publicado** — daí a serifada, e não o mono da linha de
+              origem logo abaixo. Faltando a casa, o que aparece é a falta, dita
+              antes de a pessoa preencher setor nenhum; o campo para resolvê-la
+              abre logo abaixo, na coluna da data. */}
+          <div className={item.local ? estilos.ondeAcontece : estilos.semCasa}>
+            {item.local
+              ? [item.local, item.cidade].filter(Boolean).join(" · ")
+              : "O catálogo da Ticketmaster não trouxe a casa de show."}
+          </div>
           <div className={estilos.origem}>Ticketmaster · {item.id_externo}</div>
         </div>
       </div>
@@ -408,23 +469,28 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             />
             <Campo id="hora" name="hora" rotulo="Horário" type="time" required />
           </div>
-          <Campo
-            id="local"
-            name="local"
-            rotulo="Casa de show"
-            type="text"
-            maxLength={200}
-            defaultValue={item.local ?? ""}
-            required
-          />
-          <Campo
-            id="cidade"
-            name="cidade"
-            rotulo="Cidade"
-            type="text"
-            maxLength={120}
-            defaultValue={item.cidade ?? ""}
-          />
+          {/* A data continua sendo digitada, e ela **não** seguiu a casa e a
+              cidade para o bloco de cima. A Discovery manda `dates.start` de
+              cada evento, mas quem publica aqui está anunciando a própria data
+              de venda — e, ao contrário do local, ela não é o que identifica o
+              show no catálogo. */}
+
+          {/* ⚠️ **O campo só existe quando o catálogo não trouxe a casa**, e é
+              essa condição que separa "preencher buraco" de "editar o
+              catálogo". Ele não é `required`: em branco grava
+              `LOCAL_EM_CONFIRMACAO`, e é o `placeholder` que mostra isso antes
+              de a pessoa decidir. Um `required` transformaria uma falha do
+              fornecedor em trabalho obrigatório de quem publica. */}
+          {!item.local && (
+            <Campo
+              id="local"
+              name="local"
+              rotulo="Casa de show"
+              type="text"
+              maxLength={200}
+              placeholder={LOCAL_EM_CONFIRMACAO}
+            />
+          )}
         </div>
 
         <div>

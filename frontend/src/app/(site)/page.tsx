@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import Botao from "@/components/Botao";
+import { ARTE_DE_RESERVA } from "@/lib/arte";
 import {
   centavosParaReais,
   dataDaChamada,
@@ -417,9 +418,13 @@ function ChamadaPrincipal({
 }) {
   const conteudo = (
     <>
-      <div
-        className={`${estilos.arte} ${evento.imagem_url ? "" : estilos.arteVazia}`}
-      >
+      {/* ⚠️ **O `.arteVazia` saiu daqui em 13/08/2026, e com ele o caso nulo.**
+          Enquanto o evento sem arte era um bloco chapado, o degradê do
+          `.arte::after` precisava sumir — sombra sobre superfície lisa não tem
+          origem —, e por isso existia a classe. Agora o caso nulo é uma
+          imagem como qualquer outra: sempre há foto no quadro, sempre há
+          degradê, e o selo `Esgotado` assenta igual nos dois casos. */}
+      <div className={estilos.arte}>
         {/* ⚠️ **`<img>` comum, e não `next/image`.** Não existe
             `images.remotePatterns` no `next.config.ts`, e o componente do Next
             estoura **em tempo de execução** com host não declarado — em
@@ -437,11 +442,18 @@ function ChamadaPrincipal({
             `.imagemDaArte::after` do `page.module.css`, que cobre o ícone
             quebrado com o mesmo cinza do quadro vazio. É CSS puro de propósito:
             um `onError` obrigaria esta capa a virar ilha `"use client"`, com
-            hidratação e `useState`, na tela mais visitada do produto. */}
-        {evento.imagem_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={evento.imagem_url} alt="" className={estilos.imagemDaArte} />
-        )}
+            hidratação e `useState`, na tela mais visitada do produto.
+
+            O `??` cobre o evento que o catálogo mandou sem arte: o disco do
+            RockHub em 16/10, servido do `public/` (ver `lib/arte.ts`). O
+            `alt=""` vale para ele pelo mesmo motivo — decoração, e o nome do
+            show está ao lado. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={evento.imagem_url ?? ARTE_DE_RESERVA}
+          alt=""
+          className={estilos.imagemDaArte}
+        />
 
         {/* Sobre a arte, canto superior esquerdo — a anatomia do `.lead-selo`
             do protótipo. A informação **não é dada só por cor** (UX-DR9): a

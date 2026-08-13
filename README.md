@@ -82,7 +82,7 @@ cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
 uv run alembic upgrade head       # cria o schema
-uv run python -m seeds.semear     # cria as 5 contas de avaliação
+uv run python -m seeds.semear     # cria as 6 contas de avaliação
 uv run uvicorn app.main:app --reload
 ```
 
@@ -129,6 +129,7 @@ uv run python -m seeds.semear
 | Papel | Nome | E-mail | Senha |
 |---|---|---|---|
 | `ORGANIZADOR` | Helena Marques | `organizador@rockhub.dev` | `rockhub123` |
+| `ORGANIZADOR` | Rafael Nunes | `organizador2@rockhub.dev` | `rockhub123` |
 | `CLIENTE` | Bruno Tavares | `cliente@rockhub.dev` | `rockhub123` |
 | `CLIENTE` | Marina Aoki | `cliente2@rockhub.dev` | `rockhub123` |
 | `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
@@ -188,7 +189,7 @@ Rodando local pelos passos de [Como executar](#como-executar), começando pelo s
 **Acesso e sessão**
 
 1. Entrar como `organizador@rockhub.dev` → a `/conta` mostra **Helena Marques**, `ORGANIZADOR`
-2. Rodar `uv run python -m seeds.semear` **de novo** → as cinco linhas dizem `mantida`, o comando sai
+2. Rodar `uv run python -m seeds.semear` **de novo** → as seis linhas dizem `mantida`, o comando sai
    em `0`, e nenhuma conta criada por você desaparece. É a garantia que faz esse comando poder rodar
    a cada deploy
 3. Criar uma conta em `/cadastro` → cai na raiz já logado. Senhas diferentes nos dois campos mostram

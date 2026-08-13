@@ -136,9 +136,8 @@
    altura em vez da largura. Em 16/10 a arte fica com ~305px e o cabeçalho
    equilibra com o texto — e o produto passa a ter **uma** proporção de arte só.
 
-   O fundo em `--breu2` está aqui **sempre**, e não só no `.arteVazia`: ele é o
-   piso do quadro. Enquanto a imagem carrega, e se ela nunca carregar, o que se vê
-   é o mesmo bloco cinza do evento sem arte — nunca o breu da página com um buraco
+   O fundo em `--breu2` é o piso do quadro: enquanto a imagem carrega, e se ela
+   nunca carregar, o que se vê é o cinza — nunca o breu da página com um buraco
    na grade. */
 .arte {
   position: relative;
@@ -149,11 +148,11 @@
 
 /* Sem degradê aqui, ao contrário da capa: lá ele assenta a arte na base da faixa
    larga; aqui a imagem é uma coluna ao lado do texto, e escurecer o pé dela só
-   apagaria parte da foto. O `.arteVazia` existe para o caso nulo ficar nomeado no
-   JSX — o bloco cinza já vem do `.arte`. */
-.arteVazia {
-  background: var(--breu2);
-}
+   apagaria parte da foto.
+
+   ⚠️ **O `.arteVazia` foi removido em 13/08/2026**, aqui e na capa: ele nomeava
+   no JSX um caso nulo que deixou de existir quando a arte de reserva entrou
+   (`lib/arte.ts`). O cinza de piso continua vindo do `.arte` acima. */
 
 .imagemDaArte {
   position: relative;
@@ -163,7 +162,7 @@
   object-fit: cover;
 }
 
-/* ⚠️ **A arte que não carrega vira o mesmo bloco cinza, e isto é CSS, não
+/* ⚠️ **A arte que não carrega vira o disco do RockHub, e isto é CSS, não
    JavaScript** — a regra é copiada da capa da Story 3.3, onde o problema apareceu
    na conferência visual: a URL é da Ticketmaster, pode morrer sem aviso, e o
    navegador desenha o ícone de imagem faltando.
@@ -171,12 +170,17 @@
    **Pseudo-elemento em `<img>` só ganha caixa quando a imagem falha**: no caso
    feliz o `<img>` é elemento substituído e o `::after` não renderiza. A
    alternativa era um `onError`, e ela custava `"use client"` nesta metade da
-   página — que é justamente a metade que não precisa de navegador. */
+   página — que é justamente a metade que não precisa de navegador.
+
+   ⚠️ **A arte de reserva entrou aqui em 13/08/2026** pelo mesmo motivo da capa: o
+   `??` do JSX só cobre `imagem_url` nulo, e a URL que existe mas responde 403 —
+   caso real, encontrado na conferência — passava direto por ele e caía neste
+   cinza. O motivo inteiro está no `page.module.css` da raiz. */
 .imagemDaArte::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--breu2);
+  background: var(--breu2) url("/disco-rockhub.jpg") center / cover;
 }
 
 /* ---- a lista de setores ------------------------------------------------- */

@@ -42,21 +42,27 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
   return (
     <section className={estilos.coluna}>
       <p className="kicker">Acesso</p>
-      <FormularioLogin voltar={voltar} />
-      <p className={estilos.rodape}>
-        Ainda não tem conta?{" "}
-        {/* O destino viaja junto: quem foi mandado para cá, resolveu se
-            cadastrar e criou a conta perderia o caminho de volta no meio. */}
-        <Link
-          href={
-            destinoDoCadastro === "/"
-              ? "/cadastro"
-              : `/cadastro?voltar=${encodeURIComponent(destinoDoCadastro)}`
-          }
-        >
-          Cadastre-se
-        </Link>
-      </p>
+      {/* O rodapé vai como `children` para que as *Contas de avaliação*, que o
+          formulário desenha logo abaixo, fiquem depois dele — e para que esta
+          página continue sem saber preencher campo nenhum. O `<Link>` segue
+          montado aqui, no servidor, porque é daqui que sai o `?voltar=` já
+          validado. */}
+      <FormularioLogin voltar={voltar}>
+        <p className={estilos.rodape}>
+          Ainda não tem conta?{" "}
+          {/* O destino viaja junto: quem foi mandado para cá, resolveu se
+              cadastrar e criou a conta perderia o caminho de volta no meio. */}
+          <Link
+            href={
+              destinoDoCadastro === "/"
+                ? "/cadastro"
+                : `/cadastro?voltar=${encodeURIComponent(destinoDoCadastro)}`
+            }
+          >
+            Cadastre-se
+          </Link>
+        </p>
+      </FormularioLogin>
     </section>
   );
 }

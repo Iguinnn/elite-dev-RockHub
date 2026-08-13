@@ -72,6 +72,33 @@ body {
   font: 16px/1.55 var(--serif);
 }
 
+/* ---- interface nativa do navegador --------------------------------------
+   ⚠️ **`color-scheme` é o que faz o navegador saber que este produto é
+   escuro**, e sem ele nada aqui é escolha nossa: o padrão é claro, e o
+   navegador pinta em claro tudo que ele desenha por conta própria — barra de
+   rolagem, o amarelo do preenchimento automático, a lista aberta de um
+   `<select>`, o seletor de data. Era uma faixa cinza-clara na borda de um
+   produto que não tem uma única superfície clara.
+
+   `scrollbar-color` vem junto porque `color-scheme` sozinho entrega o cinza
+   escuro genérico do sistema operacional, e não a nossa paleta. Polegar em
+   `--fio2` — o mesmo fio das superfícies elevadas —, trilho no fundo da
+   aplicação: presente o bastante para se pegar, discreto o bastante para não
+   competir com o conteúdo.
+
+   **Sem `--neon` aqui**, e não é esquecimento: o acento único é da ação e do
+   item ativo (UX-DR1). Barra de rolagem não é ação.
+
+   Sem `::-webkit-scrollbar` de propósito: definir aquelas regras desliga a
+   barra sobreposta do macOS e força uma barra permanente ocupando largura em
+   toda tela. As duas propriedades padrão abaixo já cobrem Chrome, Firefox e
+   Safari atuais, e onde não cobrirem o `color-scheme` ainda entrega uma barra
+   escura.                                                                  */
+:root {
+  color-scheme: dark;
+  scrollbar-color: var(--fio2) var(--breu);
+}
+
 /* Só vale para link com âncora (`#passo-2`, na tela do organizador): ir de um
    ponto a outro da mesma página sem corte seco, para quem clicou entender que
    continua onde estava. Não é animação de entrada nem transição de tela —

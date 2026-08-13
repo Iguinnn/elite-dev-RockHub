@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import CampoDeSenha from "@/components/CampoDeSenha";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 
 const MENSAGEM_GENERICA =
@@ -88,19 +89,20 @@ export default function FormularioCadastro({ voltar = "/" }: Props) {
       {/* `new-password` nos dois, nunca `current-password`: é o que faz o
           gerenciador de senhas oferecer uma senha nova em vez de tentar
           preencher a de uma conta que ainda não existe. */}
-      <Campo
+      <CampoDeSenha
         id="senha"
         name="senha"
         rotulo="Senha"
-        type="password"
         autoComplete="new-password"
         required
       />
-      <Campo
+      {/* O olhinho vale nos dois, e aqui ele resolve mais do que no login: esta
+          tela não tem "esqueci minha senha", então uma divergência de digitação
+          entre os dois campos só aparece como recusa no envio. */}
+      <CampoDeSenha
         id="confirmacao"
         name="confirmacao"
         rotulo="Repetir senha"
-        type="password"
         autoComplete="new-password"
         required
       />

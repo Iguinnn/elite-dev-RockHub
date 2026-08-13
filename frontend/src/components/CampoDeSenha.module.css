@@ -1,0 +1,49 @@
+/* O `<Campo>` inteiro continua sendo dele — este arquivo só posiciona o botão
+   por cima da entrada. Nada aqui redefine borda, fundo ou tipografia: se o
+   `Campo.module.css` mudar, este campo muda junto, que é o ponto de reaproveitar
+   o componente em vez de copiar a anatomia. */
+
+.envolucro {
+  position: relative;
+}
+
+/* Abre espaço para o botão não ficar por cima do texto digitado. É o único
+   valor que este arquivo impõe ao input, e ele existe por causa do botão. */
+.envolucro input {
+  padding-right: 52px;
+}
+
+/* `bottom` e não `top`: o `<Campo>` tem rótulo em cima da entrada, e ancorar
+   embaixo alinha com a entrada sem depender da altura do rótulo.
+
+   ⚠️ **`bottom: 1px`, e não os 20px da `margin-bottom` do `.campo`.** Aquela
+   margem **colapsa para fora** deste envelope — `.envolucro` é bloco comum, sem
+   padding, borda ou `overflow` que criem contexto de formatação —, então a base
+   dele já é a base da entrada. Descontar a margem aqui subia o botão para cima
+   do campo, que foi o primeiro desenho e estava errado na tela.
+
+   A aritmética do alinhamento: a entrada mede 46px (14px de padding em cima e
+   embaixo + 16px de corpo com `line-height: 1` + as duas bordas de 1px). O botão
+   de 44px começando 1px acima da borda de baixo fica centrado nela — e 44px é o
+   alvo de toque do UX-DR6, que é por isso que ele é bem maior que o ícone. */
+.olho {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fumaca);
+  cursor: pointer;
+}
+
+/* Âmbar fica fora daqui de propósito: o acento único do UX-DR1 é da palavra que
+   é ação, e mostrar a senha é conveniência, não a ação da tela. */
+.olho:hover {
+  color: var(--cal);
+}
