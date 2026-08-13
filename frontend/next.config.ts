@@ -24,6 +24,16 @@ if (process.env.NODE_ENV === "production" && !process.env.API_URL) {
 }
 
 const nextConfig: NextConfig = {
+  // Só vale em `next dev`, e existe para conferir a portaria no celular pela
+  // rede local. O Next bloqueia por padrão requisição de origem diferente
+  // daquela em que o servidor subiu (`localhost`) — inclusive o proxy `/api`
+  // logo abaixo. O sintoma engana: a página abre, porque o HTML já veio, e só
+  // o login falha. Sem efeito nenhum em produção.
+  //
+  // Ajuste o endereço para o IP da sua máquina na rede: no Windows,
+  // `Get-NetIPAddress -AddressFamily IPv4` — é o da interface `Wi-Fi`, nunca
+  // os `172.x` das placas virtuais do WSL/Hyper-V.
+  allowedDevOrigins: [process.env.DEV_ORIGIN ?? "192.168.1.171"],
   rewrites() {
     return [{ source: "/api/:caminho*", destination: `${destinoDaApi}/:caminho*` }];
   },

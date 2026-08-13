@@ -102,6 +102,18 @@ export default function Leitor({
   // construção.
   const jaLeu = useRef(false);
 
+  // ⚠️ **Montagem em `ref`, e NÃO o `cancelado` do efeito da câmera.** O
+  // callback do zxing sobrevive de propósito à limpeza daquele efeito: ele
+  // depende de `[camera]`, e abrir a câmera com sucesso faz `setCamera("lendo")`
+  // — o estado muda, a limpeza roda, e o `cancelado` daquela closure vira
+  // `true` **com o scanner ainda funcionando**. Um `if (cancelado)` dentro do
+  // callback descarta toda leitura para sempre: a câmera abre, o preview
+  // aparece e nada nunca é validado. Aconteceu — foi introduzido no code review
+  // da Epic 5 e só apareceu na conferência no celular, porque não há teste de
+  // frontend neste projeto. Esta `ref` só muda na desmontagem de verdade, que é
+  // o que o guarda precisa saber.
+  const montado = useRef(true);
+
   async function enviar(bruto: string, devolverFoco = true) {
     // Guarda de reentrância: o `disabled` do botão é a rede de cima, esta é a de
     // baixo — e aqui ela pesa, porque o Enter continua submetendo o formulário
@@ -192,7 +204,13 @@ export default function Leitor({
   // **Efeito próprio com `[]`**, separado do que liga a câmera: o de baixo roda
   // de novo a cada troca de estado, e a limpeza que importa aqui é a da
   // desmontagem.
-  useEffect(() => desligarCamera, []);
+  useEffect(() => {
+    montado.current = true;
+    return () => {
+      montado.current = false;
+      desligarCamera();
+    };
+  }, []);
 
   useEffect(() => {
     if (camera !== "abrindo") return;
@@ -238,16 +256,16 @@ export default function Leitor({
           (leitura) => {
             // O callback roda a cada quadro, e a maioria vem sem QR nenhum.
             //
-            // ⚠️ **`cancelado` entra no guarda** (code review da Epic 5). Os
-            // outros três pontos deste efeito já o conferiam; aqui faltava, e o
-            // caminho é real: tocar *Ler pela câmera* e sair da tela antes de a
-            // câmera abrir deixa `controles.current` nulo, então o `stop()` da
-            // desmontagem não tem o que parar — e o zxing dispara o `loop()`
-            // assim que o stream anexa. Um QR no enquadramento virava `POST` de
-            // verdade, com ninguém olhando, e `usado_em` é irreversível: a
-            // pessoa chegava na porta depois e ouvia `JÁ UTILIZADO` de uma
-            // entrada que nunca aconteceu.
-            if (cancelado || !leitura || jaLeu.current) return;
+            // ⚠️ **`montado.current`, e nunca o `cancelado` deste efeito** — a
+            // explicação inteira está na declaração da `ref`, lá em cima. O que
+            // este guarda protege é real: tocar *Ler pela câmera* e sair da tela
+            // antes de a câmera abrir deixa `controles.current` nulo, então o
+            // `stop()` da desmontagem não tem o que parar — e o zxing dispara o
+            // `loop()` assim que o stream anexa. Um QR no enquadramento viraria
+            // `POST` de verdade, com ninguém olhando, e `usado_em` é
+            // irreversível: a pessoa chegaria na porta depois e ouviria `JÁ
+            // UTILIZADO` de uma entrada que nunca aconteceu.
+            if (!montado.current || !leitura || jaLeu.current) return;
             jaLeu.current = true;
             desligarCamera();
             setCamera("desligada");
