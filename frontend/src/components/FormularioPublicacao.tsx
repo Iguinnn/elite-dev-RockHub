@@ -5,6 +5,7 @@ import { useRef, useState, type FormEvent } from "react";
 
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import SeletorDeData from "@/components/SeletorDeData";
 import Toast from "@/components/Toast";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
 import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
@@ -488,14 +489,21 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             {/* `min` em hoje: a API recusa show no passado com
                 `EVENTO_NO_PASSADO`, e o seletor de data avisa antes da ida à
                 rede. Como não existe tela de editar evento, errar a data é
-                permanente — vale as duas barreiras. */}
-            <Campo
+                permanente — vale as duas barreiras.
+
+                ⚠️ **Não é o `Campo`, e é o único campo do projeto que não é**
+                (13/08/2026). O popup do `<input type="date">` é desenhado pelo
+                navegador e não aceita CSS nenhum — o azul do Chrome no meio de
+                um produto de acento rosa. O `SeletorDeData` mantém o mesmo
+                `<input>` por baixo (digitar continua funcionando, e o
+                `dados.get("data")` do envio não soube de nada) e troca só o
+                popup. O motivo inteiro está no topo dele. */}
+            <SeletorDeData
               id="data"
               name="data"
               rotulo="Data"
-              type="date"
-              min={hojeEmSaoPaulo()}
-              required
+              minimo={hojeEmSaoPaulo()}
+              obrigatorio
             />
             <Campo id="hora" name="hora" rotulo="Horário" type="time" required />
           </div>
