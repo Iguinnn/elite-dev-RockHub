@@ -386,7 +386,15 @@ export default function EscolhaDeIngressos({
           tela pode não anunciar nada (a regra inteira está no `Toast.tsx`) — e o
           rodapé abaixo aparece e some conforme a escolha. Vazio, o toast não
           ocupa espaço nem intercepta clique. */}
-      <Toast mensagem={erro} aoFechar={() => setErro(null)} />
+      {/* `acima-do-rodape` porque o rodapé abaixo é `sticky`: no pé da janela o
+          aviso cairia sobre o `Reservar e pagar`, que é a ação que ele pede para
+          refazer. É a prop que nasceu quando o formulário de publicar virou o
+          segundo consumidor deste componente. */}
+      <Toast
+        mensagem={erro}
+        aoFechar={() => setErro(null)}
+        posicao="acima-do-rodape"
+      />
 
       {/* ⚠️ **Com zero escolhido o rodapé não é renderizado** (suposição
           declarada, mantida na 3.6): `R$ 0,00` grudado na base é ruído, e o

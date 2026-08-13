@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 
-import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import Toast from "@/components/Toast";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
 import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
 import { ErroDaApi, chamarApi } from "@/lib/api";
@@ -68,6 +68,17 @@ type LinhaDeSetor = { chave: number; nome: string; capacidade: string; preco: st
 
 const MENSAGEM_GENERICA =
   "Não foi possível publicar o evento agora. Tente de novo em instantes.";
+
+/**
+ * A recusa da data no passado, **numa constante porque tem dois emissores**.
+ *
+ * Ela sai daqui tanto na checagem local, antes do envio, quanto na tradução do
+ * `EVENTO_NO_PASSADO` que o servidor devolve. As duas dizem a mesma coisa porque
+ * são a mesma regra — a do `services/evento.py`, `data_hora <= agora` —, e
+ * escrevê-la duas vezes seria deixar as duas frases divergirem no dia em que uma
+ * delas fosse ajustada.
+ */
+const DATA_NO_PASSADO = "A data do show já passou. Confira o dia e o horário.";
 
 /**
  * ⚠️ **O que se grava quando nem o catálogo nem o organizador sabem a casa.**
@@ -134,7 +145,10 @@ function mensagemParaCodigo(codigo: string): string {
     return "Alguma das contas escaladas não está mais disponível. Recarregue a página e escale de novo.";
   }
   if (codigo === "EVENTO_NO_PASSADO") {
-    return "A data do show já passou. Confira o dia e o horário.";
+    // Ainda aqui, e não substituído pela checagem local: o relógio do navegador
+    // pode estar atrasado, e o do servidor é o que decide. Um minuto de
+    // diferença basta para a checagem daqui aprovar o que a de lá recusa.
+    return DATA_NO_PASSADO;
   }
   if (codigo === "DADOS_INVALIDOS") {
     return "Confira os dados do formulário.";
@@ -284,6 +298,22 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     const instante = new Date(`${data}T${hora}`);
     if (Number.isNaN(instante.getTime())) {
       setErro("Confira a data e o horário do show.");
+      return;
+    }
+
+    // ⚠️ **O `min` do seletor de data não cobre a hora**, e é esse o buraco que
+    // esta linha fecha: às 22h ele aceita hoje, e "hoje às 21h" é um show que já
+    // aconteceu. Só o servidor barrava — e barrava depois de a pessoa ter
+    // preenchido setores e escalado a portaria.
+    //
+    // **A comparação é a mesma do `services/evento.py`** (`data_hora <= agora`),
+    // e é o mesmo instante nos dois lados: `new Date("…T…")` sem offset é lido
+    // como hora local, `toISOString()` o converte para UTC, e o servidor compara
+    // com `datetime.now(timezone.utc)`. Nenhum dos dois depende do fuso de quem
+    // publica — ao contrário do `min` do seletor, que é de São Paulo de
+    // propósito (ver `hojeEmSaoPaulo`).
+    if (instante <= new Date()) {
+      setErro(DATA_NO_PASSADO);
       return;
     }
 
@@ -691,11 +721,27 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         )}
       </div>
 
-      {/* O único aviso com link: sem ele, sessão expirada no meio do
-          preenchimento não tinha saída nenhuma. `target="_blank"` porque sair
-          desta página descartaria o formulário inteiro — a pessoa entra na
+      {/* ⚠️ **Toast, e não mais a faixa `AvisoDeErro` acima do botão** (decisão
+          do Igor, 13/08/2026). A tela é longa — catálogo, data, N setores, lista
+          de portarias — e a faixa ficava presa no rodapé do formulário: quem
+          clicava em Publicar depois de rolar até a lista de portarias podia não
+          ver a recusa que o próprio clique gerou. Flutuando, o aviso não depende
+          de onde a página parou.
+
+          **Uma superfície só para a tela inteira**, e é isso que a decisão
+          resolve: com a faixa para uns erros e o toast para outros, qual dos
+          dois aparece dependeria de qual campo está errado — que é justamente o
+          que quem publicou não sabe ainda.
+
+          `posicao` fica no padrão (`"base"`): aqui não há rodapé `sticky`, ao
+          contrário da página do evento.
+
+          O único aviso com link continua sendo este: sem ele, sessão expirada no
+          meio do preenchimento não tinha saída nenhuma. `target="_blank"` porque
+          sair desta página descartaria o formulário inteiro — a pessoa entra na
           outra aba e volta para clicar em Publicar com tudo ainda preenchido. */}
-      <AvisoDeErro
+      <Toast
+        aoFechar={() => setErro(null)}
         mensagem={
           erro === SESSAO_EXPIRADA ? (
             <>

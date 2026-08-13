@@ -589,6 +589,36 @@ def test_cartao_que_vence_neste_mes_ainda_aprova(
     assert resposta.json()["estado"] == EstadoReserva.PAGA.value
 
 
+def test_o_ano_da_validade_para_em_2040(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """As duas bordas no mesmo teste: `12/40` passa, `12/41` não.
+
+    Só a recusa passaria igual com `>= 2040` escrito no lugar de `> 2040`, e aí
+    o teto real seria 2039 sem ninguém notar.
+    """
+    dono_do_teto, _, no_teto = _cenario(sessao, fabricar_usuario, "21")
+    dono_do_alem, _, alem = _cenario(sessao, fabricar_usuario, "22")
+
+    _entrar(cliente, dono_do_alem)
+    assert (
+        cliente.post(
+            f"/reservas/{alem.id}/pagamento", json=_corpo(validade="12/41")
+        ).status_code
+        == 422
+    )
+
+    _entrar(cliente, dono_do_teto)
+    assert (
+        cliente.post(
+            f"/reservas/{no_teto.id}/pagamento", json=_corpo(validade="12/40")
+        ).status_code
+        == 200
+    )
+
+
 def test_cartao_do_mes_passado_recusa(
     cliente: TestClient,
     sessao: Session,

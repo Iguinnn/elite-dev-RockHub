@@ -55,6 +55,18 @@ _NAO_DIGITO = re.compile(r"\D")
 _FORMATO_DE_VALIDADE = re.compile(r"^(0[1-9]|1[0-2])/\d{2}$")
 
 
+# Até dezembro de 2040 (decisão do Igor). Cartão nenhum é emitido com 60 anos de
+# validade, e `12/90` passando é a mesma classe de coisa que `12/20` passando: um
+# campo que aceita qualquer coisa lê como campo que não valida nada.
+_ANO_MAXIMO_DA_VALIDADE = 2040
+
+
+def _alem_do_horizonte(validade: str) -> bool:
+    """Ano impresso além de `_ANO_MAXIMO_DA_VALIDADE`."""
+    _, ano = validade.split("/")
+    return 2000 + int(ano) > _ANO_MAXIMO_DA_VALIDADE
+
+
 def _esta_vencida(validade: str) -> bool:
     """`MM/AA` já passou? O cartão vale até o **último dia** do mês impresso.
 
@@ -157,8 +169,13 @@ class PagamentoEntrada(BaseModel):
         if self.meio is not MeioDePagamento.CARTAO:
             return self
 
-        if not self.numero_cartao or not (13 <= len(self.numero_cartao) <= 19):
-            raise ValueError("numero_cartao: informe um cartão com 13 a 19 dígitos")
+        # ⚠️ **Teto de 16, e era 19** (decisão do Igor, 2026-08-13). Os 19 vinham
+        # do Maestro, mas a máscara da tela corta em 16 e um teto só na tela é
+        # cosmético: 19 dígitos por `curl` continuavam pagando. Amex tem 15 e
+        # continua cabendo; o que sai é o Maestro, que não existe no roteiro de
+        # avaliação.
+        if not self.numero_cartao or not (13 <= len(self.numero_cartao) <= 16):
+            raise ValueError("numero_cartao: informe um cartão com 13 a 16 dígitos")
 
         if not self.nome_no_cartao:
             raise ValueError("nome_no_cartao: informe o nome impresso no cartão")
@@ -170,6 +187,11 @@ class PagamentoEntrada(BaseModel):
         # `int()`, e um valor que não passou pelo regex quebraria os dois.
         if _esta_vencida(self.validade):
             raise ValueError("validade: este cartão está vencido")
+
+        if _alem_do_horizonte(self.validade):
+            raise ValueError(
+                f"validade: o ano não pode passar de {_ANO_MAXIMO_DA_VALIDADE}"
+            )
 
         if not self.cvv or not (3 <= len(self.cvv) <= 4):
             raise ValueError("cvv: informe 3 ou 4 dígitos")

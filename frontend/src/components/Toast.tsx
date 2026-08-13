@@ -26,16 +26,36 @@ import estilos from "./Toast.module.css";
  *
  * Sem `"use client"`: ele não tem interação própria: o `onFechar` chega pronto
  * de quem o usa, como no `Campo` e no `Botao`.
+ *
+ * ⚠️ **A altura virou prop em 13/08/2026, e o comentário do CSS previa o dia.**
+ * Enquanto a página do evento era a única consumidora, o `bottom` estava fixo em
+ * 104px para o toast não cair sobre o rodapé `sticky` dela — que é justamente a
+ * ação que a mensagem pede para refazer. O formulário de publicar não tem rodapé
+ * fixo, e herdar aquele valor deixaria o aviso flutuando no meio do nada, com um
+ * vão vazio embaixo. Um `104px` copiado para o segundo consumidor é o tipo de
+ * número que ninguém revisa quando o rodapé do primeiro mudar de altura.
  */
 export default function Toast({
   mensagem,
   aoFechar,
+  posicao = "base",
 }: {
   mensagem: React.ReactNode;
   aoFechar: () => void;
+  /**
+   * `"base"` encosta o aviso no pé da janela — é o padrão, e serve a qualquer
+   * tela. `"acima-do-rodape"` o sobe o suficiente para não cobrir o rodapé
+   * `sticky` da página do evento.
+   */
+  posicao?: "base" | "acima-do-rodape";
 }) {
   return (
-    <div className={estilos.area} role="alert">
+    <div
+      className={`${estilos.area} ${
+        posicao === "acima-do-rodape" ? estilos.acimaDoRodape : ""
+      }`}
+      role="alert"
+    >
       {mensagem && (
         <div className={estilos.toast}>
           <p className={estilos.texto}>{mensagem}</p>
