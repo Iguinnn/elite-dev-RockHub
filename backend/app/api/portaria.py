@@ -28,7 +28,7 @@ from app.core.db import obter_sessao
 from app.core.dependencias import PORTARIA_DA_SESSAO, exigir_porta_aberta
 from app.models.evento import Evento
 from app.models.usuario import Usuario
-from app.schemas.evento import TurnoDaPortaria
+from app.schemas.evento import TurnoDaPortaria, TurnoDoLeitor
 from app.schemas.ingresso import ResultadoDaValidacao, ValidacaoEntrada
 from app.services import evento as servico_de_evento
 from app.services import ingresso as servico_de_ingresso
@@ -62,8 +62,11 @@ def meus_turnos(
     return servico_de_evento.listar_escalados(sessao, portaria)
 
 
-@router.get("/eventos/{evento_id}", response_model=TurnoDaPortaria)
-def meu_turno(evento: Evento = Depends(exigir_porta_aberta)) -> TurnoDaPortaria:
+@router.get("/eventos/{evento_id}", response_model=TurnoDoLeitor)
+def meu_turno(
+    evento: Evento = Depends(exigir_porta_aberta),
+    sessao: Session = Depends(obter_sessao),
+) -> TurnoDoLeitor:
     """O turno de um evento só — o cabeçalho da tela do leitor (Story 5.3).
 
     **Ela existe porque `GET /eventos/{id}` não serve**, e o motivo é o mesmo
@@ -76,14 +79,24 @@ def meu_turno(evento: Evento = Depends(exigir_porta_aberta)) -> TurnoDaPortaria:
     Funciona, e faz a tela de um turno depender de uma rota que fala de todos os
     outros — quem abre o leitor do show de hoje carregaria a agenda do mês.
 
-    **Sem `sessao` na assinatura, e sem `portaria` também.** A dependência já
-    consultou o banco e já sabe quem está na sessão; o handler não tem uma
-    pergunta a mais a fazer. É a rota mais curta da API, e é assim que ela
-    demonstra o que a dependência do commit anterior comprou: as duas recusas do
-    AD-7 e do portão valem aqui **sem uma linha nova** — quem não está escalado
+    **Sem `portaria` na assinatura.** A dependência já consultou o banco e já sabe
+    quem está na sessão, e o contador é do **evento inteiro** — não da minha conta
+    —, então não há um `usuario_id` a passar adiante. As duas recusas do AD-7 e do
+    portão continuam valendo aqui sem uma linha no corpo: quem não está escalado
     não abre o leitor, e quem chega três dias antes também não.
+
+    ⚠️ **A `sessao` entrou na Story 5.6, e ela deixou de ser a rota mais curta da
+    API** — era `montar_turno(evento)` e nada mais. O que a trouxe de volta foram
+    os quatro números do contador: sem eles na resposta, a tela abriria zerada e a
+    portaria que assume a porta no meio da noite veria "0 entradas" com trezentas
+    pessoas dentro.
+
+    ⚠️ **`TurnoDoLeitor`, e não `TurnoDaPortaria` como até a 5.5.** Ele acrescenta
+    as três recusas ao mesmo corpo — a lista de turnos continua respondendo o
+    schema de cima, que as não desenha. O `response_model` é quem garante o corte,
+    não a tela.
     """
-    return servico_de_evento.montar_turno(evento)
+    return servico_de_evento.montar_turno_do_leitor(sessao, evento)
 
 
 @router.post("/eventos/{evento_id}/validacoes", response_model=ResultadoDaValidacao)

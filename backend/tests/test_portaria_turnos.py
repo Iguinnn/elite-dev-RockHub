@@ -268,16 +268,24 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """Sem `capacidade`, `vendidos` nem `setores` — e **com** `aberto`.
+    """Sem `capacidade`, `vendidos` nem `setores` — e **com** `aberto` e `entradas`.
 
-    Os três primeiros são inventário e o contador do turno é a Story 5.6, que vai
-    contar `ingresso.usado_em` e não estoque.
+    Os três primeiros continuam fora: inventário é do organizador.
+
+    ⚠️ **`entradas` entrou na Story 5.6, e ele não é o inventário voltando pela
+    porta dos fundos.** Ele conta `ingresso.usado_em`, ou seja, quem passou pela
+    porta — vendidos não é entrou, e as duas perguntas têm respostas diferentes.
+    É por isso que o estoque continua proibido aqui e este campo não.
 
     ⚠️ **`aberto` entrou na Story 5.2 e reverte o que este teste travava**: até a
     5.1 ele estava na lista de chaves proibidas, porque o portão das 2h era regra
     da tela. Desde que a rota de validação passou a recusar fora da janela, a
     janela tem um dono só — `ABERTURA_DOS_PORTOES`, no service —, e a tela lê o
     campo em vez de recalcular.
+
+    ⚠️ **`recusas` fica de fora, e a ausência é asserção.** As três recusas são do
+    `TurnoDoLeitor`, o schema da rota de um turno só; a lista não as desenha, e
+    contrato não carrega campo sem consumidor (disciplina desde a 3.1).
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "chaves@exemplo.com")
     porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "chaves-porta@exemplo.com")
@@ -288,7 +296,15 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
 
     assert resposta.status_code == 200
     (turno,) = resposta.json()
-    assert set(turno) == {"id", "nome", "data_hora", "local", "cidade", "aberto"}
+    assert set(turno) == {
+        "id",
+        "nome",
+        "data_hora",
+        "local",
+        "cidade",
+        "aberto",
+        "entradas",
+    }
 
 
 def test_aberto_segue_a_janela_de_duas_horas_do_service(
@@ -422,11 +438,17 @@ def test_o_turno_de_um_evento_so_traz_a_mesma_ficha_da_lista(
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """Mesmo schema da lista, e é de propósito: é a mesma ficha, de um item só.
+    """A ficha da lista **mais as três recusas** — o `TurnoDoLeitor` da 5.6.
 
     A tela do leitor precisa do nome do show no cabeçalho, e a rota pública
     `GET /eventos/{id}` não serve — ela corta em `data_hora >= agora` e responde
     `404` **exatamente durante o show**, que é quando a portaria trabalha.
+
+    ⚠️ **Os quatro números vêm preenchidos antes de qualquer validação**, e é o
+    AC "os contadores vêm do banco" valendo na abertura da tela. Sem eles aqui, a
+    portaria que assume a porta no meio da noite abriria o leitor marcando zero
+    com trezentas pessoas dentro — e só veria a verdade depois da primeira leitura
+    dela.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "um@exemplo.com")
     porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "um-porta@exemplo.com")
@@ -443,10 +465,28 @@ def test_o_turno_de_um_evento_so_traz_a_mesma_ficha_da_lista(
 
     assert resposta.status_code == 200
     turno = resposta.json()
-    assert set(turno) == {"id", "nome", "data_hora", "local", "cidade", "aberto"}
+    assert set(turno) == {
+        "id",
+        "nome",
+        "data_hora",
+        "local",
+        "cidade",
+        "aberto",
+        "entradas",
+        "recusas",
+    }
     assert turno["id"] == str(evento.id)
     assert turno["nome"] == "Sepultura"
     assert turno["aberto"] is True
+    # Show sem ninguém na porta ainda: os quatro são zero, e **existem**. Um
+    # veredito ausente faria a tela desenhar `undefined` no começo do turno, que é
+    # quando o contador passa mais tempo zerado.
+    assert turno["entradas"] == 0
+    assert turno["recusas"] == {
+        "invalidos": 0,
+        "ja_utilizados": 0,
+        "evento_errado": 0,
+    }
 
 
 def test_o_turno_de_um_evento_que_ja_comecou_continua_atendendo(

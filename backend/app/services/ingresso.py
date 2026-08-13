@@ -1,10 +1,18 @@
 """O ingresso como agregado próprio: "Meus ingressos", o link e a porta.
 
-⚠️ **Este módulo lê, escreve `share_token` desde a 4.3 e `usado_em` desde a 5.2.
-Ele nunca cria ingresso.** A emissão é do `services/reserva.py`, dentro da
-transação que marca a reserva `PAGA` (AD-14) — mesmo aviso que aquele arquivo
-carrega sobre si, em espelho. Um `INSERT INTO ingresso` fora daquela transação
-quebraria a garantia inteira da Epic 3.
+⚠️ **Este módulo lê, escreve `share_token` desde a 4.3, `usado_em` desde a 5.2 e
+insere em `validacao` desde a 5.6. Ele nunca cria ingresso.** A emissão é do
+`services/reserva.py`, dentro da transação que marca a reserva `PAGA` (AD-14) —
+mesmo aviso que aquele arquivo carrega sobre si, em espelho. Um `INSERT INTO
+ingresso` fora daquela transação quebraria a garantia inteira da Epic 3. A
+`validacao` é outra tabela e não é exceção nenhuma a isso: ela registra o que
+aconteceu **com** o ingresso, e não o cria.
+
+**A contagem do turno mora aqui, e não num `services/validacao.py`.** O agregado
+continua sendo o ingresso — a `validacao` é o registro do que aconteceu com ele —,
+e o critério do projeto é agrupar por agregado, não por tabela. Foi ele que
+recusou um `services/portaria.py` na techspec anterior, e vale igual aqui: um
+arquivo por tabela deixaria o `validar` chamando o vizinho a cada linha.
 
 **Por que arquivo próprio, e não mais uma função em `services/reserva.py`.**
 O ingresso tem vida depois de a reserva sair de cena — é lido por várias
@@ -16,7 +24,7 @@ agregado dele. Agrupar por agregado, não por arquivo que cresce.
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.erros import ErroDeDominio
@@ -25,9 +33,11 @@ from app.models.evento import Evento, Setor
 from app.models.ingresso import Ingresso
 from app.models.reserva import Reserva
 from app.models.usuario import Usuario
+from app.models.validacao import Validacao, Veredito
 from app.schemas.ingresso import (
     IngressoDetalhe,
     IngressoNaLista,
+    RecusasDoTurno,
     ResultadoDaValidacao,
 )
 
@@ -321,6 +331,157 @@ def obter_por_share_token(sessao: Session, token: str) -> IngressoDetalhe:
     return _montar_detalhe(*linha)
 
 
+def contar_entradas_por_evento(
+    sessao: Session, eventos: list[UUID]
+) -> dict[UUID, int]:
+    """Quantas pessoas já entraram em cada um destes eventos (Story 5.6).
+
+    ⚠️ **A fonte é `ingresso.usado_em`, e não a tabela `validacao`.** Aquela coluna
+    é escrita pelo `UPDATE` condicional do AD-6, que é atômico — ela é a verdade
+    sobre quem entrou, e continua sendo mesmo que a `validacao` um dia perca uma
+    linha. **Descartei** contar `VALIDO` na `validacao` para ter uma fonte só:
+    seria trocar a garantia do AD-6 por uma tabela de log, e o dia em que os dois
+    números divergirem é o dia em que eu quero que o `usado_em` ganhe.
+
+    ⚠️ **Isto não é o `COUNT` que o AD-13 proíbe**, e a diferença é o que se
+    conta. Lá o proibido é derivar **disponibilidade** de reserva ou ingresso —
+    quanto ainda dá para vender tem dono, que é `setor.vendidos`. Aqui a pergunta
+    é quantas pessoas **passaram pela porta**, que nenhuma coluna de estoque
+    responde: vendidos não é entrou.
+
+    **Uma consulta para a lista inteira, e não uma por evento.** A rota de um
+    turno só chama com uma lista de um; a lista de `/portaria` chama com todos, e
+    é ela que o `GROUP BY` existe para não fazer N+1 — o mesmo motivo do
+    `selectinload` da programação.
+
+    **Devolve todos os eventos pedidos, e os sem entrada nenhuma vêm com `0`.** Um
+    `dict` que só traz quem tem linha obrigaria cada chamador a lembrar do
+    `.get(id, 0)`, e o que esquecesse estouraria com `KeyError` no turno mais
+    tranquilo do dia — aquele em que ninguém entrou ainda.
+    """
+    if not eventos:
+        return {}
+
+    linhas = sessao.execute(
+        select(Ingresso.evento_id, func.count())
+        .where(Ingresso.evento_id.in_(eventos), Ingresso.usado_em.is_not(None))
+        .group_by(Ingresso.evento_id)
+    ).all()
+
+    totais = dict.fromkeys(eventos, 0)
+    totais.update({evento_id: total for evento_id, total in linhas})
+    return totais
+
+
+def contar_recusas(sessao: Session, evento_id: UUID) -> RecusasDoTurno:
+    """Os três vereditos de recusa deste evento, contados (Story 5.6).
+
+    **A fonte é a `validacao`**, ao contrário do `entradas` logo acima, e é para
+    isso que a tabela existe: `INVALIDO`, `JA_UTILIZADO` e `EVENTO_ERRADO` não
+    deixam marca em coluna nenhuma do ingresso. O porquê das duas fontes está no
+    docstring de `models/validacao.py`.
+
+    **`!= VALIDO` no `where`, e não os três nomes listados.** Um quinto veredito
+    inventado um dia entraria na consulta em vez de sumir dela em silêncio — e
+    apareceria no `KeyError` de um teste, que é onde eu quero descobrir isso.
+
+    ⚠️ **Veredito sem linha nenhuma sai `0`, nunca ausente.** O `GROUP BY` só
+    devolve o que existe; os três `.get(..., 0)` abaixo são o que impede o
+    contador de desenhar um buraco no começo do turno, quando os três são zero.
+    """
+    linhas = sessao.execute(
+        select(Validacao.resultado, func.count())
+        .where(
+            Validacao.evento_id == evento_id,
+            Validacao.resultado != Veredito.VALIDO.value,
+        )
+        .group_by(Validacao.resultado)
+    ).all()
+
+    por_resultado = {resultado: total for resultado, total in linhas}
+    return RecusasDoTurno(
+        invalidos=por_resultado.get(Veredito.INVALIDO.value, 0),
+        ja_utilizados=por_resultado.get(Veredito.JA_UTILIZADO.value, 0),
+        evento_errado=por_resultado.get(Veredito.EVENTO_ERRADO.value, 0),
+    )
+
+
+def _anotar(
+    sessao: Session,
+    portaria: Usuario,
+    evento: Evento,
+    resultado: Veredito,
+    ingresso_id: UUID | None,
+) -> None:
+    """Grava a linha de auditoria e **fecha a transação** (Story 5.6).
+
+    ⚠️ **O `commit` é daqui, e é o mesmo dos quatro caminhos.** Antes desta story
+    ele morava no `validar`, depois do `UPDATE`; agora ele fecha o `INSERT` e o
+    `UPDATE` **juntos**. Fora da mesma transação existiria a janela em que alguém
+    entrou e o registro não saiu — ou o contrário, um registro de entrada que o
+    banco desfez.
+
+    ⚠️ **Os dois `INVALIDO` passam a tocar o banco por causa desta função**, e o
+    docstring do `validar` dizia o contrário até a 5.6: o código malformado
+    respondia "sem tocar no banco". A frase foi corrigida no mesmo commit — é uma
+    consulta economizada que deixou de existir, e o preço declarado da trilha de
+    auditoria.
+
+    `evento.id` é o do **caminho**, nunca o do ingresso: no `EVENTO_ERRADO` os
+    dois diferem de propósito, e o porquê está no comentário da coluna
+    `validacao.evento_id`.
+
+    ⚠️ **`criado_em` é escrito daqui, e não por `server_default=func.now()`.** O
+    `now()` do Postgres é o instante de início da **transação**: duas linhas
+    gravadas na mesma transação sairiam com o carimbo idêntico, e uma trilha cujas
+    linhas não se ordenam entre si responde pior à pergunta que ela existe para
+    responder. É o mesmo relógio que grava `ingresso.usado_em` no `validar`, e os
+    dois registram o mesmo acontecimento.
+    """
+    sessao.add(
+        Validacao(
+            evento_id=evento.id,
+            portaria_id=portaria.id,
+            ingresso_id=ingresso_id,
+            resultado=resultado.value,
+            criado_em=datetime.now(timezone.utc),
+        )
+    )
+    sessao.commit()
+
+
+def _montar_veredito(
+    sessao: Session,
+    evento: Evento,
+    resultado: Veredito,
+    titular_nome: str | None = None,
+    setor_nome: str | None = None,
+    entrada_em: datetime | None = None,
+) -> ResultadoDaValidacao:
+    """O veredito com as duas contagens — sempre **depois** do `commit` (5.6).
+
+    ⚠️ **As contagens são lidas depois do `commit`, nunca antes**, e esta é a
+    quarta aparição desta família de armadilha no projeto (pagamento na Epic 3,
+    `share_token` na 4.3, `usado_em` na 5.2). Lida antes, a contagem enxerga a
+    própria linha não commitada em alguns caminhos e não em outros, e o número
+    oscila de um em um sem motivo visível. Depois do `commit`, com
+    `expire_on_commit=False`, a leitura é uma consulta nova e está certa.
+
+    **Quem garante a ordem é a assinatura**: esta função não escreve nada e não
+    commita nada — quem faz as duas coisas é o `_anotar`, que roda antes. Chamar
+    esta primeiro devolveria números de uma tentativa atrás, e é a única forma de
+    errar que sobrou.
+    """
+    return ResultadoDaValidacao(
+        resultado=resultado,
+        titular_nome=titular_nome,
+        setor_nome=setor_nome,
+        entrada_em=entrada_em,
+        entradas=contar_entradas_por_evento(sessao, [evento.id])[evento.id],
+        recusas=contar_recusas(sessao, evento.id),
+    )
+
+
 def validar(
     sessao: Session, portaria: Usuario, evento: Evento, codigo: str
 ) -> ResultadoDaValidacao:
@@ -336,10 +497,22 @@ def validar(
     docstring do `ResultadoDaValidacao`: recusar entrada é o trabalho da portaria
     dando certo.
 
+    ⚠️ **A ordem das etapas não mudou na Story 5.6, e não pode mudar.** O
+    `EVENTO_ERRADO` continua **antes** do `UPDATE`, e a assinatura continua sendo
+    conferida contra o `evento_id` **do ingresso**. Acrescentar escrita no meio é
+    exatamente o tipo de edição que embaralha ordem sem querer; o que entrou foram
+    duas linhas por desfecho, no fim de cada ramo, e nada entre as etapas.
+
     A ordem das etapas é a garantia, e cada troca dela tem consequência:
 
-    1. `normalizar_codigo` → `None` ⇒ `INVALIDO`, **sem tocar no banco**. É uma
-       consulta economizada no caminho mais sensível a tempo do produto.
+    1. `normalizar_codigo` → `None` ⇒ `INVALIDO`.
+       ⚠️ **Este caminho tocava o banco zero vezes, e a Story 5.6 acabou com
+       isso.** A redação anterior se gabava de "sem tocar no banco" — uma consulta
+       economizada no caminho mais sensível a tempo do produto. Com a tabela
+       `validacao`, ele grava uma linha como os outros três: contar os quatro
+       vereditos exige guardar os quatro, e um `INVALIDO` que não deixasse
+       registro sumiria do contador exatamente quando alguém tenta entender por
+       que a fila parou. É o preço declarado da trilha de auditoria.
     2. O ingresso, achado **pelo** código. Sem linha ⇒ `INVALIDO`.
        ⚠️ Código bem formado que não é de ingresso nenhum é colapsado com
        assinatura divergente de propósito: o `EXPERIENCE.md` fixa quatro
@@ -373,7 +546,12 @@ def validar(
     """
     normalizado = normalizar_codigo(codigo)
     if normalizado is None:
-        return ResultadoDaValidacao(resultado="INVALIDO")
+        # `ingresso_id` nulo, e é um dos dois casos em que ele é: não há ingresso
+        # a apontar porque não houve código legível. O outro é o `linha is None`
+        # logo abaixo — a coluna anulável é a distinção que sobra entre os dois, e
+        # ela basta.
+        _anotar(sessao, portaria, evento, Veredito.INVALIDO, None)
+        return _montar_veredito(sessao, evento, Veredito.INVALIDO)
 
     # Sem `Evento` no `join`: o nome do show não entra em resposta nenhuma desta
     # rota — nem no `EVENTO_ERRADO`, e principalmente nele.
@@ -386,17 +564,24 @@ def validar(
     ).first()
 
     if linha is None:
-        return ResultadoDaValidacao(resultado="INVALIDO")
+        _anotar(sessao, portaria, evento, Veredito.INVALIDO, None)
+        return _montar_veredito(sessao, evento, Veredito.INVALIDO)
 
     ingresso, setor, titular = linha
 
     if not conferir_codigo(
         normalizado, ingresso.id, ingresso.evento_id, ingresso.nonce
     ):
-        return ResultadoDaValidacao(resultado="INVALIDO")
+        # Aqui o `ingresso_id` **é** conhecido: existe linha com este código, ela
+        # só não sobrevive ao recálculo do HMAC. Guardá-lo é o que permite
+        # descobrir depois do show qual ingresso foi adulterado — que é a pergunta
+        # para a qual a trilha existe.
+        _anotar(sessao, portaria, evento, Veredito.INVALIDO, ingresso.id)
+        return _montar_veredito(sessao, evento, Veredito.INVALIDO)
 
     if ingresso.evento_id != evento.id:
-        return ResultadoDaValidacao(resultado="EVENTO_ERRADO")
+        _anotar(sessao, portaria, evento, Veredito.EVENTO_ERRADO, ingresso.id)
+        return _montar_veredito(sessao, evento, Veredito.EVENTO_ERRADO)
 
     entrada = sessao.execute(
         update(Ingresso)
@@ -410,15 +595,19 @@ def validar(
         .execution_options(synchronize_session=False)
     ).scalar_one_or_none()
 
-    # O `commit` é daqui: service que escreve abre e fecha a transação
-    # (`ARCHITECTURE-SPINE.md#Convenções`). Ele acontece nos dois caminhos —
-    # quem perdeu a corrida não gravou nada, e fechar a transação é o que solta
-    # a trava da linha para o próximo da fila.
-    sessao.commit()
-
+    # ⚠️ **O `commit` continua sendo um só, e agora ele é do `_anotar`** — service
+    # que escreve abre e fecha a transação (`ARCHITECTURE-SPINE.md#Convenções`).
+    # O `UPDATE` acima e o `INSERT` da `validacao` fecham **juntos**: um erro
+    # depois do `UPDATE` desfaz os dois, e não existe estado em que alguém entrou
+    # sem deixar registro. Ele acontece nos dois caminhos — quem perdeu a corrida
+    # não gravou `usado_em` nenhum, e fechar a transação é o que solta a trava da
+    # linha para o próximo da fila.
     if entrada is not None:
-        return ResultadoDaValidacao(
-            resultado="VALIDO",
+        _anotar(sessao, portaria, evento, Veredito.VALIDO, ingresso.id)
+        return _montar_veredito(
+            sessao,
+            evento,
+            Veredito.VALIDO,
             titular_nome=titular.nome,
             setor_nome=setor.nome,
             entrada_em=entrada,
@@ -427,9 +616,15 @@ def validar(
     # Zero linhas: ou já estava usado, ou outro leitor venceu neste instante. Os
     # dois são a mesma coisa para quem está na porta, e a hora a mostrar é a da
     # entrada que valeu — que está no banco, não neste objeto.
+    _anotar(sessao, portaria, evento, Veredito.JA_UTILIZADO, ingresso.id)
+    # ⚠️ **Depois do `_anotar`, porque ele é quem commita.** `refresh` antes do
+    # `commit` releria a linha dentro da transação aberta e traria o mesmo valor
+    # velho — o `RETURNING` do `UPDATE` já mostrou que ela não mudou aqui.
     sessao.refresh(ingresso)
-    return ResultadoDaValidacao(
-        resultado="JA_UTILIZADO",
+    return _montar_veredito(
+        sessao,
+        evento,
+        Veredito.JA_UTILIZADO,
         titular_nome=titular.nome,
         entrada_em=ingresso.usado_em,
     )

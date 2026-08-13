@@ -130,6 +130,23 @@
   color: var(--fumaca);
 }
 
+/* O movimento do turno aberto (Story 5.6). **Mesmas medidas do `.fechado`**, e
+   não é economia de linha: os dois ocupam a mesma posição no cartão e nunca
+   aparecem juntos — com corpos diferentes, a fila inteira mudaria de altura
+   conforme os shows fossem abrindo ao longo da noite.
+
+   ⚠️ **`--cal` e não `--fumaca`, ao contrário do vizinho.** A frase do portão
+   fechado é uma condição que ainda não passou; o número é o dado que a pessoa
+   veio buscar antes de escolher a porta. Em fumaça ele leria como observação de
+   rodapé. */
+.entradas {
+  margin-top: 8px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cal);
+}
+
 .hora {
   font: 15px/1 var(--mono);
   letter-spacing: 0.06em;

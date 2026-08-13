@@ -44,6 +44,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
+# ⚠️ **Um schema importando do outro, e a seta aponta só para este lado.**
+# `schemas/ingresso.py` não conhece este módulo, e não pode passar a conhecer:
+# seria ciclo de import. O `RecusasDoTurno` mora lá porque nasce da validação, que
+# é assunto do ingresso; aqui ele é carona no turno do leitor.
+from app.schemas.ingresso import RecusasDoTurno
+
 
 # Copiado de `schemas/auth.py`, não importado: lá ele é `_limpar_texto`, com o
 # `_` que o declara privado do módulo. Duas linhas duplicadas custam menos que
@@ -559,14 +565,6 @@ class TurnoDaPortaria(BaseModel):
     gravá-la. É a lista de "onde eu trabalho" — não um inventário e não uma
     vitrine.
 
-    **O que ele não devolve, e por quê.** Nem `capacidade`, nem `vendidos`, nem
-    `setores`: quantas pessoas já entraram no turno é a Story 5.6, e ela vai
-    contar `ingresso.usado_em`, não estoque. Devolver o inventário aqui daria à
-    tela um número que ela não usa e que, no dia em que a 5.6 chegar, seria o
-    número **errado** — vendidos não é entrou. O corte quem garante é o
-    `response_model` da rota, e não a tela: a mesma disciplina que a Story 3.1
-    inaugurou.
-
     ⚠️ **`aberto` entrou na Story 5.2, e ele reverte a decisão que este
     docstring anunciava.** A redação anterior dizia, com todas as letras, que
     nenhum campo derivado entraria aqui — que o portão das duas horas era regra
@@ -582,12 +580,13 @@ class TurnoDaPortaria(BaseModel):
     comentário pedindo que ficassem iguais. Comentário não é mecanismo.
 
     **O que ele continua não devolvendo, e por quê.** Nem `capacidade`, nem
-    `vendidos`, nem `setores`: quantas pessoas já entraram no turno é a Story
-    5.6, e ela vai contar `ingresso.usado_em`, não estoque. Devolver o
-    inventário aqui daria à tela um número que ela não usa e que, no dia em que
-    a 5.6 chegar, seria o número **errado** — vendidos não é entrou. O corte
-    quem garante é o `response_model` da rota, e não a tela: a mesma disciplina
-    que a Story 3.1 inaugurou.
+    `vendidos`, nem `setores` — inventário é do organizador. O `entradas` que a
+    Story 5.6 acrescentou logo abaixo **não** é uma exceção a isso: ele conta
+    `ingresso.usado_em`, ou seja, quem passou pela porta, e vendidos não é
+    entrou. Os dois números respondem a perguntas diferentes, e é justamente por
+    isso que o estoque continua fora daqui. O corte quem garante é o
+    `response_model` da rota, e não a tela: a mesma disciplina que a Story 3.1
+    inaugurou.
 
     **Sem `from_attributes`, e a ausência é consequência do `aberto`.** Enquanto
     os cinco campos eram colunas do `Evento`, a conversão de fato acontecia e a
@@ -611,3 +610,34 @@ class TurnoDaPortaria(BaseModel):
     # validar um ingresso, e é essa identidade que impede a tela e a rota de
     # discordarem sobre um turno na borda da janela.
     aberto: bool
+
+    # Quantas pessoas já entraram neste evento — **de todas as portas** (Story
+    # 5.6). `COUNT` sobre `ingresso.usado_em IS NOT NULL`, sem filtrar por quem
+    # validou: com duas portas na mesma casa, o número da minha própria digitação
+    # não mede a fila.
+    #
+    # ⚠️ **Ele entra no schema da lista, e não só no do leitor**, e a consequência
+    # é que **duas telas** passam a recebê-lo: o cartão de `/portaria` desenha o
+    # número de cada turno aberto. Era o campo que faltava para a lista dizer onde
+    # o movimento está antes de a portaria escolher a porta.
+    entradas: int
+
+
+class TurnoDoLeitor(TurnoDaPortaria):
+    """O turno com as três recusas — `GET /portaria/eventos/{id}` (Story 5.6).
+
+    **Herda em vez de repetir**, e a herança é a decisão: os seis campos de cima
+    são exatamente os mesmos, e a única diferença entre a lista e o leitor é este
+    objeto a mais. Duas classes irmãs com seis campos copiados divergiriam no
+    primeiro campo novo.
+
+    ⚠️ **As três recusas não entram na lista, e a assimetria é de propósito.** O
+    cartão de `/portaria` desenha um número só — "onde está o movimento" —, e
+    `INVÁLIDOS 2 · JÁ UTILIZADOS 1 · OUTRO SHOW 0` em cada item de uma lista de
+    turnos seria ruído operacional numa tela de escolha. Elas custam um `GROUP BY`
+    por evento, e a lista teria de pagá-lo por item para desenhar o que não
+    desenha. O contrato acompanha a tela: campo sem consumidor não viaja
+    (disciplina desde a 3.1).
+    """
+
+    recusas: RecusasDoTurno

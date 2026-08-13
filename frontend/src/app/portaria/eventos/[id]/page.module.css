@@ -1,11 +1,9 @@
-/* O cabeçalho do leitor (Story 5.3). O campo e o veredito moram no
-   `Leitor.module.css` — este arquivo é só a moldura da tela.
+/* A ficha do show no cabeçalho do leitor (Story 5.3).
 
    ┌──────────────────────────────────────────┐
    │ LEITOR                                   │  ← kicker
    │ Baco Exu do Blues                        │  ← serifada, o dado que confirma
    │ SEX, 15 AGO 2026 · 21H00 · ESPAÇO UNIMED │  ← ficha em mono versalete
-   │ ─────────────────────────────────────────│
    └──────────────────────────────────────────┘
 
    **Sem título "Leitor" em serifada grande**, ao contrário de `/portaria`: o
@@ -13,6 +11,11 @@
    que esta tela precisa responder antes de começar — é este o show certo? Um
    título genérico grande empurraria o nome do evento para baixo e gastaria a
    primeira dobra da tela mais apertada do produto.
+
+   **O fio de baixo fecha só a identificação do show.** O `<ContadorDoTurno>` tem
+   faixa própria logo abaixo, com o fio dele — são duas camadas da tela, e não um
+   bloco de cabeçalho com dois assuntos dentro. O campo e o veredito continuam no
+   `Leitor.module.css` e no `Veredito.module.css`.
 
    Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
 

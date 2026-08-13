@@ -6,7 +6,11 @@ import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Veredito from "@/components/Veredito";
 import { ErroDaApi } from "@/lib/api";
-import { validarCodigo, type ResultadoDaValidacao } from "@/lib/validacao";
+import {
+  validarCodigo,
+  type ContagensDoTurno,
+  type ResultadoDaValidacao,
+} from "@/lib/validacao";
 
 import estilos from "./Leitor.module.css";
 
@@ -65,8 +69,20 @@ type EstadoDaCamera =
  * é "se `INVALIDO` e o código tiver 8 caracteres, então…" — não há "então": o
  * backend já decidiu, e uma segunda opinião aqui seria uma regra de validação
  * morando na tela.
+ *
+ * ⚠️ **As contagens sobem por `onContagens` e não moram aqui** (Story 5.6). Elas
+ * chegam nos quatro vereditos, e quem as desenha é o `<ContadorDoTurno>`, no
+ * cabeçalho — acima deste componente na árvore. Guardá-las num `useState` daqui
+ * obrigaria o número a ser desenhado dentro do leitor, que é abaixo do fio e não
+ * é onde o AC o pede.
  */
-export default function Leitor({ eventoId }: { eventoId: string }) {
+export default function Leitor({
+  eventoId,
+  onContagens,
+}: {
+  eventoId: string;
+  onContagens: (contagens: ContagensDoTurno) => void;
+}) {
   const [codigo, setCodigo] = useState("");
   const [resultado, setResultado] = useState<ResultadoDaValidacao | null>(null);
   const [erro, setErro] = useState<React.ReactNode>(null);
@@ -110,7 +126,14 @@ export default function Leitor({ eventoId }: { eventoId: string }) {
     setEnviando(true);
 
     try {
-      setResultado(await validarCodigo(eventoId, bruto));
+      const veredito = await validarCodigo(eventoId, bruto);
+      setResultado(veredito);
+      // ⚠️ **As contagens sobem nos quatro vereditos, e não só no `VALIDO`.** Os
+      // três de recusa também mexem num dos números, e um contador que só
+      // atualizasse quando alguém entra deixaria as recusas paradas até a próxima
+      // entrada — que pode não vir tão cedo, que é justamente quando alguém olha
+      // para elas.
+      onContagens({ entradas: veredito.entradas, recusas: veredito.recusas });
       // O campo esvazia no sucesso — o próximo da fila digita num campo limpo,
       // sem apagar oito símbolos antes. Na falha ele **fica**: o código pode
       // estar certo e a rede não.

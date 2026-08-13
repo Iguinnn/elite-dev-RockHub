@@ -20,10 +20,11 @@ estes dois o julgam na porta. Moram aqui pelo mesmo critério que fez
 """
 
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from app.models.validacao import Veredito
 
 
 class IngressoNaLista(BaseModel):
@@ -131,6 +132,32 @@ class ValidacaoEntrada(BaseModel):
     codigo: str = Field(max_length=64)
 
 
+class RecusasDoTurno(BaseModel):
+    """Os três vereditos de recusa deste evento, contados (Story 5.6).
+
+    **Um objeto, e não três campos soltos no `ResultadoDaValidacao`.** Eles são
+    lidos juntos, desenhados juntos numa linha só do contador e vêm da mesma
+    consulta — e é o mesmo objeto que o `TurnoDoLeitor` de `schemas/evento.py`
+    carrega, o que seria impossível com três campos avulsos.
+
+    ⚠️ **`VALIDO` não está aqui, e a ausência é a decisão.** As entradas saem de
+    `ingresso.usado_em`, a coluna que o `UPDATE` condicional do AD-6 escreve
+    atomicamente; esta contagem sai da tabela `validacao`, que é o registro do que
+    foi **tentado**. Duas fontes para números vizinhos, de propósito: no dia em que
+    divergirem, é o `usado_em` que ganha. Um `validos` aqui seria a terceira
+    resposta para a mesma pergunta.
+
+    ⚠️ **Veredito sem linha nenhuma é `0`, nunca ausente.** O `GROUP BY` do
+    service só devolve o que existe, e um campo faltando faria a tela desenhar
+    `undefined` no lugar do número — num contador em que zero é a informação mais
+    comum do começo do turno.
+    """
+
+    invalidos: int
+    ja_utilizados: int
+    evento_errado: int
+
+
 class ResultadoDaValidacao(BaseModel):
     """O veredito da porta — a resposta de `POST /portaria/.../validacoes` (5.2).
 
@@ -154,12 +181,28 @@ class ResultadoDaValidacao(BaseModel):
     dele de volta — e restringir exatamente isso é o motivo de o AD-7 existir.
     Quem está na fila sabe qual ingresso comprou.
 
-    **`entradas_no_evento` fica para a Story 5.6.** O contador do turno já foi
-    decidido e viaja no corpo da validação, mas o campo entra junto da tela que o
-    desenha: disciplina desde a 3.1, contrato não carrega campo sem consumidor.
+    **As contagens do turno entraram na Story 5.6**, e é o que a redação anterior
+    deste docstring prometia — *"o contador do turno já foi decidido e viaja no
+    corpo da validação, mas o campo entra junto da tela que o desenha"*. A tela
+    chegou, e com ela os dois campos do fim desta classe.
+
+    ⚠️ **Elas viajam na resposta da validação, e não numa rota própria de
+    contador.** Atualizar o número é exatamente o que acontece a cada leitura, e
+    quem acabou de validar já está numa ida à rede — uma segunda chamada seria uma
+    latência a mais na fila para um dado que a primeira já podia trazer. **Sem
+    polling e sem WebSocket**: uma entrada da outra porta aparece no meu contador
+    na minha próxima leitura, e isso é rápido o suficiente para o único uso que o
+    número tem.
     """
 
-    resultado: Literal["VALIDO", "INVALIDO", "JA_UTILIZADO", "EVENTO_ERRADO"]
+    # ⚠️ **Era um `Literal[...]`, e virou o enum do modelo na Story 5.6.** As
+    # quatro palavras passaram a existir também no `CHECK` da tabela `validacao`,
+    # e mantê-las escritas aqui de novo seria a terceira cópia — com o dia em que
+    # discordam já marcado. `str, Enum` serializa igual (`"VALIDO"` no JSON) e o
+    # OpenAPI ganha um nome em vez de uma união anônima. Precedente:
+    # `PapelUsuario`, que nasce em `models/usuario.py` e é importado pelos schemas
+    # de autenticação desde a Story 1.4.
+    resultado: Veredito
 
     # O nome da **conta** que comprou (`usuario.nome`), o mesmo que o canhoto
     # mostra — e não `ingresso.pagador_nome`, que é de quem passou o cartão e
@@ -181,3 +224,19 @@ class ResultadoDaValidacao(BaseModel):
     # entende — "entrou às 20h47" —, e é ele que a armadilha do
     # `expire_on_commit=False` fazia sair nulo.
     entrada_em: datetime | None = None
+
+    # ⚠️ **Os dois vêm nos quatro vereditos, e não têm valor padrão.** Um
+    # `entradas: int = 0` faria a resposta que esquecesse de contar sair com zero
+    # em vez de estourar — e zero é um número plausível no começo do turno, ou
+    # seja, o defeito seria invisível. Aqui a ausência precisa doer.
+    #
+    # **Quantas pessoas já entraram neste evento**, de todas as portas — `COUNT`
+    # por `evento_id`, sem filtrar por quem validou. A story quer "noção do
+    # movimento", e com duas portas na mesma casa o número da minha própria
+    # digitação não mede a fila, mede a minha digitação.
+    #
+    # ⚠️ **Sai de `ingresso.usado_em`, não da tabela `validacao`** — ver o
+    # docstring do `RecusasDoTurno` logo acima e o do `models/validacao.py`.
+    entradas: int
+
+    recusas: RecusasDoTurno

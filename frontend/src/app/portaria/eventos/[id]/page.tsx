@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import Leitor from "@/components/Leitor";
+import PainelDoTurno from "@/components/PainelDoTurno";
 import { partesDaFilaPublica } from "@/lib/formato";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 import { obterTurno } from "@/lib/turnos";
@@ -87,7 +87,13 @@ export default async function LeitorDoTurno({
       {/* O cabeçalho responde a uma pergunta só, e ela é real: **é este o show
           certo?** Quem trabalha em duas casas na mesma noite abre o leitor
           errado com facilidade, e descobrir isso pelo primeiro `EVENTO_ERRADO`
-          seria descobrir na frente de quem está entrando. */}
+          seria descobrir na frente de quem está entrando.
+
+          ⚠️ **Ele é montado aqui, no Server Component**, e a Story 5.6 chegou a
+          movê-lo para dentro do `<PainelDoTurno>` por `children` — enquanto o
+          contador morava neste bloco. Com o contador em faixa própria logo
+          abaixo, o cabeçalho voltou para cá: nome do show e ficha não têm estado
+          nenhum, e não há motivo para atravessarem um componente cliente. */}
       <div className={estilos.cabecalho}>
         <span className="kicker">Leitor</span>
         <h1 className={estilos.nome}>{turno.nome}</h1>
@@ -97,7 +103,7 @@ export default async function LeitorDoTurno({
         </p>
       </div>
 
-      <Leitor eventoId={turno.id} />
+      <PainelDoTurno turno={turno} />
     </section>
   );
 }

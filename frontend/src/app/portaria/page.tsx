@@ -110,6 +110,18 @@ export default async function Turnos() {
  * relógio nenhum** (Story 5.2). Ele deixou de comparar `data_hora` com
  * `Date.now()` porque a mesma janela decide o `403` da rota de validação: com o
  * cálculo aqui, esta tela poderia liberar o link de um turno que a API recusa.
+ *
+ * ⚠️ **`entradas` é desenhado, e só nos turnos abertos** (Story 5.6). O campo
+ * entrou no `TurnoDaPortaria`, que **duas** telas leem, e ignorá-lo aqui seria
+ * esquecimento disfarçado de escolha. Ele responde à pergunta que se faz antes de
+ * escolher a porta — onde o movimento está —, e é o que faz esta lista valer uma
+ * segunda visita no meio do turno.
+ *
+ * **Fora da janela ele não aparece**, e a ausência é a decisão: um `0 ENTRADAS`
+ * ao lado de "O evento ainda não começou" seria um número dizendo o que a frase
+ * já disse, e zero antes de a porta abrir não é medida de nada. As três recusas
+ * não vêm nem no contrato desta rota — elas são do `TurnoDoLeitor`, e numa tela
+ * de escolha seriam ruído operacional.
  */
 function Turno({ turno }: { turno: TurnoDaPortaria }) {
   // `partesDaFilaPublica` e não `partesDaData`: é a única que devolve a **hora**
@@ -130,7 +142,12 @@ function Turno({ turno }: { turno: TurnoDaPortaria }) {
       <div className={estilos.corpo}>
         <h2 className={estilos.nome}>{turno.nome}</h2>
         <div className={estilos.origem}>{origem}</div>
-        {!turno.aberto && (
+        {turno.aberto ? (
+          // O plural fixo é escolha: "1 entradas" é feio e "1 entrada" custaria
+          // uma regra de concordância numa etiqueta em versalete, onde a palavra
+          // funciona como rótulo de coluna e não como frase.
+          <p className={estilos.entradas}>{turno.entradas} entradas</p>
+        ) : (
           <p className={estilos.fechado}>O evento ainda não começou</p>
         )}
       </div>

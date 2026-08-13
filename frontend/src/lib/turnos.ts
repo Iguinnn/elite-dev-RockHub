@@ -1,6 +1,7 @@
 import { unstable_rethrow } from "next/navigation";
 
 import { API_URL, cabecalhoDeSessao } from "./servidor";
+import type { RecusasDoTurno } from "./validacao";
 
 /**
  * Espelha `app/schemas/evento.py::TurnoDaPortaria` — um evento em que a conta
@@ -14,9 +15,12 @@ import { API_URL, cabecalhoDeSessao } from "./servidor";
  * porta aberta enquanto a API recusa. A janela agora tem um dono só:
  * `ABERTURA_DOS_PORTOES`, em `services/evento.py`.
  *
- * O resto do contrato não mudou: nem `capacidade`, nem `vendidos`, nem
- * `setores` — inventário é do organizador, e o contador do turno é a Story 5.6,
- * que vai contar entradas e não estoque.
+ * ⚠️ **`entradas` entrou na Story 5.6, e ele é o contador que este docstring
+ * anunciava** — *"o contador do turno é a Story 5.6, que vai contar entradas e
+ * não estoque"*. É `COUNT` sobre `ingresso.usado_em IS NOT NULL`, de todas as
+ * portas do evento. O resto do contrato continua fora: nem `capacidade`, nem
+ * `vendidos`, nem `setores` — inventário é do organizador, e vendidos não é
+ * entrou.
  */
 export type TurnoDaPortaria = {
   id: string;
@@ -25,6 +29,21 @@ export type TurnoDaPortaria = {
   local: string;
   cidade: string | null;
   aberto: boolean;
+  entradas: number;
+};
+
+/**
+ * Espelha `app/schemas/evento.py::TurnoDoLeitor` — o turno **do leitor**, com as
+ * três recusas (Story 5.6).
+ *
+ * ⚠️ **Só `GET /portaria/eventos/{id}` responde este tipo.** A lista devolve o
+ * `TurnoDaPortaria` acima, sem as recusas, e a assimetria é do contrato: o cartão
+ * de `/portaria` desenha um número só — onde está o movimento —, e três recusas
+ * por item numa tela de escolha seriam ruído operacional. Campo sem consumidor
+ * não viaja.
+ */
+export type TurnoDoLeitor = TurnoDaPortaria & {
+  recusas: RecusasDoTurno;
 };
 
 export type ResultadoDosTurnos =
@@ -89,7 +108,7 @@ export async function listarTurnos(): Promise<ResultadoDosTurnos> {
  * falso e manda a portaria procurar o defeito no lugar errado.
  */
 export type ResultadoDoTurno =
-  | { estado: "ok"; turno: TurnoDaPortaria }
+  | { estado: "ok"; turno: TurnoDoLeitor }
   | { estado: "sem-turno" }
   | { estado: "sem-sessao" }
   | { estado: "indisponivel" };
@@ -138,7 +157,7 @@ export async function obterTurno(id: string): Promise<ResultadoDoTurno> {
       return { estado: "indisponivel" };
     }
 
-    const turno = (await resposta.json()) as TurnoDaPortaria;
+    const turno = (await resposta.json()) as TurnoDoLeitor;
     return { estado: "ok", turno };
   } catch (erro) {
     unstable_rethrow(erro);

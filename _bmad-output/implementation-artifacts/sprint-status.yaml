@@ -42,7 +42,7 @@
 #   exceto README.md#o-que-não-está-pronto, que continua sendo escrito na hora
 
 generated: 2026-08-10
-last_updated: 2026-08-13 (Story 5.5 implementada; suíte em 498)
+last_updated: 2026-08-13 (Stories 5.4 e 5.6 implementadas; Epic 5 fechada; suíte em 506)
 project: elite-dev-RockHub
 project_key: NOKEY
 tracking_system: file-system
@@ -468,7 +468,43 @@ development_status:
   # ✅ **A janela aberta pela 5.1 fechou:** o link do turno chega numa tela que
   # existe. Eram dois commits, a mesma forma da janela entre a 2.4 e a 2.5.
   5-3-digitar-o-codigo-quando-a-camera-nao-ajuda: done
-  5-4-ver-o-resultado-a-tres-metros: backlog
+  # Commit 1 da techspec docs/techspec-veredito-e-contador.md. `Veredito.tsx` +
+  # `.module.css` — a função `Veredicto` saiu de dentro do `Leitor.tsx` (a grafia
+  # certa foi junto), mais os quatro símbolos e a tinta. **Só frontend**: nenhuma
+  # linha de backend, nenhuma migração.
+  # Decisões do Igor: **duas tintas, e não quatro** — `--verde` no `VALIDO`,
+  # `--brasa` nos outros três. Contraria um AC escrito da 5.4 ("`JA_UTILIZADO`
+  # usa tom neutro") e a tabela do `EXPERIENCE.md`, de propósito: na porta a
+  # pergunta é binária, e quatro tinturas obrigam quem está com a fila esperando
+  # a decodificar qual apareceu antes de saber o que fazer. Descartadas as quatro
+  # cores, que exigiriam um `--ambar` e um cinza novos num sistema de duas tintas.
+  # ⚠️ **UX-DR5 continua cumprida, e é preciso ver por quê:** a regra proíbe
+  # transmitir informação **só** por cor. Cor, palavra e símbolo continuam nos
+  # quatro; o que encolheu foi a cardinalidade de um canal, não a quantidade.
+  # ⚠️ **Os símbolos são SVG inline, não caractere de fonte.** O `⤫` é
+  # matemático e vira retângulo vazio no Android ou num Windows sem fonte de
+  # símbolos — justamente no canal que existe para não depender de cor.
+  # ⚠️ **`EVENTO_ERRADO` virou X dentro de círculo**, e a spec pedia `⤫`. Quase
+  # toda fonte desenha o `⤫` igual a um `✕`, e copiá-lo apagaria a distinção
+  # entre `INVALIDO` e `EVENTO_ERRADO` bem no canal que a decisão das duas tintas
+  # tornou o mais importante. A três metros o que separa é a silhueta.
+  # ⚠️ **A tinta entra por `data-veredito` e o switch é no CSS** — nunca um
+  # `estilos[resultado]` em JavaScript, que o `tsc` não confere e que quebra em
+  # silêncio quando um nome de classe some do CSS Module.
+  # ⚠️ **O bloco subiu para cima do formulário**, e o `.painel` trocou
+  # `border-top` por `border-bottom`: a três metros o que se lê é o topo da tela,
+  # e o campo com a dica empurrava o resultado para a dobra no celular. Sem botão
+  # *Ler o próximo* (o `EXPERIENCE.md` pedia): a câmera já se desliga sozinha, e
+  # o toque seguinte produz o mesmo estado.
+  # ⚠️ **`clamp(38px, 11vw, 46px)` na palavra, mais `overflow-wrap`.** Em 360px
+  # `UTILIZADO` a 46px mede 273px contra 276px disponíveis — três pixels de
+  # folga, perto demais para deixar fixo. Abaixo de ~310px o piso do `clamp` não
+  # salva, e é o `overflow-wrap` que impede a palavra de atravessar a borda.
+  # 📌 **Adiado, decisão do Igor:** `VALIDO` não mostra a hora da entrada, embora
+  # o `EXPERIENCE.md` peça e o `entrada_em` chegue no contrato. É herança da 5.3
+  # e a spec congelou o texto do `detalhe()`; fica registrado porque a hora é o
+  # dado que encerra discussão na porta e some no caso majoritário.
+  5-4-ver-o-resultado-a-tres-metros: done
   # Commit 3 e último da techspec da validação na porta. `@zxing/browser` no
   # `package.json`, o botão *Ler pela câmera* na ilha `<Leitor>` e os estados de
   # permissão. **Sem migração e sem uma linha de backend** — a rota da 5.2 já
@@ -510,7 +546,65 @@ development_status:
   # ✅ `README.md#o-que-não-está-pronto` ganhou a linha do `getUserMedia` em
   # contexto seguro, escrita neste commit — a exceção do CLAUDE.md.
   5-5-ler-o-qr-pela-camera: done
-  5-6-acompanhar-as-entradas-do-turno: backlog
+  # Commit 2 e último da techspec do veredito e do contador — **fecha a Epic 5**.
+  # Tabela `validacao` com migração (e5bf44a9f826), o `INSERT` nos quatro
+  # caminhos do `validar`, `contar_entradas_por_evento` e `contar_recusas` em
+  # `services/ingresso.py`, os campos novos nos três schemas e a ilha
+  # `ContadorDoTurno`. A suíte foi de 498 para 506.
+  # Decisões do Igor: **persistir tentativa, e não só entrada** — contar os
+  # quatro vereditos exige guardar os quatro, e até aqui `INVALIDO`,
+  # `JA_UTILIZADO` e `EVENTO_ERRADO` eram resposta HTTP que acabava ali.
+  # Descartado contar só as entradas (o AC original) e descartado contar no
+  # `useState` da tela, que zeraria ao recarregar — exatamente a coisa validada
+  # só no frontend que este projeto é avaliado por não fazer. O que se ganha além
+  # do número é a trilha de auditoria: quem estava na porta, o que leu e o que o
+  # sistema respondeu.
+  # ⚠️ **Duas fontes para números vizinhos, de propósito.** `entradas` sai de
+  # `ingresso.usado_em`, que o `UPDATE` condicional do AD-6 escreve
+  # atomicamente; as três recusas saem da `validacao`. No dia em que divergirem,
+  # o `usado_em` ganha — e um teste confere que não divergiram.
+  # ⚠️ **O `INSERT` é da mesma transação do `UPDATE`.** Fora dela existiria a
+  # janela em que alguém entrou e o registro não saiu. Provado por teste que
+  # força a FK a estourar depois do `UPDATE` e confere o `usado_em` de volta a
+  # nulo.
+  # ⚠️ **As contagens são lidas depois do `commit`, nunca antes** — quarta
+  # aparição desta família de armadilha no projeto (pagamento na 3.8,
+  # `share_token` na 4.3, `usado_em` na 5.2).
+  # ⚠️ **`criado_em` é escrito em Python, e a spec não previa isso.** O `now()`
+  # do Postgres é o instante de **início da transação**: as linhas de uma mesma
+  # transação saíam com carimbo idêntico e a trilha ficava sem ordem — o teste
+  # dos quatro vereditos foi quem revelou. Diverge do `usuario.criado_em` de
+  # propósito, e usa o mesmo relógio que grava `usado_em`.
+  # ⚠️ **`EVENTO_ERRADO` grava no evento do caminho, não no do ingresso.** É a
+  # contagem *deste* turno; gravar no do ingresso vazaria, pelo contador, a
+  # existência de um ingresso de outro show para a portaria que o AD-7 proíbe de
+  # saber disso.
+  # ⚠️ **Os dois `INVALIDO` passaram a tocar o banco**, e o docstring do `validar`
+  # se gabava de não tocar. Corrigido no mesmo commit — e o nome do teste
+  # `..._sem_tocar_no_banco` também, achado do review adversarial.
+  # ⚠️ **A tabela `validacao` quebrou a limpeza do teste de concorrência da 5.2**:
+  # ela referencia `ingresso`, e o `DELETE` do `finally` passou a estourar com
+  # `ForeignKeyViolation`, abortando a limpeza inteira e deixando um evento no
+  # `rockhub_teste` que derrubou **33 testes** de programação, seed e reserva —
+  # nenhum deles apontando para a portaria. Resolvido com o `DELETE` da
+  # `validacao` antes.
+  # ⚠️ **O contador fica fora da região `aria-live="assertive"`.** Dentro dela,
+  # cada validação faria o leitor de tela anunciar o dado operacional atropelando
+  # o veredito, que é a única coisa que precisa ser ouvida com a fila andando.
+  # ⚠️ **Três formas até acertar o lugar do contador** (ajuste do Igor, na tela).
+  # `ENTRADAS 41` em mono grande dentro do cabeçalho virava o segundo maior
+  # elemento da tela e disputava leitura com o nome do show; encolhido, sumia.
+  # Enquanto morasse **dentro** do bloco do título, todo tamanho era escolher
+  # entre sumir e competir. Ficou em **faixa própria de quatro colunas** entre o
+  # fio do cabeçalho e o botão da câmera, com hierarquia por cor (`--cal` nas
+  # entradas, `--fumaca` nas três recusas) em vez de por corpo. O
+  # `PainelDoTurno` perdeu o `children` e o CSS module inteiro nessa mudança.
+  # ⚠️ **`entradas` entrou no `TurnoDaPortaria`, que duas telas leem.** O cartão
+  # de `/portaria` desenha o número nos turnos abertos — por escolha, não por
+  # esquecimento. As três recusas ficam só no `TurnoDoLeitor`.
+  5-6-acompanhar-as-entradas-do-turno: done
+  # ⚠️ Fica 'in-progress' até o merge da branch na main, como as epics 1 a 4.
+  # O `bmad-code-review` da epic inteira ainda não rodou.
   epic-5-retrospective: optional
 
   # ---------- Epic 6: Avaliação sem atrito ----------

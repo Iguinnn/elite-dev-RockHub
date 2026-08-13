@@ -11,14 +11,51 @@ import { chamarApi } from "./api";
  */
 
 /**
- * Os quatro vereditos do FR6, espelhando o `Literal` de
- * `app/schemas/ingresso.py::ResultadoDaValidacao`.
+ * Os quatro vereditos do FR6, espelhando o enum `Veredito` de
+ * `app/models/validacao.py`.
+ *
+ * ⚠️ **A fonte mudou de lugar na Story 5.6, e o espelho aponta para ela.** Era o
+ * `Literal[...]` de `schemas/ingresso.py::ResultadoDaValidacao`; desde que as
+ * quatro palavras passaram a ser gravadas numa coluna, quem as define é o enum do
+ * modelo — e, embaixo dele, o `CHECK` da tabela `validacao`. É lá que se confere
+ * divergência, não mais no schema.
  *
  * **São exatamente quatro, e a tela não inventa um quinto.** Código malformado,
  * código de ingresso nenhum e assinatura divergente chegam todos como
  * `INVALIDO` — a decisão é do backend, e está no docstring do service.
  */
 export type Veredito = "VALIDO" | "INVALIDO" | "JA_UTILIZADO" | "EVENTO_ERRADO";
+
+/**
+ * Espelha `app/schemas/ingresso.py::RecusasDoTurno` — os três vereditos de
+ * recusa deste evento, contados (Story 5.6).
+ *
+ * ⚠️ **`VALIDO` não está aqui**, e a ausência é a decisão do contrato: as
+ * entradas saem de `ingresso.usado_em`, a coluna que o `UPDATE` condicional do
+ * AD-6 escreve atomicamente, e as três recusas saem da tabela `validacao`, que é
+ * o registro do que foi **tentado**. Duas fontes para números vizinhos, de
+ * propósito — no dia em que divergirem, é o `usado_em` que ganha.
+ *
+ * Os três vêm sempre, e zero é `0` e nunca ausente: no começo do turno os três
+ * são zero, que é justamente quando um campo faltando desenharia `undefined`.
+ */
+export type RecusasDoTurno = {
+  invalidos: number;
+  ja_utilizados: number;
+  evento_errado: number;
+};
+
+/**
+ * As quatro contagens que o contador do turno desenha (Story 5.6).
+ *
+ * **Um tipo próprio, e não os dois campos soltos**: é o que o `<Leitor>` devolve
+ * ao `<PainelDoTurno>` por `onContagens` e o que o `<ContadorDoTurno>` recebe. Os
+ * quatro números viajam juntos porque vêm juntos e são lidos juntos.
+ */
+export type ContagensDoTurno = {
+  entradas: number;
+  recusas: RecusasDoTurno;
+};
 
 /**
  * Espelha `app/schemas/ingresso.py::ResultadoDaValidacao`.
@@ -39,6 +76,19 @@ export type ResultadoDaValidacao = {
   setor_nome: string | null;
   /** Em `VALIDO`, esta entrada; em `JA_UTILIZADO`, a **primeira**. */
   entrada_em: string | null;
+  /**
+   * Quantas pessoas já entraram **neste evento**, de todas as portas — e não só
+   * pelas leituras desta conta. A story quer noção do movimento, e com duas
+   * portas na mesma casa o número da minha própria digitação mede a minha
+   * digitação, não a fila.
+   *
+   * ⚠️ **Vem nos quatro vereditos**, inclusive nos três que negam entrada: o
+   * contador atualiza a cada leitura, que é exatamente quando alguém olha para
+   * ele. É o que dispensa polling e WebSocket — a entrada da outra porta aparece
+   * aqui na minha próxima leitura.
+   */
+  entradas: number;
+  recusas: RecusasDoTurno;
 };
 
 /**

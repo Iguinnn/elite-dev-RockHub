@@ -69,7 +69,15 @@ from app.schemas.evento import (
     PeriodoDaProgramacao,
     SetorPublico,
     TurnoDaPortaria,
+    TurnoDoLeitor,
 )
+
+# ⚠️ **A seta aponta só para este lado, e é o que impede o ciclo.**
+# `services/ingresso.py` importa `models` e `schemas`, nunca este módulo — se um
+# dia precisar de algo daqui, o que se move é a função, não a direção do import.
+# Ele entrou na Story 5.6 para o `entradas` do turno: contar quem passou pela
+# porta é assunto do ingresso, e projetar o turno é assunto do evento.
+from app.services import ingresso as servico_de_ingresso
 
 # Quantos ingressos uma pessoa leva numa compra só (Story 3.4, decisão do Igor).
 #
@@ -344,13 +352,29 @@ def listar_escalados(sessao: Session, portaria: Usuario) -> list[TurnoDaPortaria
         .order_by(Evento.data_hora, Evento.id)
     )
 
+    # `list()` porque a sequência é percorrida **duas** vezes daqui em diante — a
+    # primeira para juntar os ids da contagem, a segunda no laço de montagem. Um
+    # `ScalarResult` se esgota na primeira, e a lista sairia vazia sem erro
+    # nenhum.
+    escalados = list(eventos)
+
+    # ⚠️ **Uma consulta para a lista inteira, e não uma por turno** (Story 5.6).
+    # Um `COUNT` dentro do laço abaixo é o N+1 que o `selectinload` da programação
+    # existe para não fazer, reintroduzido por outra porta — e esta é a tela que a
+    # portaria recarrega na fila.
+    entradas = servico_de_ingresso.contar_entradas_por_evento(
+        sessao, [evento.id for evento in escalados]
+    )
+
     # ⚠️ **Um relógio só para a lista inteira**, e não uma leitura por item. Com
     # `datetime.now()` dentro do laço, dois turnos na mesma borda das duas horas
     # podem sair com respostas diferentes na mesma resposta — o mesmo motivo do
     # `instanteDaRequisicao` com `cache()` que a tela da 5.1 usava antes de o
     # campo existir.
     agora = datetime.now(timezone.utc)
-    return [montar_turno(evento, agora) for evento in eventos]
+    return [
+        montar_turno(evento, entradas[evento.id], agora) for evento in escalados
+    ]
 
 
 def porta_aberta(evento: Evento, agora: datetime) -> bool:
@@ -373,12 +397,14 @@ def porta_aberta(evento: Evento, agora: datetime) -> bool:
     return evento.data_hora - ABERTURA_DOS_PORTOES <= agora
 
 
-def montar_turno(evento: Evento, agora: datetime | None = None) -> TurnoDaPortaria:
+def montar_turno(
+    evento: Evento, entradas: int, agora: datetime | None = None
+) -> TurnoDaPortaria:
     """Projeta o `Evento` no contrato da portaria, com o `aberto` calculado.
 
-    Campo a campo, e não `model_validate(evento)`: `aberto` não é coluna, e o
-    schema deixou de declarar `from_attributes` justamente por isso (o docstring
-    dele explica a troca).
+    Campo a campo, e não `model_validate(evento)`: nem `aberto` nem `entradas` são
+    coluna, e o schema deixou de declarar `from_attributes` justamente por isso (o
+    docstring dele explica a troca).
 
     **`agora` opcional, e os dois modos de chamar são de propósito.** A lista
     passa o relógio que leu uma vez para a resposta inteira; a rota de um turno
@@ -387,6 +413,13 @@ def montar_turno(evento: Evento, agora: datetime | None = None) -> TurnoDaPortar
     mão para não ler o relógio N vezes — e aí haveria duas projeções do mesmo
     `Evento` no arquivo, que é exatamente a divergência que esta função existe
     para não acontecer.
+
+    ⚠️ **`entradas` é obrigatório, e não opcional como o `agora`** (Story 5.6). A
+    simetria seria bonita e mentiria: um padrão `0` faria o chamador que esquecesse
+    de contar responder "ninguém entrou ainda" em vez de estourar, e zero é o
+    número mais plausível que existe nesta tela — o defeito passaria o turno
+    inteiro sem ser visto. Já o relógio não tem esse problema: `datetime.now()` é
+    a resposta certa quando ninguém passa nada.
     """
     return TurnoDaPortaria(
         id=evento.id,
@@ -395,6 +428,38 @@ def montar_turno(evento: Evento, agora: datetime | None = None) -> TurnoDaPortar
         local=evento.local,
         cidade=evento.cidade,
         aberto=porta_aberta(evento, agora or datetime.now(timezone.utc)),
+        entradas=entradas,
+    )
+
+
+def montar_turno_do_leitor(sessao: Session, evento: Evento) -> TurnoDoLeitor:
+    """O turno com os quatro números — `GET /portaria/eventos/{id}` (Story 5.6).
+
+    **Ela existe para o contador nascer preenchido.** Sem os quatro números na
+    resposta do cabeçalho, a tela abriria com zeros e só mostraria a verdade
+    depois da primeira validação do turno — quem assumisse a porta no meio da noite
+    veria "0 entradas" com trezentas pessoas dentro. É o AC "os contadores vêm do
+    banco" valendo antes de qualquer leitura, e não só depois dela.
+
+    **Duas consultas, e não uma.** As entradas saem de `ingresso.usado_em` e as
+    recusas da tabela `validacao` — fontes diferentes de propósito, e o porquê está
+    em `models/validacao.py`. Juntá-las num `UNION` economizaria uma ida ao banco
+    numa rota que roda uma vez por turno, ao custo de escrever em SQL a decisão que
+    hoje se lê em duas linhas de Python.
+
+    **Reaproveita o `montar_turno`** em vez de montar os sete campos de novo: é a
+    mesma projeção mais um campo, e duas montagens do mesmo `Evento` no arquivo é
+    exatamente o que o docstring daquela função existe para evitar.
+    """
+    turno = montar_turno(
+        evento,
+        servico_de_ingresso.contar_entradas_por_evento(sessao, [evento.id])[
+            evento.id
+        ],
+    )
+    return TurnoDoLeitor(
+        **turno.model_dump(),
+        recusas=servico_de_ingresso.contar_recusas(sessao, evento.id),
     )
 
 
