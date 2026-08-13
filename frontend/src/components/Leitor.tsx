@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
@@ -146,7 +147,15 @@ export default function Leitor({
           : MENSAGEM_GENERICA,
       );
     } finally {
-      setEnviando(false);
+      // ⚠️ **`flushSync`, e não `setEnviando(false)` puro** (code review da Epic
+      // 5). O `<input>` abaixo leva `disabled={enviando}`, e um `setState` numa
+      // continuação de `await` é agendado, não aplicado: o `focus()` da linha de
+      // baixo rodaria com o `disabled` ainda no DOM, e `focus()` em controle
+      // desabilitado é no-op por especificação. O foco terminava no `<body>`, e
+      // aí as teclas da leitura seguinte não iam para lugar nenhum — o defeito
+      // aparecia da **segunda** pessoa da fila em diante, que é justamente onde
+      // ninguém está mais olhando para a tela.
+      flushSync(() => setEnviando(false));
       // ⚠️ **O foco volta ao campo nos dois caminhos — quando veio do campo.**
       // Sem isto, depois de clicar em *Validar* o foco fica no botão e o Enter
       // seguinte reenvia o mesmo código em vez de mandar o próximo; o defeito só
@@ -228,11 +237,30 @@ export default function Leitor({
           video.current,
           (leitura) => {
             // O callback roda a cada quadro, e a maioria vem sem QR nenhum.
-            if (!leitura || jaLeu.current) return;
+            //
+            // ⚠️ **`cancelado` entra no guarda** (code review da Epic 5). Os
+            // outros três pontos deste efeito já o conferiam; aqui faltava, e o
+            // caminho é real: tocar *Ler pela câmera* e sair da tela antes de a
+            // câmera abrir deixa `controles.current` nulo, então o `stop()` da
+            // desmontagem não tem o que parar — e o zxing dispara o `loop()`
+            // assim que o stream anexa. Um QR no enquadramento virava `POST` de
+            // verdade, com ninguém olhando, e `usado_em` é irreversível: a
+            // pessoa chegava na porta depois e ouvia `JÁ UTILIZADO` de uma
+            // entrada que nunca aconteceu.
+            if (cancelado || !leitura || jaLeu.current) return;
             jaLeu.current = true;
             desligarCamera();
             setCamera("desligada");
-            void enviarAtual.current(leitura.getText(), false);
+            // ⚠️ **O mesmo teto do campo manual** (code review da Epic 5). O
+            // `maxLength={64}` lá embaixo existe porque acima de 64 o backend
+            // responde `422` — decisão deliberada, com teste próprio: passar do
+            // teto "não é um código recusado, é um pedido malformado". A câmera
+            // mandava o texto cru, então um QR que não é deste sistema (o
+            // copia-e-cola do Pix, um cartão de embarque, uma URL longa) virava
+            // a frase genérica de falha do sistema em vez de `INVÁLIDO` — e não
+            // entrava no contador de recusas do turno. Cortado aqui, os dois
+            // caminhos de entrada respondem a mesma coisa para o mesmo QR.
+            void enviarAtual.current(leitura.getText().slice(0, 64), false);
           },
         );
 
@@ -284,7 +312,13 @@ export default function Leitor({
           type="button"
           className={estilos.botaoCamera}
           onClick={alternarCamera}
-          disabled={camera === "abrindo"}
+          // ⚠️ **`enviando` também desabilita** (code review da Epic 5). Sem
+          // isto, a câmera reabria durante uma validação em voo; a leitura
+          // seguinte caía no guarda de reentrância do `enviar` e era descartada
+          // **em silêncio**, com o veredito da pessoa anterior ainda na tela.
+          // Na porta isso é um `VÁLIDO` de alguém servindo de aval para o
+          // próximo da fila, sem que ninguém tenha sido validado.
+          disabled={camera === "abrindo" || enviando}
         >
           {ROTULO_DA_CAMERA[camera]}
         </button>
