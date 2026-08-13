@@ -318,6 +318,13 @@ def test_aberto_segue_a_janela_de_duas_horas_do_service(
     hora (aberto, dentro da janela) e um que começou há meia hora (aberto, do
     outro lado do corte que as rotas públicas fazem). O terceiro é o que importa
     — é a hora em que a fila anda.
+
+    ⚠️ **Os dois da borda existem porque os três de cima não prendem duas horas**
+    (code review da Epic 5): −30min, +1h e +3h são satisfeitos por qualquer janela
+    entre uma e três horas, e `ABERTURA_DOS_PORTOES` podia virar `2h45` sem este
+    teste mudar de cor — com o nome dele dizendo "duas horas" e o docstring
+    dizendo "e nada mais". `1h59m` e `2h01m` são o que transforma o nome em
+    asserção: eles falham nos dois sentidos se a constante se mexer um minuto.
     """
     organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "janela@exemplo.com")
     porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "janela-porta@exemplo.com")
@@ -325,6 +332,10 @@ def test_aberto_segue_a_janela_de_duas_horas_do_service(
     for nome, quando in (
         ("Começou faz meia hora", agora - timedelta(minutes=30)),
         ("Daqui a uma hora", agora + timedelta(hours=1)),
+        # A borda, um minuto de cada lado: com `ABERTURA_DOS_PORTOES` em duas
+        # horas, o portão deste abriu há um minuto e o do próximo abre daqui a um.
+        ("Abriu faz um minuto", agora + timedelta(hours=1, minutes=59)),
+        ("Abre daqui a um minuto", agora + timedelta(hours=2, minutes=1)),
         ("Daqui a três horas", agora + timedelta(hours=3)),
     ):
         _evento_gravado(
@@ -338,6 +349,8 @@ def test_aberto_segue_a_janela_de_duas_horas_do_service(
     assert [(turno["nome"], turno["aberto"]) for turno in resposta.json()] == [
         ("Começou faz meia hora", True),
         ("Daqui a uma hora", True),
+        ("Abriu faz um minuto", True),
+        ("Abre daqui a um minuto", False),
         ("Daqui a três horas", False),
     ]
 

@@ -300,6 +300,12 @@ def test_downgrade_base_derruba_a_tabela_e_upgrade_head_a_refaz(
         # notada" — e a `e43874e0cf3a`, da 3.9, foi exatamente essa migração
         # nova. Quem acrescentar a oitava tabela acrescenta a linha aqui.
         "ingresso",
+        # ⚠️ **A oitava, e a que faltava de novo** (code review da Epic 5). A
+        # `e5bf44a9f826`, da Story 5.6, é a migração nova que o comentário logo
+        # acima manda registrar aqui — e ela entrou sem a linha, repetindo em uma
+        # epic o que a Epic 3 já tinha corrigido uma vez. Quem acrescentar a nona
+        # acrescenta a linha aqui.
+        "validacao",
     )
 
     command.downgrade(cfg, "base")

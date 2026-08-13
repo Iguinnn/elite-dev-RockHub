@@ -750,7 +750,17 @@ def test_duas_conexoes_validando_o_mesmo_ingresso_deixam_entrar_uma_vez(
     do `conftest.py`, e sem o `finally` as linhas ficariam no `rockhub_teste`
     para o próximo `pytest`.
     """
-    Fabrica = sessionmaker(bind=engine_teste)
+    # ⚠️ **`expire_on_commit=False` imita o `SessaoLocal`** (code review da Epic
+    # 5), e sem ele este teste não provava o que o docstring promete. Com o
+    # default `True`, a sessão expira o objeto sozinha no `commit` e `usado_em`
+    # recarrega por lazy load — então a asserção das duas horas iguais passava
+    # **com ou sem** o `sessao.refresh(ingresso)` do `validar`. Em produção o
+    # perdedor da corrida responderia `JA_UTILIZADO` com `entrada_em: null`, que
+    # é a única informação que encerra discussão na porta. É a mesma divergência
+    # fixture × produção que o code review da Epic 3 registrou, e os dois testes
+    # irmãos do repositório (`test_ingresso.py`, `test_migracoes.py`) já passavam
+    # a flag — a omissão era só aqui.
+    Fabrica = sessionmaker(bind=engine_teste, expire_on_commit=False)
 
     organizador_id = uuid4()
     comprador_id = uuid4()
