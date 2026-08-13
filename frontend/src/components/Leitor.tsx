@@ -239,19 +239,50 @@ export default function Leitor({
         //
         // **Descartei a `BarcodeDetector` nativa** (zero bytes, e inexistente no
         // Safari do iPhone — que é metade da fila) e o import estático.
-        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        const { BrowserQRCodeReader } = await import("@zxing/browser");
         if (cancelado || !video.current) return;
 
         jaLeu.current = false;
-        const leitor = new BrowserMultiFormatReader();
+        // ⚠️ **`BrowserQRCodeReader`, e não `BrowserMultiFormatReader`.** O
+        // segundo estava aqui até a conferência no celular, e ele tenta **todo**
+        // formato a cada tentativa — Aztec, Data Matrix, os sete de código de
+        // barras 1D — para achar o único que este produto emite. Trabalho jogado
+        // fora justamente no aparelho mais fraco da fila.
+        //
+        // ⚠️ **`delayBetweenScanAttempts: 100`, contra o padrão de `500`.** Este
+        // é o defeito que fazia a leitura falhar na porta: com o padrão, o leitor
+        // tenta decodificar **duas vezes por segundo**. Quem está com a fila
+        // andando precisaria segurar o celular parado e ter sorte de uma das duas
+        // tentativas cair num quadro nítido e bem enquadrado — enquanto a câmera
+        // nativa do mesmo aparelho lê o mesmo QR na hora, porque tenta a cada
+        // quadro. Dez por segundo fecha essa distância.
+        //
+        // O `delayBetweenScanSuccess` fica no padrão de propósito: a trava
+        // `jaLeu` e o `stop()` já garantem uma validação por leitura, e não há
+        // segunda leitura para espaçar.
+        const leitor = new BrowserQRCodeReader(undefined, {
+          delayBetweenScanAttempts: 100,
+        });
 
         // ⚠️ **`facingMode: environment`, e não `decodeFromVideoDevice(undefined)`.**
         // Aquele pega o primeiro dispositivo da lista, que no celular costuma ser
         // a câmera **frontal**: a portaria apontaria o telefone para o próprio
         // rosto. `ideal` e não `exact` de propósito — num notebook com uma
         // webcam só, `exact` falharia como "câmera ausente" e a tela mentiria.
+        //
+        // ⚠️ **A resolução é pedida, e antes não era.** Sem `width`/`height` o
+        // navegador entrega o padrão dele, que costuma ser 640×480 — e um QR de
+        // 180px filmado numa tela a meio metro ocupa poucos pixels por módulo,
+        // no limite do decodificável. `ideal` em tudo: quem não tiver 1080p
+        // entrega o que tem, e nada falha por causa disto.
         const abertos = await leitor.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" } } },
+          {
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+          },
           video.current,
           (leitura) => {
             // O callback roda a cada quadro, e a maioria vem sem QR nenhum.
