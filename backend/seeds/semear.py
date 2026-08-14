@@ -61,6 +61,14 @@ SENHA_DE_AVALIACAO = "rockhub123"
 CONTAS: tuple[ContaSemeada, ...] = (
     ContaSemeada("Helena Marques", "organizador@rockhub.dev",
                  SENHA_DE_AVALIACAO, PapelUsuario.ORGANIZADOR),
+    # O segundo organizador, pelo mesmo motivo da segunda portaria logo abaixo:
+    # com uma conta só, "o organizador vê apenas os eventos dele" é uma frase
+    # que ninguém consegue conferir. Com duas, publicar por uma e abrir
+    # `Meus eventos` pela outra demonstra o recorte da Story 2.6 em dois cliques
+    # — e mostra que um evento publicado por qualquer organizador aparece igual
+    # na programação pública, que é o outro lado da mesma pergunta.
+    ContaSemeada("Rafael Nunes", "organizador2@rockhub.dev",
+                 SENHA_DE_AVALIACAO, PapelUsuario.ORGANIZADOR),
     ContaSemeada("Bruno Tavares", "cliente@rockhub.dev",
                  SENHA_DE_AVALIACAO, PapelUsuario.CLIENTE),
     ContaSemeada("Marina Aoki", "cliente2@rockhub.dev",

@@ -29,12 +29,40 @@
    ⚠️ O recuo lateral de 12px é o mesmo de `.secTitulo`, `.fila`, `.aviso` e
    `.vazio`. Os cinco andam juntos: é isso que alinha o texto entre si e mantém
    os fios correndo de ponta a ponta da coluna, na mesma medida do masthead. */
-.barraBusca {
-  display: flex;
+/* ⚠️ **Sem fio embaixo** (decisão do Igor, 2026-08-13). A busca e os chips de
+   período são o mesmo bloco — filtrar a programação —, e o fio entre eles
+   dividia um controle só em dois. O fio que fecha o conjunto é o do `.grupos`,
+   logo abaixo. É o segundo fio removido da tela inicial; o primeiro foi o que
+   separava o logotipo do menu no masthead. */
+/* ⚠️ **A grade comum das duas linhas** (decisão do Igor, 13/08/2026). O campo e
+   os chips são duas linhas empilhadas; o `<select>` e o `Buscar` atravessam as
+   duas e ficam **centrados** entre os dois fios que fecham o bloco. Antes eles
+   eram altos e grudavam no topo, com os chips soltos no pé — o mesmo bloco lido
+   como dois pedaços desalinhados.
+
+   ⚠️ **É aqui que a grade tinha de morar, e não no `<form>`.** Os chips são
+   `<Link>` de navegação e **não podem entrar no formulário** — clicar num chip é
+   ir para outro endereço, não submeter uma busca. Como `<form>` e chips são
+   irmãos, nenhuma propriedade do form alinharia os dois; o `.barraBusca` vira
+   `display: contents` e entrega os próprios campos a esta grade.
+
+   `display: contents` some com a **caixa** do form, não com o form: a submissão
+   é da árvore do DOM, e `Buscar` continua mandando o campo e a cidade juntos sem
+   uma linha de JavaScript. O form não tem `aria-label`, então não é landmark e
+   não há semântica de região a perder. */
+.filtros {
+  display: grid;
+  /* campo | cidade | botão. `auto` nas duas últimas: elas têm largura própria e
+     é o campo que absorve a sobra. */
+  grid-template-columns: 1fr auto auto;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  column-gap: 12px;
+  padding: 10px 12px 14px;
   border-bottom: 1px solid var(--fio);
+}
+
+.barraBusca {
+  display: contents;
 }
 
 /* Serifada sobre fundo transparente: o campo é parte da página, não uma caixa
@@ -43,13 +71,17 @@
    identidade não tem. O contorno de foco do `globals.css` continua valendo, e
    ninguém o desliga. */
 .campoBusca {
-  flex: 1;
+  /* Primeira coluna, primeira linha. Explícito e não automático: com o
+     `<select>` sumindo quando há uma cidade só, a colocação automática mudaria
+     de célula conforme o catálogo. */
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   padding: 14px 0;
   border: 0;
   background: transparent;
   color: var(--cal);
-  font: 19px/1 var(--serif);
+  font: 21px/1 var(--serif);
 }
 
 .campoBusca::placeholder {
@@ -66,14 +98,24 @@
    branco padrão do menu em parte dos navegadores. A seta nativa fica — ela é a
    affordance de que ali há uma lista, e desenhá-la à mão custaria um ícone
    novo para dizer o que o `<select>` já diz. */
+/* ⚠️ **A altura acompanha o campo e o botão** (decisão do Igor, 13/08/2026).
+   Ela era `padding: 8px`, o que dava ~32px contra os ~49px do campo de busca e
+   os 50px do `Buscar` — três controles na mesma barra, três alturas, e o
+   `<select>` boiando no meio. Não é tratamento novo: é o mesmo controle, na
+   medida dos vizinhos. O `padding` vertical de 15px mais a linha de 18px e as
+   duas bordas fecham em 50px, que é a altura do botão. */
 .seletorCidade {
-  flex-shrink: 0;
-  max-width: 190px;
-  padding: 8px 10px;
+  /* Segunda coluna, atravessando as duas linhas e centrado nelas — é este par
+     de declarações que cumpre o pedido de centrar os controles entre os fios. */
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  max-width: 224px;
+  padding: 15px 10px;
   border: 1px solid var(--fio2);
   background: var(--breu);
   color: var(--cal);
-  font: 600 10px/1.4 var(--mono);
+  font: 600 12px/1.5 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -98,8 +140,11 @@
    `flex-shrink: 0`, ele resolve o `100%` contra a barra inteira e o campo
    colapsa a zero — o mesmo invólucro que a busca do catálogo usa. */
 .botaoBusca {
-  flex-shrink: 0;
-  width: 150px;
+  /* Terceira coluna, mesma travessia do `<select>` ao lado. */
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 172px;
 }
 
 /* Rótulo que existe no HTML e não na tela (UX-DR9). Não é `display: none` nem
@@ -121,13 +166,18 @@
    cidades os chips pareciam um filtro que não filtra, e com quinze seriam três
    linhas empurrando a programação para baixo da dobra. Sobra o que é conjunto
    fechado, que é onde o chip é o elemento certo. */
+/* Segunda linha da grade, embaixo do campo. O fio e o recuo lateral passaram
+   para o `.filtros`, que agora é quem fecha o bloco inteiro — mantê-los aqui
+   desenharia o fio no meio da faixa, cortando o `<select>` e o botão que a
+   atravessam. */
 .grupos {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 14px 12px;
-  border-bottom: 1px solid var(--fio);
+  padding-top: 12px;
 }
 
 /* O kicker respira antes do primeiro chip, sem virar um `gap` maior entre todos
@@ -144,7 +194,7 @@
   padding: 7px 12px;
   border: 1px solid var(--fio2);
   color: var(--fumaca);
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -208,10 +258,9 @@
 /* 16/10 como o DESIGN.md pede. `position: relative` para o selo e o degradê se
    ancorarem nela; `overflow: hidden` para a imagem não vazar do quadro.
 
-   O fundo em `--breu2` está aqui **sempre**, e não só no `.arteVazia`: ele é o
-   piso do quadro. Enquanto a imagem carrega, e se ela nunca carregar, o que se
-   vê é o mesmo bloco cinza do evento sem arte — nunca o breu da página com um
-   buraco no meio da grade. */
+   O fundo em `--breu2` é o piso do quadro: enquanto a imagem carrega, e se ela
+   nunca carregar, o que se vê é o cinza — nunca o breu da página com um buraco
+   no meio da grade. */
 .arte {
   position: relative;
   aspect-ratio: 16 / 10;
@@ -233,13 +282,10 @@
   background: linear-gradient(to top, var(--breu), transparent 65%);
 }
 
-/* Evento sem arte (`imagem_url` é anulável desde a Story 2.3): o bloco liso do
-   **mesmo tamanho** que o `.arte` já pinta, para a grade não dançar conforme o
-   evento tem ou não tem foto. Mesma solução da miniatura do catálogo. Aqui só
-   sai o degradê — sobre um bloco chapado ele seria uma sombra sem origem. */
-.arteVazia::after {
-  content: none;
-}
+/* ⚠️ **O `.arteVazia` foi removido em 13/08/2026.** Ele existia para tirar o
+   degradê do evento sem foto: sobre um bloco chapado, a sombra não tinha
+   origem. Desde a arte de reserva (`lib/arte.ts`) não há mais bloco chapado —
+   o quadro tem imagem nos dois casos, e o degradê vale para os dois. */
 
 .imagemDaArte {
   position: relative;
@@ -249,7 +295,7 @@
   object-fit: cover;
 }
 
-/* ⚠️ **A arte que não carrega vira o mesmo bloco cinza, e isto é CSS, não
+/* ⚠️ **A arte que não carrega vira o disco do RockHub, e isto é CSS, não
    JavaScript.**
 
    A URL vem da Ticketmaster e é servida direto do domínio deles: não é nossa, e
@@ -260,10 +306,21 @@
    O truque é que **pseudo-elemento em `<img>` só ganha caixa quando a imagem
    falha**: enquanto ela carrega bem, o `<img>` é um elemento substituído e o
    `::after` não renderiza. Ou seja, esta regra é invisível no caso feliz e cobre
-   o ícone quebrado no caso ruim, com a mesma cor do quadro vazio. Safari não
-   gera pseudo-elemento em imagem nenhuma — e lá o resultado é o mesmo por outro
-   caminho, porque ele não desenha placeholder para `alt` vazio e o `--breu2` do
-   `.arte` aparece sozinho.
+   o ícone quebrado no caso ruim. Safari não gera pseudo-elemento em imagem
+   nenhuma — e lá o que aparece é o `--breu2` do `.arte`, que continua sendo o
+   piso do quadro.
+
+   ⚠️ **Desde 13/08/2026 ela pinta a arte de reserva, e não mais o cinza chapado**
+   — e é isso que fecha o segundo caso. O `??` do JSX cobre `imagem_url` nulo; a
+   URL que existe e **morre** não passa por ele, porque não é nula. Aconteceu de
+   verdade na conferência: um evento com `.../x_SOURCE` no banco, 403 na
+   Ticketmaster, e a capa virava um retângulo cinza — que é justamente o que a
+   arte de reserva veio eliminar. Dois caminhos diferentes, o mesmo desenho no
+   fim.
+
+   O caminho é absoluto (`/disco-rockhub.jpg`, servido do `public/`) e não passa
+   pelo empacotador — é a mesma URL que o `<img>` do JSX usa, e as duas apontam
+   para o arquivo único de `lib/arte.ts`.
 
    **A alternativa era um `onError`**, e ela custava `"use client"` na capa —
    ilha de cliente, hidratação e um `useState` na tela mais visitada do produto,
@@ -273,25 +330,26 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--breu2);
+  background: var(--breu2) url("/disco-rockhub.jpg") center / cover;
 }
 
-/* Vazado em `--brasa` como o `.selo` da fila, e sobre a arte. `background` é o
-   breu e não `transparent`: o selo cai em cima de uma foto qualquer, e um
-   contorno sem fundo ficaria ilegível justamente nas artes claras — que são a
-   maioria. `z-index` porque ele precisa ficar acima do degradê. */
-.seloDaArte {
-  position: absolute;
-  z-index: 2;
-  top: 16px;
-  left: 0;
-  padding: 6px 13px;
-  border: 1px solid var(--brasa);
-  background: var(--breu);
-  color: var(--brasa);
-  font: 700 10px/1 var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+/* ⚠️ **O `.seloDaArte` foi removido em 13/08/2026** (decisão do Igor). Ele era o
+   selo vazado no canto superior esquerdo da foto — o `.lead-selo` do protótipo —,
+   e tinha dois problemas que só apareceram com a tela montada: sobre uma arte de
+   contraste imprevisível, o contorno de 1px sumia nas fotos claras (o
+   `background: var(--breu)` estava lá justamente para remendar isso), e ele
+   ficava fora da coluna onde a pessoa lê o que o show é.
+
+   Agora ele é o mesmo `.selo` da fila — preenchido e chanfrado —, no topo da
+   coluna de texto, acima da data. Uma forma só de dizer "esgotado" no produto
+   inteiro, e a primeira coisa que se lê no bloco.
+
+   Esta classe ajusta só o que muda de contexto. `align-self` porque o
+   `.textoDaChamada` é um flex de coluna: sem ele o selo estica na largura toda e
+   deixa de ser um bloco de tinta do tamanho da palavra. */
+.seloDaChamada {
+  align-self: flex-start;
+  margin-bottom: 14px;
 }
 
 /* Centrado verticalmente contra a arte: com a coluna alinhada ao topo, a ficha
@@ -303,11 +361,11 @@
   justify-content: center;
 }
 
-/* Serifada 46px, `-0.03em` (DESIGN.md#Typography). É a maior tipografia do
+/* Serifada 50px, `-0.03em` (DESIGN.md#Typography). É a maior tipografia do
    produto, e é ela que diz qual é o próximo show antes de qualquer leitura. */
 .manchete {
   margin: 9px 0 16px;
-  font: 400 46px/1.02 var(--serif);
+  font: 400 50px/1.02 var(--serif);
   letter-spacing: -0.03em;
 }
 
@@ -323,14 +381,14 @@
 }
 
 .fichaRotulo {
-  font: 11px/1.7 var(--mono);
+  font: 13px/1.7 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .fichaValor {
-  font: 400 17px/1.3 var(--serif);
+  font: 400 19px/1.3 var(--serif);
   color: var(--cal);
 }
 
@@ -345,14 +403,14 @@
 .precoDaChamada span {
   display: block;
   margin-bottom: 6px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .precoDaChamada b {
-  font: 400 24px/1 var(--serif);
+  font: 400 26px/1 var(--serif);
 }
 
 /* Mesma anatomia do título de seção de "Meus eventos": fio embaixo, serifada
@@ -375,16 +433,33 @@
 }
 
 .secTitulo h1 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
 /* A frase de indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+/* ⚠️ **O filete `--brasa` entrou em 13/08/2026, e é o que separa falha de
+   ausência** (decisão do Igor, depois da varredura de superfícies de erro).
+   Até aqui `.aviso` e `.vazio` eram tipograficamente idênticos — serifada 21px
+   na cor do corpo —, e a distinção existia só no nome da classe. Em quatro telas
+   (`/ingressos`, `/organizador/eventos`, `/portaria`, `/organizador/publicar`) a
+   mesma classe servia às duas coisas, e "não foi possível carregar" ficava
+   indistinguível de "você ainda não comprou nada". Uma pede esperar; a outra não
+   pede nada.
+
+   **A tinta não é nova**: é o mesmo filete de 2px em `--brasa` das faixas de
+   `/reservas/{id}` (`.recusa`). O produto passa a ter uma marca só para "algo
+   falhou", e a ausência de marca passa a significar "nada quebrou".
+
+   Este comentário é a fonte; os outros nove `page.module.css` apontam para
+   ele. */
 .aviso {
+  border-left: 2px solid var(--brasa);
+  padding-left: 14px;
   max-width: 52ch;
   margin-top: 28px;
   padding: 0 12px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 /* Estado vazio: kicker, frase, fim. Sem ilustração e sem botão grande. */
@@ -395,7 +470,7 @@
 .frase {
   max-width: 46ch;
   margin-top: 12px;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 /* Um link de texto, e não um botão: "Ver toda a programação" é uma saída, não a
@@ -433,7 +508,7 @@
    e na última letra da fila. */
 .fila {
   display: grid;
-  grid-template-columns: 96px 1fr 210px 150px;
+  grid-template-columns: 108px 1fr 240px 172px;
   gap: 26px;
   align-items: baseline;
   padding: 26px 12px;
@@ -456,7 +531,7 @@
 .diaDaSemana,
 .mesEAno,
 .hora {
-  font: 11px/1.5 var(--mono);
+  font: 13px/1.5 var(--mono);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -464,7 +539,7 @@
 
 .dia {
   margin: 2px 0 3px;
-  font: 400 30px/0.95 var(--serif);
+  font: 400 33px/0.95 var(--serif);
   letter-spacing: -0.03em;
   color: var(--cal);
 }
@@ -478,12 +553,12 @@
 }
 
 .nome {
-  font: 400 27px/1.14 var(--serif);
+  font: 400 29px/1.14 var(--serif);
   letter-spacing: -0.022em;
 }
 
 .local {
-  font: 11px/1.75 var(--mono);
+  font: 13px/1.75 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -494,16 +569,31 @@
 }
 
 .preco b {
-  font: 400 21px/1 var(--serif);
+  font: 400 23px/1 var(--serif);
 }
 
 /* O rótulo **acima** do valor: "a partir de R$ 120,00" se lê como uma frase.
    O protótipo o punha embaixo, onde ele virava legenda de um número que já
    tinha sido apresentado como se fosse o preço. */
-.preco span {
+/* ⚠️ **Classe, e não `.preco span`** (13/08/2026). O seletor antigo era de
+   elemento e pegava qualquer `<span>` desta célula — e o outro ramo do ternário
+   que a preenche é o selo `Esgotado`, que também é um `<span>`. Como
+   `.preco span` tem especificidade maior que `.selo`, era **ele** quem pintava a
+   palavra dentro do bloco vermelho: em `--fumaca`, cinza sobre `--brasa`, com
+   contraste que não passa em lugar nenhum. O selo declarava `color: var(--breu)`
+   e nunca ganhava.
+
+   O sintoma sobreviveu ao selo vazado sem ninguém notar, porque lá o cinza caía
+   sobre o breu da página e passava por escolha. Foi o preenchimento que o
+   revelou.
+
+   **A correção é tirar o acidente, não empilhar especificidade em cima dele.**
+   `.preco .selo` também resolveria e deixaria a armadilha de pé para o próximo
+   `<span>` que entrar nesta célula. */
+.aPartirDe {
   display: block;
   margin-bottom: 6px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -523,15 +613,41 @@
   color: var(--fumaca);
 }
 
-/* Selo vazado, raio zero. Mono 700 versalete, como todo estado do sistema. */
+/* ⚠️ **Preenchido e chanfrado desde 13/08/2026** (decisão do Igor). Ele era
+   vazado — fio de 1px em `--brasa` e texto da mesma cor —, e numa fila de quatro
+   colunas o contorno fino sumia contra o cinza da linha esgotada. O selo é o
+   estado mais definitivo que a listagem comunica ("não adianta clicar"), e era o
+   elemento mais fraco dela.
+
+   **Mesma anatomia do `Botao` agora**: bloco de tinta cheia, texto no breu da
+   página, e o chanfro de 45° em dois cantos opostos. É de propósito que os dois
+   se pareçam — o produto passa a ter **uma** forma de bloco, e ela vale tanto
+   para a ação (neon) quanto para o estado (brasa). O que muda entre os dois é a
+   tinta, como já acontece entre `.botao` e `.destrutivo`.
+
+   ⚠️ **Sem registro de serigrafia aqui**, ao contrário do botão: o deslocamento
+   de 3px é o que dá **relevo de coisa clicável**, e este selo é justamente o
+   aviso de que não há nada para clicar. Copiá-lo por simetria diria a coisa
+   errada.
+
+   `--brasa` continua sendo a tinta, e a palavra continua escrita: a informação
+   não é dada só por cor (UX-DR9). */
 .selo {
   display: inline-block;
-  padding: 5px 10px;
-  border: 1px solid var(--brasa);
-  color: var(--brasa);
-  font: 700 10px/1 var(--mono);
+  padding: 8px 14px;
+  background: var(--brasa);
+  color: var(--breu);
+  font: 700 12px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
+  clip-path: polygon(
+    7px 0,
+    100% 0,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    0 100%,
+    0 7px
+  );
 }
 
 /* ---- abaixo de 900px: quatro colunas viram duas ------------------------- */
@@ -544,13 +660,13 @@
      lista para baixo da dobra numa tela onde ela já é curta. O que encolhe é o
      tipo do campo; o `min-width: 0` do `.campoBusca` é o que permite ao flex
      apertá-lo em vez de estourar a lateral. */
-  .barraBusca {
-    gap: 8px;
+  .filtros {
+    column-gap: 8px;
   }
 
   .campoBusca {
     padding: 12px 0;
-    font-size: 17px;
+    font-size: 19px;
   }
 
   /* Quem encolhe são o botão e o seletor, não o campo: o que a pessoa precisa
@@ -558,11 +674,11 @@
      empilhá-los empurraria a lista para baixo da dobra numa tela onde ela já é
      curta. */
   .botaoBusca {
-    width: 104px;
+    width: 118px;
   }
 
   .seletorCidade {
-    max-width: 116px;
+    max-width: 132px;
     padding: 8px 6px;
     letter-spacing: 0.08em;
   }
@@ -582,12 +698,12 @@
     padding: 22px 12px;
   }
 
-  /* Menor, mas ainda a maior da tela: aos 46px de largura cheia, um nome de
+  /* Menor, mas ainda a maior da tela: aos 50px de largura cheia, um nome de
      artista longo quebrava em três linhas e empurrava a ficha para baixo da
      dobra. */
   .manchete {
     margin: 8px 0 14px;
-    font-size: 34px;
+    font-size: 37px;
   }
 
   /* A ficha **quebra em linha** sem cortar nenhum valor — o `flex-wrap` já está
@@ -602,13 +718,13 @@
   }
 
   .precoDaChamada b {
-    font-size: 21px;
+    font-size: 23px;
   }
 
   /* 76px e não 68px: a coluna passou a carregar `AGO 2026`, que é a linha mais
      longa dela — com os 68px anteriores o ano quebrava para baixo do mês. */
   .fila {
-    grid-template-columns: 76px 1fr;
+    grid-template-columns: 86px 1fr;
     gap: 4px 18px;
     padding: 22px 12px;
   }
@@ -618,16 +734,16 @@
   }
 
   .dia {
-    font-size: 26px;
+    font-size: 28px;
   }
 
   .mesEAno {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.03em;
   }
 
   .nome {
-    font-size: 22px;
+    font-size: 24px;
   }
 
   .local {
@@ -641,7 +757,7 @@
     text-align: left;
   }
 
-  .preco span {
+  .aPartirDe {
     margin-bottom: 4px;
   }
 }

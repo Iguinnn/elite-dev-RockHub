@@ -152,9 +152,11 @@ export type ResultadoDoEvento =
  * Espelha o enum `PeriodoDaProgramacao` do backend (Story 3.2).
  *
  * As janelas são **corridas a partir de agora** — 7 e 30 dias —, e não a semana
- * e o mês do calendário: é por isso que os chips da tela dizem `7 DIAS` e
- * `30 DIAS`, e não "Esta semana" e "Este mês". O motivo inteiro está no
- * docstring do enum, do lado de lá.
+ * e o mês do calendário: é por isso que os chips da tela dizem `PRÓXIMOS 7 DIAS`
+ * e `PRÓXIMOS 30 DIAS`, e não "Esta semana" e "Este mês". A palavra `PRÓXIMOS` é
+ * quem diz que a janela é um intervalo e não um prazo — sem ela, `7 DIAS` se lê
+ * como "daqui a 7 dias". O motivo inteiro está no docstring do enum, do lado de
+ * lá.
  */
 export type PeriodoDaProgramacao = "todos" | "semana" | "mes";
 

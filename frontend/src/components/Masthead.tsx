@@ -37,31 +37,31 @@ export default async function Masthead() {
     <header className={estilos.masthead}>
       <div className={estilos.topo}>
         <Logotipo />
-      </div>
 
-      <nav className={estilos.navbar} aria-label="Navegação principal">
-        <NavLink href="/">Início</NavLink>
-        {/* `Meus eventos` entrou na 2.6, quando a tela dele passou a existir —
-            e vem **antes** de `Publicar evento`, porque acompanhar o que está
-            no ar é o que o organizador faz todo dia; publicar é eventual. */}
-        {usuario?.papel === "ORGANIZADOR" && (
-          <>
-            <NavLink href="/organizador/eventos">Meus eventos</NavLink>
-            <NavLink href="/organizador/publicar">Publicar evento</NavLink>
-          </>
-        )}
-        {/* Só para `CLIENTE`, e antes de `Minha conta`: acompanhar o que se
-            comprou é o que se faz depois de comprar, ao contrário dos dados
-            da conta, que se olha bem menos (Story 4.1). */}
-        {usuario?.papel === "CLIENTE" && (
-          <NavLink href="/ingressos">Meus ingressos</NavLink>
-        )}
-        {usuario ? (
-          <NavLink href="/conta">Minha conta</NavLink>
-        ) : (
-          <NavLink href="/login">Entrar</NavLink>
-        )}
-      </nav>
+        <nav className={estilos.navbar} aria-label="Navegação principal">
+          <NavLink href="/">Início</NavLink>
+          {/* `Meus eventos` entrou na 2.6, quando a tela dele passou a existir —
+              e vem **antes** de `Publicar evento`, porque acompanhar o que está
+              no ar é o que o organizador faz todo dia; publicar é eventual. */}
+          {usuario?.papel === "ORGANIZADOR" && (
+            <>
+              <NavLink href="/organizador/eventos">Meus eventos</NavLink>
+              <NavLink href="/organizador/publicar">Publicar evento</NavLink>
+            </>
+          )}
+          {/* Só para `CLIENTE`, e antes de `Minha conta`: acompanhar o que se
+              comprou é o que se faz depois de comprar, ao contrário dos dados
+              da conta, que se olha bem menos (Story 4.1). */}
+          {usuario?.papel === "CLIENTE" && (
+            <NavLink href="/ingressos">Meus ingressos</NavLink>
+          )}
+          {usuario ? (
+            <NavLink href="/conta">Minha conta</NavLink>
+          ) : (
+            <NavLink href="/login">Entrar</NavLink>
+          )}
+        </nav>
+      </div>
     </header>
   );
 }

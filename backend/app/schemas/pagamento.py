@@ -28,6 +28,7 @@ desconhecido **ignorado** é garantia mais forte que campo desconhecido recusado
 """
 
 import re
+from datetime import datetime, timezone
 from typing import Annotated, Self
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
@@ -41,9 +42,44 @@ from app.services.pagamento import MeioDePagamento
 # passaria ou reprovaria conforme quem digitou tivesse usado máscara.
 _NAO_DIGITO = re.compile(r"\D")
 
-# `MM/AA`, com mês entre 01 e 12. Não confere se a data já passou: cartão de
-# teste com validade vencida é exatamente o que alguém digita ao inventar dados.
+# `MM/AA`, com mês entre 01 e 12.
+#
+# ⚠️ **A validade vencida passou a ser recusada** (decisão do Igor, 2026-08-13),
+# e este comentário dizia o contrário: "não confere se a data já passou — cartão
+# de teste com validade vencida é exatamente o que alguém digita ao inventar
+# dados". A troca tem motivo concreto: cartão vencido aprovando a compra é das
+# primeiras coisas que quem avalia tenta, e um `12/20` que passa lê como um
+# checkout que não valida nada. O risco que o comentário antigo temia continua
+# tratado, mas na tela: a dica do formulário manda inventar o **número**, não a
+# data, e a máscara já impede o mês inválido.
 _FORMATO_DE_VALIDADE = re.compile(r"^(0[1-9]|1[0-2])/\d{2}$")
+
+
+# Até dezembro de 2040 (decisão do Igor). Cartão nenhum é emitido com 60 anos de
+# validade, e `12/90` passando é a mesma classe de coisa que `12/20` passando: um
+# campo que aceita qualquer coisa lê como campo que não valida nada.
+_ANO_MAXIMO_DA_VALIDADE = 2040
+
+
+def _alem_do_horizonte(validade: str) -> bool:
+    """Ano impresso além de `_ANO_MAXIMO_DA_VALIDADE`."""
+    _, ano = validade.split("/")
+    return 2000 + int(ano) > _ANO_MAXIMO_DA_VALIDADE
+
+
+def _esta_vencida(validade: str) -> bool:
+    """`MM/AA` já passou? O cartão vale até o **último dia** do mês impresso.
+
+    ⚠️ **A comparação é por `(ano, mês)`, nunca por data completa.** Um cartão
+    `08/26` vale durante agosto de 2026 inteiro, inclusive no dia 31 — comparar
+    contra a data de hoje o recusaria já no dia 2.
+
+    Dois dígitos viram `20AA`, que é a leitura de todo cartão impresso. O limite
+    dela é o ano 2099, e isso não é problema deste código.
+    """
+    mes, ano = validade.split("/")
+    agora = datetime.now(timezone.utc)
+    return (2000 + int(ano), int(mes)) < (agora.year, agora.month)
 
 
 # ⚠️ **Teto do valor BRUTO, e é por isso que ele mora aqui e não num
@@ -133,14 +169,29 @@ class PagamentoEntrada(BaseModel):
         if self.meio is not MeioDePagamento.CARTAO:
             return self
 
-        if not self.numero_cartao or not (13 <= len(self.numero_cartao) <= 19):
-            raise ValueError("numero_cartao: informe um cartão com 13 a 19 dígitos")
+        # ⚠️ **Teto de 16, e era 19** (decisão do Igor, 2026-08-13). Os 19 vinham
+        # do Maestro, mas a máscara da tela corta em 16 e um teto só na tela é
+        # cosmético: 19 dígitos por `curl` continuavam pagando. Amex tem 15 e
+        # continua cabendo; o que sai é o Maestro, que não existe no roteiro de
+        # avaliação.
+        if not self.numero_cartao or not (13 <= len(self.numero_cartao) <= 16):
+            raise ValueError("numero_cartao: informe um cartão com 13 a 16 dígitos")
 
         if not self.nome_no_cartao:
             raise ValueError("nome_no_cartao: informe o nome impresso no cartão")
 
         if not self.validade or not _FORMATO_DE_VALIDADE.match(self.validade):
             raise ValueError("validade: informe no formato MM/AA")
+
+        # Depois do formato, nunca antes: `_esta_vencida` faz `split("/")` e
+        # `int()`, e um valor que não passou pelo regex quebraria os dois.
+        if _esta_vencida(self.validade):
+            raise ValueError("validade: este cartão está vencido")
+
+        if _alem_do_horizonte(self.validade):
+            raise ValueError(
+                f"validade: o ano não pode passar de {_ANO_MAXIMO_DA_VALIDADE}"
+            )
 
         if not self.cvv or not (3 <= len(self.cvv) <= 4):
             raise ValueError("cvv: informe 3 ou 4 dígitos")

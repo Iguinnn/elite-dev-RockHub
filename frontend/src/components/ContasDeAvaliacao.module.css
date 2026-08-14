@@ -1,0 +1,154 @@
+/* Fio em cima separando do rodapé, e nada de caixa: o produto não tem card,
+   não tem raio e não tem sombra (DESIGN.md). O bloco é uma seção do documento,
+   não um painel. */
+
+.contas {
+  margin-top: 20px;
+  border-top: 1px solid var(--fio);
+  /* Herdada pelo `::details-content` abaixo: sem ela, `block-size: auto` não é
+     um destino interpolável e a transição não acontece. Fica aqui, e não no
+     `globals.css`, para não ligar interpolação de tamanho no produto inteiro
+     por causa de um bloco. */
+  interpolate-size: allow-keywords;
+}
+
+/* ⚠️ **A segunda animação do produto, e a decisão é do Igor** — a primeira é a
+   espera de 6s do checkout. O `EXPERIENCE.md` pede que o produto não anime; abrir
+   as contas de avaliação de uma vez leu como seco na tela, e a descida suave foi
+   pedida sabendo que abre exceção. Registrado aqui porque é onde quem mexer no
+   arquivo vai olhar.
+
+   **CSS puro, sem trocar o `<details>` por estado.** O nativo continua dando
+   teclado, leitor de tela e o `open` de graça. Onde o navegador não conhecer
+   `::details-content`, estas regras são descartadas inteiras e o bloco abre
+   instantaneamente como antes — nada quebra, só não anima.
+
+   `content-visibility` com `allow-discrete` é o que mantém o conteúdo visível
+   **durante** o fechamento; sem ele o navegador o esconde no primeiro quadro e a
+   transição de altura roda sobre o vazio. */
+@media (prefers-reduced-motion: no-preference) {
+  .contas::details-content {
+    block-size: 0;
+    opacity: 0;
+    overflow: hidden;
+    /* ⚠️ **A curva é o que separa "abre" de "desliza".** O `ease` do CSS é
+       quase reto no meio e freia de uma vez no fim — em bloco alto isso lê como
+       mecânico. Esta sai rápido e desacelera longamente até parar, que é o
+       movimento que o olho lê como natural.
+
+       A opacidade é mais curta que a altura de propósito: o conteúdo termina de
+       aparecer **antes** de a caixa parar de crescer, então o fim do movimento
+       é só a borda de baixo assentando, e não texto ainda surgindo. */
+    transition:
+      block-size 520ms cubic-bezier(0.32, 0.72, 0, 1),
+      opacity 340ms ease-out,
+      content-visibility 520ms allow-discrete;
+  }
+
+  .contas[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+
+  .seta {
+    transition: transform 520ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+/* `list-style: none` mais o `::-webkit-details-marker`: o triângulo padrão do
+   navegador é desenho de sistema operacional, e ele destoa de tudo. O nosso
+   está no SVG ao lado do texto. */
+.resumo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 14px 0;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+  cursor: pointer;
+  list-style: none;
+}
+
+.resumo::-webkit-details-marker {
+  display: none;
+}
+
+.resumo:hover {
+  color: var(--cal);
+}
+
+/* A rotação acompanha a descida no mesmo tempo — duas durações diferentes no
+   mesmo gesto se leem como defeito. Quem pediu menos movimento no sistema
+   operacional vê a seta virar de uma vez, pelo `prefers-reduced-motion` acima. */
+.seta {
+  flex: none;
+}
+
+.contas[open] .seta {
+  transform: rotate(90deg);
+}
+
+.senha {
+  margin: 0 0 18px;
+  font: 13px/1.6 var(--mono);
+  color: var(--fumaca);
+}
+
+.senha code {
+  color: var(--cal);
+}
+
+.grupo + .grupo {
+  margin-top: 18px;
+}
+
+.papel {
+  margin: 0 0 8px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.lista {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+/* Largura inteira e alinhado à esquerda: é uma linha de lista que responde ao
+   toque, não um botão de ação. O alvo de 44px é o piso do UX-DR6 — na fila da
+   avaliação isso é dedo em celular, igual à portaria. */
+.conta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conta:hover {
+  border-color: var(--fio);
+  background: var(--breu2);
+}
+
+/* Monoespaçada nas duas linhas, como o resto da tela de acesso — o
+   `Campo.module.css` já registra o porquê. O que separa nome de e-mail é corpo
+   e cor, não a família. */
+.nome {
+  font: 15px/1.3 var(--mono);
+  color: var(--cal);
+}
+
+.email {
+  font: 13px/1.3 var(--mono);
+  color: var(--fumaca);
+}

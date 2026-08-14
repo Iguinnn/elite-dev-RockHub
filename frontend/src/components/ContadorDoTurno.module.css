@@ -67,10 +67,10 @@
 }
 
 /* Mesma anatomia do `.kicker` global, um passo menor em corpo e em entreletra:
-   aqui são quatro etiquetas dividindo 420px, e os 10px com 0,22em do global
+   aqui são quatro etiquetas dividindo 420px, e os 12px com 0,22em do global
    estouram `INVÁLIDOS` na coluna de 96px. */
 .rotulo {
-  font: 600 9px/1 var(--mono);
+  font: 600 11px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -87,7 +87,7 @@
    acento único da ação primária: o contador competiria com o *Validar* logo
    abaixo, a única coisa desta tela que se toca. */
 .numero {
-  font: 700 22px/1 var(--mono);
+  font: 700 24px/1 var(--mono);
   letter-spacing: 0.02em;
   color: var(--fumaca);
 }

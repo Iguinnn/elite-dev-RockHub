@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import Botao from "@/components/Botao";
+import { ARTE_DE_RESERVA } from "@/lib/arte";
 import {
   centavosParaReais,
   dataDaChamada,
@@ -24,13 +25,20 @@ const CHIPS_DE_PERIODO: ReadonlyArray<{
   rotulo: string;
 }> = [
   { valor: "todos", rotulo: "Todos" },
-  // ⚠️ `7 DIAS` e `30 DIAS`, e não "Esta semana" e "Este mês" (decisão do
-  // Igor). As janelas são corridas a partir de agora: "esta semana" numa
-  // sexta-feira significaria dois dias, e o filtro pareceria quebrado
-  // justamente no dia em que mais gente procura show. O rótulo diz exatamente
-  // o que o filtro faz.
-  { valor: "semana", rotulo: "7 dias" },
-  { valor: "mes", rotulo: "30 dias" },
+  // ⚠️ `PRÓXIMOS 7 DIAS` e `PRÓXIMOS 30 DIAS`, e não "Esta semana" e "Este mês"
+  // (decisão do Igor). As janelas são corridas a partir de agora: "esta semana"
+  // numa sexta-feira significaria dois dias, e o filtro pareceria quebrado
+  // justamente no dia em que mais gente procura show.
+  //
+  // ⚠️ **O `PRÓXIMOS` entrou em 13/08/2026, e o rótulo era só `7 DIAS`.** Ele
+  // parecia dizer o que o filtro faz e não dizia: `7 DIAS` se lê tanto como
+  // "daqui a 7 dias" — um ponto no tempo — quanto como "nos próximos 7 dias",
+  // que é o que a consulta realmente faz (`data_hora < agora + 7 dias`, com o
+  // piso em `agora`). Quem escreveu o filtro leu do jeito certo; quem chegou na
+  // tela depois leu do jeito errado, e foi essa a pergunta que abriu a mudança.
+  // Uma palavra desfaz a ambiguidade sem tocar no backend.
+  { valor: "semana", rotulo: "Próximos 7 dias" },
+  { valor: "mes", rotulo: "Próximos 30 dias" },
 ];
 
 /**
@@ -176,122 +184,135 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
 
   return (
     <section className={estilos.pagina}>
-      {/* ⚠️ **A barra existe sempre**, inclusive quando a lista voltou vazia e
-          quando a API está fora. Sumir a busca quando a busca não achou nada
-          tira da pessoa a única ferramenta de corrigir o que ela digitou. */}
-      <form method="get" action="/" className={estilos.barraBusca}>
-        {/* Rótulo de verdade, visualmente escondido (UX-DR9). `placeholder`
-            não é rótulo: ele some quando se digita, e leitor de tela não é
-            obrigado a anunciá-lo. O `Campo` do projeto cumpre a mesma regra com
-            rótulo visível — aqui ele quebraria a faixa de uma linha só, então a
-            regra é cumprida pelo `<label>` escondido. */}
-        <label htmlFor="q" className={estilos.rotuloOculto}>
-          Buscar artista, casa de show ou cidade
-        </label>
-        <input
-          id="q"
-          name="q"
-          type="search"
-          className={estilos.campoBusca}
-          placeholder="Buscar artista, casa de show ou cidade"
-          defaultValue={termo}
-          // O mesmo teto do `Query(max_length=120)` da rota: sem ele, colar um
-          // texto longo devolve `422` e a tela acusa o backend por um erro do
-          // próprio formulário (Story 2.2).
-          maxLength={120}
-        />
+      {/* ⚠️ **O invólucro existe para o `<select>` e o `Buscar` poderem atravessar
+          as duas linhas** (decisão do Igor, 13/08/2026). O bloco de filtros é uma
+          faixa só entre dois fios — campo e chips em cima e embaixo, controles à
+          direita —, e os dois controles altos ficavam grudados no topo dela
+          enquanto os chips ficavam no pé. Como `<form>` e chips são irmãos, nada
+          em CSS os alinhava: o `.filtros` é a grade comum que faltava, e o form
+          vira `display: contents` para os campos dele participarem dela.
 
-        {/* ⚠️ **A cidade é um `<select>`, e o período é chip** — e a diferença
-            não é arbitrária. O período é um conjunto **fechado**: sempre serão
-            três opções, e chip é o elemento certo para isso. A cidade é um
-            conjunto **aberto**, que cresce com o catálogo: com duas cidades os
-            chips pareciam um filtro que não filtra, e com quinze seriam três
-            linhas de botões empurrando a programação para baixo da dobra. Uma
-            lista tem a mesma altura nos dois casos.
+          O form continua sendo o form — `display: contents` mexe na caixa, não na
+          árvore: `Buscar` segue submetendo o campo e a cidade juntos, sem uma
+          linha de JavaScript. */}
+      <div className={estilos.filtros}>
+        {/* ⚠️ **A barra existe sempre**, inclusive quando a lista voltou vazia e
+            quando a API está fora. Sumir a busca quando a busca não achou nada
+            tira da pessoa a única ferramenta de corrigir o que ela digitou. */}
+        <form method="get" action="/" className={estilos.barraBusca}>
+          {/* Rótulo de verdade, visualmente escondido (UX-DR9). `placeholder`
+              não é rótulo: ele some quando se digita, e leitor de tela não é
+              obrigado a anunciá-lo. O `Campo` do projeto cumpre a mesma regra com
+              rótulo visível — aqui ele quebraria a faixa de uma linha só, então a
+              regra é cumprida pelo `<label>` escondido. */}
+          <label htmlFor="q" className={estilos.rotuloOculto}>
+            Buscar artista, local ou cidade
+          </label>
+          <input
+            id="q"
+            name="q"
+            type="search"
+            className={estilos.campoBusca}
+            placeholder="Buscar artista, local ou cidade"
+            defaultValue={termo}
+            // O mesmo teto do `Query(max_length=120)` da rota: sem ele, colar um
+            // texto longo devolve `422` e a tela acusa o backend por um erro do
+            // próprio formulário (Story 2.2).
+            maxLength={120}
+          />
 
-            **E ele não custa uma linha de JavaScript**: está dentro do form
-            que já existe, então escolher a cidade e apertar `Buscar` submete os
-            dois juntos. O preço, que é real e é um só: a cidade deixou de
-            filtrar num clique. Um `onChange` com `useRouter().push()` devolveria
-            o clique único e transformaria a raiz numa ilha de cliente — que é a
-            decisão desta story ao contrário. */}
-        {cidades.length > 1 && (
-          <>
-            <label htmlFor="cidade" className={estilos.rotuloOculto}>
-              Filtrar por cidade
-            </label>
-            {/* ⚠️ **Marcado em neon quando há cidade escolhida** (code review
-                da Epic 3). O AC da Story 3.2 pede que o filtro ativo fique
-                marcado em neon; o chip de período cumpria e este controle não —
-                o neon dele só aparecia no `:hover`, então nada distinguia
-                "filtrando por São Paulo" de "todas as cidades" além do texto
-                dentro da caixa. A decisão registrada trocou o **elemento** (lista
-                em vez de chips, porque cidade é conjunto aberto); ela não
-                dispensou a marcação do estado. O UX-DR9 continua satisfeito
-                pelo próprio texto selecionado — o neon é reforço, não a única
-                pista. */}
-            <select
-              id="cidade"
-              name="cidade"
-              className={`${estilos.seletorCidade} ${
-                cidade ? estilos.seletorCidadeAtivo : ""
-              }`}
-              defaultValue={cidade}
+          {/* ⚠️ **A cidade é um `<select>`, e o período é chip** — e a diferença
+              não é arbitrária. O período é um conjunto **fechado**: sempre serão
+              três opções, e chip é o elemento certo para isso. A cidade é um
+              conjunto **aberto**, que cresce com o catálogo: com duas cidades os
+              chips pareciam um filtro que não filtra, e com quinze seriam três
+              linhas de botões empurrando a programação para baixo da dobra. Uma
+              lista tem a mesma altura nos dois casos.
+
+              **E ele não custa uma linha de JavaScript**: está dentro do form
+              que já existe, então escolher a cidade e apertar `Buscar` submete os
+              dois juntos. O preço, que é real e é um só: a cidade deixou de
+              filtrar num clique. Um `onChange` com `useRouter().push()` devolveria
+              o clique único e transformaria a raiz numa ilha de cliente — que é a
+              decisão desta story ao contrário. */}
+          {cidades.length > 1 && (
+            <>
+              <label htmlFor="cidade" className={estilos.rotuloOculto}>
+                Filtrar por cidade
+              </label>
+              {/* ⚠️ **Marcado em neon quando há cidade escolhida** (code review
+                  da Epic 3). O AC da Story 3.2 pede que o filtro ativo fique
+                  marcado em neon; o chip de período cumpria e este controle não —
+                  o neon dele só aparecia no `:hover`, então nada distinguia
+                  "filtrando por São Paulo" de "todas as cidades" além do texto
+                  dentro da caixa. A decisão registrada trocou o **elemento** (lista
+                  em vez de chips, porque cidade é conjunto aberto); ela não
+                  dispensou a marcação do estado. O UX-DR9 continua satisfeito
+                  pelo próprio texto selecionado — o neon é reforço, não a única
+                  pista. */}
+              <select
+                id="cidade"
+                name="cidade"
+                className={`${estilos.seletorCidade} ${
+                  cidade ? estilos.seletorCidadeAtivo : ""
+                }`}
+                defaultValue={cidade}
+              >
+                {/* `value=""` e não o nome de uma cidade: é o que apaga o filtro,
+                    e é o mesmo "sem filtro" que a rota limpa significa. */}
+                <option value="">Todas as cidades</option>
+                {cidades.map((nomeDaCidade) => (
+                  <option key={nomeDaCidade} value={nomeDaCidade}>
+                    {nomeDaCidade}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
+          {/* O período escolhido sobrevive à busca. Sem esta linha, buscar um
+              termo desligaria o filtro de tempo — e um teste de tela não pegaria
+              isso. A cidade não precisa de gêmeo **enquanto o `<select>` está na
+              tela**: ele já é um campo do form, e se submete sozinho. */}
+          {periodo !== "todos" && (
+            <input type="hidden" name="periodo" value={periodo} />
+          )}
+
+          {/* ⚠️ **E precisa de gêmeo quando o `<select>` NÃO está na tela** (code
+              review da Epic 3). Ele é renderizado sob `cidades.length > 1`, mas a
+              `?cidade=` da URL é aplicada sempre. Com o catálogo em uma cidade só
+              — ou com `GET /eventos/cidades` fora do ar, que devolve `[]` — a
+              lista saía filtrada por um controle invisível, e **buscar um termo
+              apagava a cidade em silêncio** enquanto clicar num chip de período a
+              preservava: dois caminhos da mesma barra discordando sobre o mesmo
+              parâmetro. */}
+          {cidades.length <= 1 && cidade && (
+            <input type="hidden" name="cidade" value={cidade} />
+          )}
+
+          {/* ⚠️ **O `Botao` precisa do invólucro de largura fixa.** Ele é
+              `width: 100%` desde a Story 1.4 (é a ação primária de formulário
+              empilhado), e solto num flex esse `100%` resolve contra a linha
+              inteira e espreme o campo a zero — a barra vira um botão gigante
+              sem lugar para digitar. É o mesmo `<div>` que
+              `organizador/publicar/page.tsx` usa, e pelo mesmo motivo. */}
+          <div className={estilos.botaoBusca}>
+            <Botao type="submit">Buscar</Botao>
+          </div>
+        </form>
+
+        <div className={estilos.grupos}>
+          <span className="kicker">Quando</span>
+          {CHIPS_DE_PERIODO.map((opcao) => (
+            <Chip
+              key={opcao.valor}
+              href={destino(opcao.valor)}
+              ativo={periodo === opcao.valor}
             >
-              {/* `value=""` e não o nome de uma cidade: é o que apaga o filtro,
-                  e é o mesmo "sem filtro" que a rota limpa significa. */}
-              <option value="">Todas as cidades</option>
-              {cidades.map((nomeDaCidade) => (
-                <option key={nomeDaCidade} value={nomeDaCidade}>
-                  {nomeDaCidade}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-
-        {/* O período escolhido sobrevive à busca. Sem esta linha, buscar um
-            termo desligaria o filtro de tempo — e um teste de tela não pegaria
-            isso. A cidade não precisa de gêmeo **enquanto o `<select>` está na
-            tela**: ele já é um campo do form, e se submete sozinho. */}
-        {periodo !== "todos" && (
-          <input type="hidden" name="periodo" value={periodo} />
-        )}
-
-        {/* ⚠️ **E precisa de gêmeo quando o `<select>` NÃO está na tela** (code
-            review da Epic 3). Ele é renderizado sob `cidades.length > 1`, mas a
-            `?cidade=` da URL é aplicada sempre. Com o catálogo em uma cidade só
-            — ou com `GET /eventos/cidades` fora do ar, que devolve `[]` — a
-            lista saía filtrada por um controle invisível, e **buscar um termo
-            apagava a cidade em silêncio** enquanto clicar num chip de período a
-            preservava: dois caminhos da mesma barra discordando sobre o mesmo
-            parâmetro. */}
-        {cidades.length <= 1 && cidade && (
-          <input type="hidden" name="cidade" value={cidade} />
-        )}
-
-        {/* ⚠️ **O `Botao` precisa do invólucro de largura fixa.** Ele é
-            `width: 100%` desde a Story 1.4 (é a ação primária de formulário
-            empilhado), e solto num flex esse `100%` resolve contra a linha
-            inteira e espreme o campo a zero — a barra vira um botão gigante
-            sem lugar para digitar. É o mesmo `<div>` que
-            `organizador/publicar/page.tsx` usa, e pelo mesmo motivo. */}
-        <div className={estilos.botaoBusca}>
-          <Botao type="submit">Buscar</Botao>
+              {opcao.rotulo}
+            </Chip>
+          ))}
         </div>
-      </form>
-
-      <div className={estilos.grupos}>
-        <span className="kicker">Quando</span>
-        {CHIPS_DE_PERIODO.map((opcao) => (
-          <Chip
-            key={opcao.valor}
-            href={destino(opcao.valor)}
-            ativo={periodo === opcao.valor}
-          >
-            {opcao.rotulo}
-          </Chip>
-        ))}
       </div>
 
       {/* A chamada principal: o bloco grande que faz a tela parecer jornal
@@ -417,9 +438,13 @@ function ChamadaPrincipal({
 }) {
   const conteudo = (
     <>
-      <div
-        className={`${estilos.arte} ${evento.imagem_url ? "" : estilos.arteVazia}`}
-      >
+      {/* ⚠️ **O `.arteVazia` saiu daqui em 13/08/2026, e com ele o caso nulo.**
+          Enquanto o evento sem arte era um bloco chapado, o degradê do
+          `.arte::after` precisava sumir — sombra sobre superfície lisa não tem
+          origem —, e por isso existia a classe. Agora o caso nulo é uma
+          imagem como qualquer outra: sempre há foto no quadro, sempre há
+          degradê, e o selo `Esgotado` assenta igual nos dois casos. */}
+      <div className={estilos.arte}>
         {/* ⚠️ **`<img>` comum, e não `next/image`.** Não existe
             `images.remotePatterns` no `next.config.ts`, e o componente do Next
             estoura **em tempo de execução** com host não declarado — em
@@ -437,22 +462,42 @@ function ChamadaPrincipal({
             `.imagemDaArte::after` do `page.module.css`, que cobre o ícone
             quebrado com o mesmo cinza do quadro vazio. É CSS puro de propósito:
             um `onError` obrigaria esta capa a virar ilha `"use client"`, com
-            hidratação e `useState`, na tela mais visitada do produto. */}
-        {evento.imagem_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={evento.imagem_url} alt="" className={estilos.imagemDaArte} />
-        )}
+            hidratação e `useState`, na tela mais visitada do produto.
 
-        {/* Sobre a arte, canto superior esquerdo — a anatomia do `.lead-selo`
-            do protótipo. A informação **não é dada só por cor** (UX-DR9): a
-            palavra está escrita, e o bloco não responde ao hover porque não é
-            link. */}
-        {evento.esgotado && (
-          <span className={estilos.seloDaArte}>Esgotado</span>
-        )}
+            O `??` cobre o evento que o catálogo mandou sem arte: o disco do
+            RockHub em 16/10, servido do `public/` (ver `lib/arte.ts`). O
+            `alt=""` vale para ele pelo mesmo motivo — decoração, e o nome do
+            show está ao lado. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={evento.imagem_url ?? ARTE_DE_RESERVA}
+          alt=""
+          className={estilos.imagemDaArte}
+        />
+
       </div>
 
       <div className={estilos.textoDaChamada}>
+        {/* ⚠️ **O selo saiu de cima da arte e subiu para o topo da coluna de
+            texto** (decisão do Igor, 13/08/2026). Ele era o `.lead-selo` do
+            protótipo — vazado, no canto superior esquerdo da foto —, e ali
+            disputava com a imagem: pequeno, sobre uma arte de contraste
+            imprevisível, e longe da coluna onde a pessoa está lendo o que o show
+            é. Aqui ele abre o bloco de texto, acima da data, e é a primeira
+            coisa lida.
+
+            **É o mesmo `.selo` da fila**, preenchido e chanfrado — e não uma
+            terceira variante: o produto passa a dizer "esgotado" de um jeito só,
+            na listagem e na capa.
+
+            A informação **não é dada só por cor** (UX-DR9): a palavra está
+            escrita, e o bloco não responde ao hover porque não é link. */}
+        {evento.esgotado && (
+          <span className={`${estilos.selo} ${estilos.seloDaChamada}`}>
+            Esgotado
+          </span>
+        )}
+
         {/* O dia da semana vem junto — `SEXTA, 15 DE AGOSTO DE 2026, 22H30`.
             Numa capa de show, "sexta" é a informação que situa antes do número,
             e é assim que o protótipo escreve. Não é a `dataPorExtenso`, que não
@@ -476,13 +521,20 @@ function ChamadaPrincipal({
           <h2 className={estilos.manchete}>{evento.nome}</h2>
         )}
 
-        {/* `CASA · CIDADE · SETORES` (decisão do Igor), e **nenhuma contagem de
+        {/* `LOCAL · CIDADE · SETORES` (decisão do Igor), e **nenhuma contagem de
             ingresso em lugar nenhum** (UX-DR7). `<dl>` porque é literalmente uma
             lista de pares rótulo/valor — o `<div>` do protótipo desenha igual e
-            não diz isso a quem usa leitor de tela. */}
+            não diz isso a quem usa leitor de tela.
+
+            ⚠️ **O rótulo era `CASA` até 13/08/2026** (decisão do Igor). "Casa de
+            show" é como quem trabalha com música chama o lugar, e é o vocabulário
+            do protótipo; "local" é o que quem compra ingresso entende sem
+            traduzir. A coluna do banco continua `local` — o rótulo da tela e o
+            nome do campo passam a dizer a mesma palavra, o que era uma pequena
+            dívida desde a Story 2.3. */}
         <dl className={estilos.ficha}>
           <div>
-            <dt className={estilos.fichaRotulo}>Casa</dt>
+            <dt className={estilos.fichaRotulo}>Local</dt>
             <dd className={estilos.fichaValor}>{evento.local}</dd>
           </div>
 
@@ -655,7 +707,13 @@ function Fila({ evento }: { evento: EventoNaProgramacao }) {
           // apresentado como se fosse o preço. Em cima, as duas linhas se leem
           // como uma frase só: "a partir de R$ 120,00".
           <>
-            <span>a partir de</span>
+            {/* ⚠️ **Classe própria, e não um `<span>` pelado.** O CSS o
+                estilizava por `.preco span`, e o seletor pegava **qualquer**
+                span desta célula — inclusive o selo `Esgotado` do outro ramo
+                deste mesmo ternário, que é um `<span>` também. Com
+                especificidade maior que a do `.selo`, era `.preco span` quem
+                decidia a cor da palavra dentro do bloco vermelho. */}
+            <span className={estilos.aPartirDe}>a partir de</span>
             <b>R$ {centavosParaReais(preco)}</b>
           </>
         )}

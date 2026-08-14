@@ -1,0 +1,190 @@
+/* O campo de data com calendário próprio (13/08/2026).
+
+   As três primeiras regras são cópia literal do `Campo.module.css` — mesmo
+   rótulo, mesma entrada, mesmo foco. Copiadas e não importadas porque CSS Module
+   não compõe entre arquivos sem `composes`, e `composes` amarraria este arquivo
+   à ordem de carga do outro. O dia em que a anatomia do campo mudar, muda nos
+   dois: é o mesmo custo que `Campo` e `Botao` já assumem, e está registrado no
+   README da raiz. */
+
+.campo {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.rotulo {
+  display: block;
+  margin-bottom: 7px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* A entrada e o botão dividem uma caixa só: a borda é do invólucro, e não de
+   cada um, para não haver dois fios encostados no meio do campo. */
+.linha {
+  display: flex;
+  align-items: stretch;
+  background: var(--breu2);
+  border: 1px solid var(--fio);
+}
+
+.linha:focus-within {
+  border-color: var(--neon);
+}
+
+.entrada {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--cal);
+  padding: 14px;
+  font: 18px/1 var(--mono);
+}
+
+/* ⚠️ **É esta regra que apaga o popup feio do navegador.** O indicador é o
+   ícone de calendário que o Chrome e o Edge desenham dentro do campo, e clicar
+   nele é o **único** caminho para o seletor nativo no desktop — o teclado abre
+   com Alt+Seta, que continua valendo e continua sendo nativo. Sem indicador, o
+   desktop passa a ter só o nosso botão.
+
+   ⚠️ **No celular isso não muda nada, e é de propósito**: lá o seletor nativo
+   abre ao **tocar o campo**, não no ícone, e nenhum CSS impede — nem se quer
+   impedir. O nativo do telefone é melhor que qualquer grade nossa. */
+.entrada::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+/* O foco continua visível: o `:focus-visible` global em `--neon` é do projeto
+   inteiro e não é desligado em lugar nenhum. Aqui só se acrescenta a borda da
+   caixa, como no `Campo`. */
+.abrir {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 48px de alvo, acima dos 44px de todo botão do produto (UX-DR9). */
+  width: 48px;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--fio);
+  color: var(--fumaca);
+  cursor: pointer;
+}
+
+.abrir:hover {
+  color: var(--neon);
+}
+
+/* Flutua sobre o conteúdo, ancorado no campo. Sem raio e sem sombra (UX-DR3):
+   quem desenha a caixa é um fio de 1px sobre a superfície elevada — a mesma
+   anatomia do `Toast`. O `z-index` fica acima da lista de setores ao lado. */
+.popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 6px;
+  padding: 12px;
+  background: var(--breu2);
+  border: 1px solid var(--fio2);
+}
+
+/* ---- a biblioteca, vestida de jornal noturno ---------------------------- */
+
+/* As variáveis do `react-day-picker` (v10) declaradas na nossa paleta. É o que
+   a biblioteca oferece para tematização, e por isso não há nenhum seletor
+   `.rdp-*` reescrito aqui: sobrescrever a folha dela por classe seria colar
+   este arquivo na estrutura interna de uma dependência, e a próxima versão
+   levaria a tela junto. */
+.popover :global(.rdp-root) {
+  --rdp-accent-color: var(--neon);
+  --rdp-accent-background-color: var(--breu);
+  --rdp-today-color: var(--neon);
+
+  /* Quadrado, não redondo: não existe uma borda arredondada no produto
+     inteiro. É a mudança que mais faz o calendário parecer nosso. */
+  --rdp-day_button-border-radius: 0;
+  --rdp-selected-border: 1px solid var(--neon);
+  --rdp-day_button-border: 1px solid transparent;
+
+  /* 44px de célula é o padrão da biblioteca e coincide com o alvo mínimo do
+     UX-DR9 — fica como está. */
+  --rdp-day-height: 40px;
+  --rdp-day-width: 40px;
+  --rdp-day_button-height: 40px;
+  --rdp-day_button-width: 40px;
+
+  --rdp-nav_button-disabled-opacity: 0.35;
+  --rdp-disabled-opacity: 0.3;
+  --rdp-weekday-opacity: 1;
+
+  /* ⚠️ **Sem animação** (`EXPERIENCE.md#Carregando`): o produto tem uma só, a
+     espera do checkout, e ela é exceção pedida e registrada. A troca de mês
+     aqui é instantânea. */
+  --rdp-animation_duration: 0s;
+
+  color: var(--cal);
+  font: 15px/1 var(--mono);
+}
+
+/* O mês em versalete mono, como todo kicker do sistema — a biblioteca escreve
+   "agosto de 2026" em caixa baixa e serifada do navegador. */
+.popover :global(.rdp-month_caption) {
+  font: 600 13px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cal);
+}
+
+/* As iniciais dos dias da semana: a mesma etiqueta em `--fumaca` das colunas de
+   setor. */
+.popover :global(.rdp-weekday) {
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+.popover :global(.rdp-day_button) {
+  font: 15px/1 var(--mono);
+  color: var(--cal);
+}
+
+.popover :global(.rdp-day_button:hover:not([disabled])) {
+  border-color: var(--fio2);
+  background: var(--breu);
+}
+
+/* O dia escolhido é o único bloco de neon da grade — acento único (UX-DR1). O
+   texto vira o fundo da aplicação para o contraste sobreviver ao rosa. */
+.popover :global(.rdp-selected .rdp-day_button) {
+  background: var(--neon);
+  color: var(--breu);
+}
+
+/* Hoje, quando não é o escolhido: só a cor do texto, sem bloco. */
+.popover :global(.rdp-today:not(.rdp-selected) .rdp-day_button) {
+  color: var(--neon);
+}
+
+.popover :global(.rdp-chevron) {
+  fill: var(--fumaca);
+}
+
+.popover :global(.rdp-button_next:hover .rdp-chevron),
+.popover :global(.rdp-button_previous:hover .rdp-chevron) {
+  fill: var(--neon);
+}
+
+@media (max-width: 560px) {
+  /* Ancorado à direita do campo em tela estreita: em `left: 0` o calendário
+     passa da borda da janela e leva a rolagem horizontal junto — que o AC14 da
+     publicação proíbe. */
+  .popover {
+    left: auto;
+    right: 0;
+  }
+}

@@ -28,16 +28,28 @@
 }
 
 .secTitulo h1 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
 /* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. Sem
    ilustração e sem botão grande. */
+/* Filete `--brasa` = falha; sem filete = ausência (13/08/2026). Esta classe
+   servia às duas coisas. A régua inteira está no `.aviso` do
+   `(site)/page.module.css`. */
 .aviso {
   max-width: 52ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* Estado vazio: frase, fim — e sem a marca de falha, porque nada falhou. */
+.vazio {
+  max-width: 52ch;
+  margin-top: 28px;
+  font: 21px/1.5 var(--serif);
 }
 
 .secao {
@@ -56,7 +68,7 @@
    de jornal. */
 .fila {
   display: grid;
-  grid-template-columns: 92px 1fr auto;
+  grid-template-columns: 104px 1fr auto;
   gap: 20px;
   align-items: center;
   padding: 16px 8px 16px 10px;
@@ -76,24 +88,24 @@
 }
 
 .diaMes {
-  font: 600 13px/1 var(--mono);
+  font: 600 15px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .ano {
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   color: var(--fumaca);
 }
 
 .nome {
-  font: 400 20px/1.2 var(--serif);
+  font: 400 22px/1.2 var(--serif);
 }
 
 .origem {
   margin-top: 5px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -110,11 +122,11 @@
 }
 
 .numeros {
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
 }
 
 .rotulo {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -122,8 +134,8 @@
 
 /* ---- o detalhe ---------------------------------------------------------- */
 
-/* O caminho de volta é **navegação**, não etiqueta: nasceu com os 10px dos
-   kickers e ficou pequeno demais para o que faz. Em 14px ele continua mono
+/* O caminho de volta é **navegação**, não etiqueta: nasceu com o corpo dos
+   kickers e ficou pequeno demais para o que faz. Em 16px ele continua mono
    versalete (UX-DR2) e passa a ter peso de link, com o `padding` garantindo
    alvo de toque confortável sem virar botão — que a identidade não usa aqui. */
 .voltar {
@@ -131,7 +143,7 @@
   margin-bottom: 26px;
   padding: 6px 0;
   color: var(--fumaca);
-  font: 600 14px/1.2 var(--mono);
+  font: 600 16px/1.2 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   text-decoration: none;
@@ -143,13 +155,13 @@
 
 .nomeDoEvento {
   margin-top: 12px;
-  font: 400 34px/1.12 var(--serif);
+  font: 400 37px/1.12 var(--serif);
   letter-spacing: -0.02em;
 }
 
 .linhaDoShow {
   margin-top: 10px;
-  font: 18px/1.5 var(--serif);
+  font: 20px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -166,7 +178,7 @@
    colunas de número na mesma largura para as casas se alinharem. */
 .linhaSetor {
   display: grid;
-  grid-template-columns: 1fr 160px 140px;
+  grid-template-columns: 1fr 182px 160px;
   gap: 12px;
   align-items: baseline;
   padding: 14px 0;
@@ -174,13 +186,13 @@
 }
 
 .nomeDoSetor {
-  font: 600 11px/1.5 var(--mono);
+  font: 600 13px/1.5 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .numero {
-  font: 14px/1.4 var(--mono);
+  font: 16px/1.4 var(--mono);
   text-align: right;
 }
 
@@ -194,11 +206,11 @@
 }
 
 .nomeDaConta {
-  font: 400 18px/1.2 var(--serif);
+  font: 400 20px/1.2 var(--serif);
 }
 
 .emailDaConta {
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -209,7 +221,7 @@
 .semNinguem {
   max-width: 52ch;
   margin-top: 14px;
-  font: 17px/1.5 var(--serif);
+  font: 19px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -236,7 +248,7 @@
   }
 
   .nomeDoEvento {
-    font-size: 27px;
+    font-size: 29px;
   }
 
   .linhaSetor {

@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 
-import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import SeletorDeData from "@/components/SeletorDeData";
+import SessaoExpirada from "@/components/SessaoExpirada";
+import Toast from "@/components/Toast";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
+import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { ItemDoCatalogo } from "@/lib/catalogo";
 // O que o `POST /organizador/eventos` devolve é o mesmo `EventoSaida` que o
@@ -23,8 +26,21 @@ import { centavosParaReais, dataPorExtenso, momentoDaPublicacao } from "@/lib/fo
 import type { ResultadoDasPortarias } from "@/lib/portarias";
 
 /**
- * Passos 2 e 3 da publicação: data, local e setores; e quem valida na porta —
- * mais a confirmação que toma o lugar dos dois quando dá certo.
+ * Passos 2 e 3 da publicação: data e setores; e quem valida na porta — mais a
+ * confirmação que toma o lugar dos dois quando dá certo.
+ *
+ * ⚠️ **A casa de show e a cidade deixaram de ser campos** (decisão do Igor,
+ * 13/08/2026). Eles nasceram editáveis para o caso da turnê que troca de cidade
+ * a cada data; a Ticketmaster resolve isso antes de nós, mandando **um evento
+ * por cidade** — três datas de uma turnê chegam como três itens do catálogo,
+ * cada um com o seu `venue`. Editar aqui só criava a chance de o evento
+ * publicado divergir do item que o originou, e o nome do show já carrega a casa.
+ * Agora os dois viajam escondidos, junto com `nome` e `imagem_url`, como o AD-1
+ * manda: dado do catálogo vira cópia no banco, não campo de formulário.
+ *
+ * A alternativa descartada foi deixá-los como `<input readOnly>`: campo que
+ * ninguém pode editar é campo que não deveria ser campo — é a mesma régua que o
+ * bloco da atração escolhida já seguia, e agora eles moram lá, como texto.
  *
  * **A primeira ilha `"use client"` fora das telas de acesso**, e ela existe
  * por um motivo que dá para apontar: `+ Adicionar setor` e o `×` de remover
@@ -55,6 +71,43 @@ type LinhaDeSetor = { chave: number; nome: string; capacidade: string; preco: st
 const MENSAGEM_GENERICA =
   "Não foi possível publicar o evento agora. Tente de novo em instantes.";
 
+/**
+ * A recusa da data no passado, **numa constante porque tem dois emissores**.
+ *
+ * Ela sai daqui tanto na checagem local, antes do envio, quanto na tradução do
+ * `EVENTO_NO_PASSADO` que o servidor devolve. As duas dizem a mesma coisa porque
+ * são a mesma regra — a do `services/evento.py`, `data_hora <= agora` —, e
+ * escrevê-la duas vezes seria deixar as duas frases divergirem no dia em que uma
+ * delas fosse ajustada.
+ */
+const DATA_NO_PASSADO = "A data do show já passou. Confira o dia e o horário.";
+
+/**
+ * ⚠️ **O que se grava quando nem o catálogo nem o organizador sabem a casa.**
+ *
+ * `ItemDoCatalogo.local` é anulável — a Discovery às vezes devolve um evento sem
+ * `_embedded.venues` —, e `EventoEntrada.local` é obrigatório (`min_length=1`).
+ * Enquanto a casa era um campo do formulário, um item sem `venue` era só um
+ * campo vazio para preencher; com o valor vindo do catálogo, ele viraria um
+ * `422` sobre um campo que a tela **não mostra e ninguém pode editar** — beco
+ * sem saída, e a única mensagem possível seria "confira os dados do
+ * formulário". É a mesma armadilha do nome com mais de 200 caracteres,
+ * encontrada no code review da Epic 2 (ver `schemas/catalogo.py`).
+ *
+ * A saída é a regra que vale também para a arte: **o formulário preenche
+ * buraco, nunca sobrescreve.** Faltando a casa, e só nesse caso, o campo
+ * reaparece — quem publica costuma saber onde o show é. Em branco, grava-se
+ * esta frase, que é uma pendência dita em português.
+ *
+ * A alternativa descartada foi tornar `local` anulável e deixar cada tela
+ * escrever a frase. É o modelo mais honesto — o banco diria "não sei" em vez de
+ * guardar texto de interface —, e custaria migração, `str | None` em sete
+ * schemas e a frase repetida em oito telas, com o risco de esquecer uma e
+ * imprimir um separador solto na ficha. Não paga, para um caso que o próprio
+ * catálogo quase nunca produz.
+ */
+const LOCAL_EM_CONFIRMACAO = "Local ainda em confirmação";
+
 /** Espelha `_MAXIMO_INT4` do `schemas/evento.py` — o tipo da coluna. */
 const MAXIMO_CAPACIDADE = 2_147_483_647;
 
@@ -77,7 +130,7 @@ function hojeEmSaoPaulo(): string {
 }
 
 /** Mesma convenção do login e do cadastro: o texto vem do `codigo`. */
-function mensagemParaCodigo(codigo: string): string {
+function mensagemParaCodigo(codigo: string): React.ReactNode {
   if (codigo === "EVENTO_SEM_SETOR") {
     return "Um evento precisa de ao menos um setor à venda.";
   }
@@ -94,33 +147,35 @@ function mensagemParaCodigo(codigo: string): string {
     return "Alguma das contas escaladas não está mais disponível. Recarregue a página e escale de novo.";
   }
   if (codigo === "EVENTO_NO_PASSADO") {
-    return "A data do show já passou. Confira o dia e o horário.";
+    // Ainda aqui, e não substituído pela checagem local: o relógio do navegador
+    // pode estar atrasado, e o do servidor é o que decide. Um minuto de
+    // diferença basta para a checagem daqui aprovar o que a de lá recusa.
+    return DATA_NO_PASSADO;
   }
   if (codigo === "DADOS_INVALIDOS") {
     return "Confira os dados do formulário.";
   }
   // ⚠️ Estes dois faltavam, e o buraco era grande: a sessão dura 8 horas
-  // (AD-15), esta tela é longa (catálogo → data e local → N setores → escala),
-  // e expirando o cookie no meio o `POST` voltava `401`. Sem entrada na tabela,
+  // (AD-15), esta tela é longa (catálogo → data → N setores → escala), e
+  // expirando o cookie no meio o `POST` voltava `401`. Sem entrada na tabela,
   // ele caía na mensagem genérica "tente de novo em instantes" — e tentar de
   // novo dava `401` outra vez, para sempre, com tudo digitado na tela e nenhum
   // caminho para o login. As guardas da `page.tsx` rodam na renderização, não
-  // no envio. O link do aviso é quem fecha a saída (ver `AvisoDeSessao`).
+  // no envio.
+  //
+  // ⚠️ **Era um sentinela local até 13/08/2026** — a string `"__sessao_expirada__"`,
+  // comparada no render para trocar o texto por JSX com `<Link>`. O truque existia
+  // porque esta função devolvia `string`; devolvendo `ReactNode`, o componente
+  // entra direto e o sentinela some. A varredura de superfícies de erro mostrou
+  // que outros **quatro** componentes tinham o mesmo `401` sem link nenhum, e
+  // era esse remendo local que impedia a correção de valer para todos.
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return SESSAO_EXPIRADA;
+    return (
+      <SessaoExpirada voltar="/organizador/publicar" acao="publicar o evento" />
+    );
   }
   return MENSAGEM_GENERICA;
 }
-
-/**
- * Marcador de "a sessão morreu", não um texto de tela.
- *
- * O aviso precisa de um `<Link>` dentro dele, e `mensagemParaCodigo` devolve
- * `string`. Comparar contra esta constante é o que deixa o componente decidir
- * entre renderizar texto puro e texto com link, sem transformar a tabela de
- * códigos numa fábrica de JSX.
- */
-const SESSAO_EXPIRADA = "__sessao_expirada__";
 
 /**
  * Reais digitados → centavos inteiros. `null` quando não dá para ter certeza.
@@ -159,7 +214,10 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     { chave: 0, nome: "", capacidade: "", preco: "" },
   ]);
   const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  // `ReactNode` e não `string` desde 13/08/2026: a mensagem de sessão expirada
+  // leva um `<Link>` dentro (ver `SessaoExpirada`). Foi a troca deste tipo que
+  // tornou o sentinela `__sessao_expirada__` desnecessário.
+  const [erro, setErro] = useState<React.ReactNode>(null);
   const [publicado, setPublicado] = useState<MeuEventoDetalhe | null>(null);
 
   // ⚠️ **A escala é um conjunto de ids, e a lista filtrada é só a vista.** Se a
@@ -227,8 +285,14 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     const dados = new FormData(evento.currentTarget);
     const data = String(dados.get("data") ?? "");
     const hora = String(dados.get("hora") ?? "");
-    const local = String(dados.get("local") ?? "").trim();
-    const cidade = String(dados.get("cidade") ?? "").trim();
+
+    // A casa vem do catálogo (ver o topo do arquivo). O `FormData` só é
+    // consultado no caso em que o campo existe — isto é, quando a Discovery não
+    // mandou `venue` —, e mesmo aí o vazio tem resposta: `LOCAL_EM_CONFIRMACAO`.
+    // `dados.get` devolveria `null` para um campo que não está no DOM, e o
+    // `String(null)` seria a string `"null"` gravada no banco.
+    const local =
+      item.local ?? (String(dados.get("local") ?? "").trim() || LOCAL_EM_CONFIRMACAO);
 
     // ⚠️ A junção não é estética. `new Date("2026-08-14")` — data sozinha — é
     // lida como **UTC** pela especificação; `new Date("2026-08-14T21:00")` —
@@ -238,6 +302,22 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     const instante = new Date(`${data}T${hora}`);
     if (Number.isNaN(instante.getTime())) {
       setErro("Confira a data e o horário do show.");
+      return;
+    }
+
+    // ⚠️ **O `min` do seletor de data não cobre a hora**, e é esse o buraco que
+    // esta linha fecha: às 22h ele aceita hoje, e "hoje às 21h" é um show que já
+    // aconteceu. Só o servidor barrava — e barrava depois de a pessoa ter
+    // preenchido setores e escalado a portaria.
+    //
+    // **A comparação é a mesma do `services/evento.py`** (`data_hora <= agora`),
+    // e é o mesmo instante nos dois lados: `new Date("…T…")` sem offset é lido
+    // como hora local, `toISOString()` o converte para UTC, e o servidor compara
+    // com `datetime.now(timezone.utc)`. Nenhum dos dois depende do fuso de quem
+    // publica — ao contrário do `min` do seletor, que é de São Paulo de
+    // propósito (ver `hojeEmSaoPaulo`).
+    if (instante <= new Date()) {
+      setErro(DATA_NO_PASSADO);
       return;
     }
 
@@ -286,16 +366,18 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
       const criado = await chamarApi<MeuEventoDetalhe>("/organizador/eventos", {
         method: "POST",
         body: JSON.stringify({
-          // Os três campos do catálogo viajam escondidos: o organizador não os
-          // digitou e não pode editá-los (AD-1).
+          // **Cinco** campos do catálogo viajam escondidos desde 13/08/2026: o
+          // organizador não digitou nenhum deles e não pode editá-los (AD-1).
+          // `local` e `cidade` eram os dois últimos que ele preenchia à mão.
           origem_externa_id: item.id_externo,
           nome: item.nome,
           imagem_url: item.imagem_url,
           data_hora: instante.toISOString(),
           local,
-          // Vazio vira `null`: a coluna é anulável, e `""` seria um segundo
-          // jeito de dizer a mesma coisa.
-          cidade: cidade || null,
+          // Já chega `null` do catálogo quando a Discovery não manda a cidade —
+          // a coluna é anulável, e não há campo de texto para produzir o `""`
+          // que esta linha antes precisava normalizar.
+          cidade: item.cidade,
           setores: setoresConvertidos,
           portaria_ids: [...escalados],
         }),
@@ -375,18 +457,50 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
   }
 
   return (
-    <form onSubmit={aoEnviar} className={estilos.formulario}>
+    /* ⚠️ **`noValidate`, e é ele que fecha a padronização** (decisão do Igor,
+       13/08/2026). Sem ele, esta tela recusava por **dois lugares diferentes**:
+       capacidade `0` estourava o balão do navegador grudado no campo, e data no
+       passado subia um toast no canto oposto da janela — mesma classe de
+       problema, "um campo está preenchido errado", em dois cantos da tela. Qual
+       dos dois aparecia dependia de a regra caber ou não num atributo HTML, que
+       é um detalhe de implementação e não algo que quem publica possa prever.
+
+       Com `noValidate`, o navegador para de validar e **tudo** passa pelas
+       checagens de `aoEnviar`, que já cobriam o mesmo terreno: campo vazio,
+       capacidade fora da faixa, preço fora de formato, data inválida e data no
+       passado. Um lugar só, e é o toast.
+
+       ⚠️ **O que `noValidate` NÃO desliga, e por isso os atributos ficam:**
+       `maxLength` continua impedindo a digitação além do limite (é restrição de
+       entrada, não validação de envio), `min`/`max`/`step` continuam controlando
+       as setinhas do campo numérico, `type="date"` continua com a máscara e o
+       calendário, e o `min` do seletor continua apagando os dias passados. O que
+       sai de cena é só o balão de recusa no envio. */
+    <form onSubmit={aoEnviar} className={estilos.formulario} noValidate>
       {/* Travado, e **não** é `<input readOnly>`: campo que ninguém pode
           editar é campo que não deveria ser campo. É texto. */}
       <div className={estilos.atracao}>
-        {item.imagem_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.imagem_url} alt="" className={estilos.miniatura} />
-        ) : (
-          <div className={estilos.miniatura} />
-        )}
+        {/* Mesma miniatura quadrada do passo 1, com a mesma arte de reserva
+            quando o catálogo não trouxe foto (ver `lib/arte.ts`). */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.imagem_url ?? ARTE_DE_RESERVA_QUADRADA}
+          alt=""
+          className={estilos.miniatura}
+        />
         <div>
           <h3 className={estilos.nome}>{item.nome}</h3>
+          {/* A casa e a cidade, que até 13/08/2026 eram dois campos do passo 2.
+              Aqui elas mudam de papel: não são mais procedência, são **o que
+              vai ser publicado** — daí a serifada, e não o mono da linha de
+              origem logo abaixo. Faltando a casa, o que aparece é a falta, dita
+              antes de a pessoa preencher setor nenhum; o campo para resolvê-la
+              abre logo abaixo, na coluna da data. */}
+          <div className={item.local ? estilos.ondeAcontece : estilos.semLocal}>
+            {item.local
+              ? [item.local, item.cidade].filter(Boolean).join(" · ")
+              : "O catálogo da Ticketmaster não trouxe o local do show."}
+          </div>
           <div className={estilos.origem}>Ticketmaster · {item.id_externo}</div>
         </div>
       </div>
@@ -397,34 +511,46 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             {/* `min` em hoje: a API recusa show no passado com
                 `EVENTO_NO_PASSADO`, e o seletor de data avisa antes da ida à
                 rede. Como não existe tela de editar evento, errar a data é
-                permanente — vale as duas barreiras. */}
-            <Campo
+                permanente — vale as duas barreiras.
+
+                ⚠️ **Não é o `Campo`, e é o único campo do projeto que não é**
+                (13/08/2026). O popup do `<input type="date">` é desenhado pelo
+                navegador e não aceita CSS nenhum — o azul do Chrome no meio de
+                um produto de acento rosa. O `SeletorDeData` mantém o mesmo
+                `<input>` por baixo (digitar continua funcionando, e o
+                `dados.get("data")` do envio não soube de nada) e troca só o
+                popup. O motivo inteiro está no topo dele. */}
+            <SeletorDeData
               id="data"
               name="data"
               rotulo="Data"
-              type="date"
-              min={hojeEmSaoPaulo()}
-              required
+              minimo={hojeEmSaoPaulo()}
+              obrigatorio
             />
             <Campo id="hora" name="hora" rotulo="Horário" type="time" required />
           </div>
-          <Campo
-            id="local"
-            name="local"
-            rotulo="Casa de show"
-            type="text"
-            maxLength={200}
-            defaultValue={item.local ?? ""}
-            required
-          />
-          <Campo
-            id="cidade"
-            name="cidade"
-            rotulo="Cidade"
-            type="text"
-            maxLength={120}
-            defaultValue={item.cidade ?? ""}
-          />
+          {/* A data continua sendo digitada, e ela **não** seguiu a casa e a
+              cidade para o bloco de cima. A Discovery manda `dates.start` de
+              cada evento, mas quem publica aqui está anunciando a própria data
+              de venda — e, ao contrário do local, ela não é o que identifica o
+              show no catálogo. */}
+
+          {/* ⚠️ **O campo só existe quando o catálogo não trouxe a casa**, e é
+              essa condição que separa "preencher buraco" de "editar o
+              catálogo". Ele não é `required`: em branco grava
+              `LOCAL_EM_CONFIRMACAO`, e é o `placeholder` que mostra isso antes
+              de a pessoa decidir. Um `required` transformaria uma falha do
+              fornecedor em trabalho obrigatório de quem publica. */}
+          {!item.local && (
+            <Campo
+              id="local"
+              name="local"
+              rotulo="Local do show"
+              type="text"
+              maxLength={200}
+              placeholder={LOCAL_EM_CONFIRMACAO}
+            />
+          )}
         </div>
 
         <div>
@@ -525,7 +651,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
               + Adicionar setor
             </button>
           ) : (
-            <p className={estilos.aviso}>
+            <p className={estilos.vazio}>
               São até {MAXIMO_SETORES} setores por evento.
             </p>
           )}
@@ -549,11 +675,21 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         </p>
 
         {contas.length === 0 ? (
-          // Estado vazio (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração e
-          // sem botão grande. Vale para os dois casos — não há conta de
-          // portaria nenhuma, ou a lista não pôde ser carregada —, e o
-          // formulário continua de pé nos dois.
-          <p className={estilos.aviso}>
+          // Frase, fim (EXPERIENCE.md#Vazio): sem ilustração e sem botão grande.
+          // O formulário continua de pé nos três casos.
+          //
+          // ⚠️ **A classe é escolhida pelo estado desde 13/08/2026.** Os três
+          // textos moravam no mesmo `.aviso`, e o comentário aqui dizia "vale
+          // para os dois casos" como se fossem equivalentes: não são. Sessão
+          // expirada e lista fora do ar são **falhas** — algo quebrou e há o que
+          // fazer. "Não há nenhuma conta de portaria cadastrada" é **ausência**:
+          // nada falhou, o banco está assim. Só as duas primeiras levam o filete
+          // `--brasa`.
+          <p
+            className={
+              portarias.estado === "ok" ? estilos.vazio : estilos.aviso
+            }
+          >
             {portarias.estado === "sem-sessao" ? (
               <>
                 Sua sessão expirou, e por isso a lista de portarias não carregou.{" "}
@@ -591,7 +727,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             </div>
 
             {contasVisiveis.length === 0 ? (
-              <p className={estilos.aviso}>
+              <p className={estilos.vazio}>
                 Nenhuma conta de portaria com esse nome.
               </p>
             ) : (
@@ -625,31 +761,34 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         )}
       </div>
 
-      {/* O único aviso com link: sem ele, sessão expirada no meio do
-          preenchimento não tinha saída nenhuma. `target="_blank"` porque sair
-          desta página descartaria o formulário inteiro — a pessoa entra na
-          outra aba e volta para clicar em Publicar com tudo ainda preenchido. */}
-      <AvisoDeErro
-        mensagem={
-          erro === SESSAO_EXPIRADA ? (
-            <>
-              Sua sessão expirou.{" "}
-              <Link href="/login?voltar=%2Forganizador%2Fpublicar" target="_blank">
-                Entre de novo
-              </Link>{" "}
-              e clique em Publicar outra vez — o que você preencheu continua aqui.
-            </>
-          ) : (
-            erro
-          )
-        }
-      />
+      {/* ⚠️ **Toast, e não mais a faixa `AvisoDeErro` acima do botão** (decisão
+          do Igor, 13/08/2026). A tela é longa — catálogo, data, N setores, lista
+          de portarias — e a faixa ficava presa no rodapé do formulário: quem
+          clicava em Publicar depois de rolar até a lista de portarias podia não
+          ver a recusa que o próprio clique gerou. Flutuando, o aviso não depende
+          de onde a página parou.
+
+          **Uma superfície só para a tela inteira**, e é isso que a decisão
+          resolve: com a faixa para uns erros e o toast para outros, qual dos
+          dois aparece dependeria de qual campo está errado — que é justamente o
+          que quem publicou não sabe ainda.
+
+          `posicao` fica no padrão (`"base"`): aqui não há rodapé `sticky`, ao
+          contrário da página do evento.
+
+          ⚠️ **O `mensagem` voltou a ser só `{erro}`** (13/08/2026). Havia um
+          ternário aqui comparando o estado contra o sentinela `SESSAO_EXPIRADA`
+          para injetar o JSX com `<Link>`; com o `SessaoExpirada` extraído, quem
+          monta o aviso é a tabela de códigos, e este ponto volta a não saber de
+          caso nenhum — que é o que ele deve saber. */}
+      <Toast mensagem={erro} aoFechar={() => setErro(null)} />
 
       <div className={estilos.rodape}>
-        {/* Nada gira e nada pulsa enquanto envia: o botão fica `disabled`, e é
-            só isso (EXPERIENCE.md#Carregando). */}
+        {/* Nada gira e nada pulsa enquanto envia (EXPERIENCE.md#Carregando) — o
+            que muda é a palavra, e palavra não é animação. A régua está no
+            `FormularioLogin`. */}
         <Botao type="submit" disabled={enviando}>
-          Publicar evento
+          {enviando ? "Publicando…" : "Publicar evento"}
         </Botao>
       </div>
     </form>

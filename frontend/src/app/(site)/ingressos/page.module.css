@@ -19,15 +19,31 @@
 }
 
 .secTitulo h1 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
-/* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+/* ⚠️ **Eram a mesma classe até 13/08/2026** — o comentário aqui dizia, com todas
+   as letras, "estado vazio e estado indisponível". As duas frases saíam iguais, e
+   "não foi possível carregar seus ingressos" ficava indistinguível de "você ainda
+   não comprou nenhum ingresso": uma pede esperar, a outra não pede nada.
+
+   Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
+   `.aviso` do `(site)/page.module.css`. */
 .aviso {
   max-width: 52ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* Estado vazio (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração, sem botão
+   grande e — desde 13/08/2026 — sem a marca de falha. */
+.vazio {
+  max-width: 52ch;
+  margin-top: 28px;
+  font: 21px/1.5 var(--serif);
 }
 
 .secao {
@@ -46,7 +62,7 @@
    estado — uma a mais que a fila do organizador. */
 .fila {
   display: grid;
-  grid-template-columns: 92px 1fr 100px 150px;
+  grid-template-columns: 104px 1fr 114px 172px;
   gap: 20px;
   align-items: center;
   padding: 16px 8px 16px 10px;
@@ -72,24 +88,24 @@
 }
 
 .diaMes {
-  font: 600 13px/1 var(--mono);
+  font: 600 15px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .ano {
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   color: var(--fumaca);
 }
 
 .nome {
-  font: 400 20px/1.2 var(--serif);
+  font: 400 22px/1.2 var(--serif);
 }
 
 .origem {
   margin-top: 5px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -98,7 +114,7 @@
 /* Identificação visual, não dado de uso (techspec da 4.1) — os 8 primeiros
    caracteres do `id`, nunca o `codigo` assinado. */
 .prefixo {
-  font: 13px/1 var(--mono);
+  font: 15px/1 var(--mono);
   letter-spacing: 0.06em;
   color: var(--fumaca);
 }
@@ -108,14 +124,14 @@
 }
 
 .ativo {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .hora {
-  font: 13px/1 var(--mono);
+  font: 15px/1 var(--mono);
   letter-spacing: 0.04em;
   color: var(--fumaca);
 }

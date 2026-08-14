@@ -12,23 +12,30 @@
 .area {
   position: fixed;
   right: 18px;
-  /* ⚠️ **Acima do rodapé fixo da página do evento, e não colado na base.** O
-     rodapé é `position: sticky; bottom: 0` e tem ~88px de altura com o botão
-     dentro; um toast em `bottom: 18px` cairia exatamente sobre o total e o
-     `Reservar e pagar` — ou seja, sobre a ação que a própria mensagem está
-     pedindo para refazer. O valor acompanha aquele rodapé porque ele é o único
-     consumidor deste componente hoje; quando houver um segundo, isto vira prop.
-     A média-query lá embaixo cuida do rodapé empilhado do celular. */
-  bottom: 104px;
+  /* O padrão: colado no pé da janela, que é onde um aviso flutuante mora quando
+     não há nada fixo embaixo dele. É o caso do formulário de publicar. */
+  bottom: 18px;
   z-index: 10;
   pointer-events: none;
+}
+
+/* ⚠️ **Acima do rodapé fixo da página do evento.** O rodapé é `position: sticky;
+   bottom: 0` e tem ~88px de altura com o botão dentro; um toast em `bottom: 18px`
+   cairia exatamente sobre o total e o `Reservar e pagar` — ou seja, sobre a ação
+   que a própria mensagem está pedindo para refazer.
+
+   Era o valor único do `.area` até 13/08/2026, quando o formulário de publicar
+   virou o segundo consumidor do componente e passou a precisar do pé da janela.
+   A média-query lá embaixo cuida do rodapé empilhado do celular. */
+.acimaDoRodape {
+  bottom: 104px;
 }
 
 .toast {
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  max-width: 360px;
+  max-width: 400px;
   padding: 16px 18px;
   border: 1px solid var(--brasa);
   background: var(--breu2);
@@ -43,7 +50,7 @@
 .texto {
   margin: 0;
   color: var(--cal);
-  font: 11px/1.7 var(--mono);
+  font: 13px/1.7 var(--mono);
 }
 
 /* O `<strong>` da primeira frase ("Esgotou enquanto você decidia") é o que
@@ -67,7 +74,7 @@
   border: none;
   color: var(--fumaca);
   cursor: pointer;
-  font: 18px/1 var(--mono);
+  font: 20px/1 var(--mono);
 }
 
 .fechar:hover {
@@ -75,12 +82,17 @@
 }
 
 @media (max-width: 900px) {
-  /* No celular o rodapé empilha (resumo e total numa linha, botão em outra) e
-     passa de ~88px para ~150px. E o toast vira largura cheia: 360px numa tela de
-     360 encostaria nas duas bordas. */
+  /* O toast vira largura cheia: 360px numa tela de 360 encostaria nas duas
+     bordas. */
   .area {
     right: 12px;
     left: 12px;
+    bottom: 12px;
+  }
+
+  /* No celular o rodapé da página do evento empilha (resumo e total numa linha,
+     botão em outra) e passa de ~88px para ~150px. */
+  .acimaDoRodape {
     bottom: 168px;
   }
 

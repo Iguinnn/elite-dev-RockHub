@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Confirmacao from "@/components/Confirmacao";
+import SessaoExpirada from "@/components/SessaoExpirada";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { IngressoDetalhe } from "@/lib/ingressos";
 
@@ -91,7 +92,13 @@ export default function CompartilharIngresso({
     } catch (erroCapturado) {
       // `instanceof` antes de ler `.codigo`: erro de rede não tem código.
       if (erroCapturado instanceof ErroDaApi) {
-        setErro(mensagemParaCodigo(erroCapturado.codigo, MENSAGEM_DE_GERACAO));
+        setErro(
+          mensagemParaCodigo(
+            erroCapturado.codigo,
+            MENSAGEM_DE_GERACAO,
+            ingresso.id,
+          ),
+        );
       } else {
         setErro(MENSAGEM_DE_GERACAO);
       }
@@ -130,7 +137,13 @@ export default function CompartilharIngresso({
       router.refresh();
     } catch (erroCapturado) {
       if (erroCapturado instanceof ErroDaApi) {
-        setErro(mensagemParaCodigo(erroCapturado.codigo, MENSAGEM_DE_REVOGACAO));
+        setErro(
+          mensagemParaCodigo(
+            erroCapturado.codigo,
+            MENSAGEM_DE_REVOGACAO,
+            ingresso.id,
+          ),
+        );
       } else {
         setErro(MENSAGEM_DE_REVOGACAO);
       }
@@ -265,12 +278,19 @@ const MENSAGEM_DE_REVOGACAO =
  * tela aberta — sem estas duas entradas, o `401` cairia na frase genérica
  * "tente de novo em instantes", e tentar de novo daria `401` outra vez.
  */
-function mensagemParaCodigo(codigo: string, generica: string): string {
+function mensagemParaCodigo(
+  codigo: string,
+  generica: string,
+  ingressoId: string,
+): React.ReactNode {
   if (codigo === "INGRESSO_NAO_ENCONTRADO") {
     return "Esse ingresso não está mais disponível. Recarregue a página.";
   }
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return "Sua sessão expirou. Entre de novo para continuar.";
+    // ⚠️ **Com o caminho de volta desde 13/08/2026** — ver `SessaoExpirada`.
+    return (
+      <SessaoExpirada voltar={`/ingressos/${ingressoId}`} acao="continuar" />
+    );
   }
   return generica;
 }

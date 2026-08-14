@@ -28,7 +28,7 @@ cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
 uv run alembic upgrade head               # cria o schema (tabela usuario)
-uv run python -m seeds.semear             # as 5 contas de avaliação — rodar de novo é seguro
+uv run python -m seeds.semear             # as 6 contas de avaliação — rodar de novo é seguro
 uv run uvicorn app.main:app --reload      # sobe em http://127.0.0.1:8000
 uv run pytest                             # roda os testes — exige o Compose no ar (ver Testes)
 ```
@@ -264,7 +264,7 @@ backend/
     versions/         # 5: usuario · evento+setor · evento_portaria · a extensão unaccent,
                       #    a única que não cria tabela (Story 3.2) · reserva+item_reserva (3.5)
   seeds/              # dados exigidos pelo desafio — não sobe com o uvicorn
-    semear.py          # as cinco contas de avaliação; idempotente, nunca apaga nada
+    semear.py          # as seis contas de avaliação; idempotente, nunca apaga nada
   tests/              # espelha a estrutura de app/
     conftest.py        # fixtures de banco + o TestClient ligado a elas
     test_evento.py     # invariantes de evento e setor que o banco garante

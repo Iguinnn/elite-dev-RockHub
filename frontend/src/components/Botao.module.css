@@ -1,14 +1,53 @@
 /* Vindo do FormularioLogin.module.css da Story 1.4.
    [Fonte: DESIGN.md#Components (botao)] */
 
+/* ⚠️ **O chanfro e o registro de serigrafia entraram em 13/08/2026** (decisão do
+   Igor). O botão era um retângulo neon chapado — correto pelo DESIGN.md e sem
+   forma própria nenhuma. Os dois tratamentos vêm da mesma metáfora que o
+   `globals.css` já declara na primeira linha da paleta: "duas tintas, como
+   pôster de show serigrafado".
+
+   **O chanfro é o oposto de um raio**, e por isso não briga com o UX-DR3: o
+   canto continua reto e anguloso, só que cortado a 45°. Dois cantos opostos, e
+   não os quatro — quatro viram um losango e o bloco perde a leitura de bloco.
+
+   ⚠️ **O registro dobra o UX-DR3, e isso foi escolha declarada.** Um segundo
+   bloco 3px deslocado é, tecnicamente, uma sombra — o que a regra proíbe. O que
+   ela proíbe de verdade é a sombra **difusa**, a que finge profundidade e vira
+   card; esta tem desfoque zero e é chapada, e o que ela imita é o erro de
+   registro de duas tintas numa impressão. Fica registrado aqui porque é o único
+   lugar do produto onde a regra é dobrada de propósito.
+
+   ⚠️ **`drop-shadow` e não `box-shadow`, e a escolha é técnica, não estética.**
+   `box-shadow` desenha o retângulo da caixa — ele ignoraria o chanfro e
+   apareceria um triângulo sobrando em cada canto cortado. Pior: `clip-path`
+   **recorta o `box-shadow` junto**, então ele nem chegaria à tela. `filter`
+   aplica depois do recorte e segue a silhueta já cortada. */
 .botao {
   width: 100%;
   background: var(--neon);
   color: var(--breu);
   padding: 18px;
-  font: 700 12px/1 var(--mono);
+  font: 700 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
+
+  /* Canto superior esquerdo e inferior direito. 9px é o corte que se lê num
+     botão de 48px sem comer a primeira letra do rótulo. */
+  clip-path: polygon(
+    9px 0,
+    100% 0,
+    100% calc(100% - 9px),
+    calc(100% - 9px) 100%,
+    0 100%,
+    0 9px
+  );
+
+  /* Numa variável porque **todo estado precisa repeti-la**: `filter` é uma
+     propriedade só, e o `brightness` do hover a substituiria inteira, apagando o
+     registro no exato momento em que o cursor está em cima. */
+  --registro: drop-shadow(3px 3px 0 var(--fio2));
+  filter: var(--registro);
   /* ⚠️ **`border: none` não é redundância — sem ele o botão ganha uma borda
      clara em volta.** Não existe reset de `<button>` no `globals.css`: o `*`
      cuida de `box-sizing`, `margin` e `padding`, e o resto fica com o padrão do
@@ -32,13 +71,33 @@
    fundo neon no hover; este já **é** neon, e inverter o apagaria contra o breu
    da página. O brilho diz "aceso" sem inventar token. */
 .botao:hover:not(:disabled) {
-  filter: brightness(1.12);
+  filter: var(--registro) brightness(1.12);
 }
 
-/* O afundar do clique. Sem `transform` e sem sombra: o retorno é a mesma
-   mudança de brilho, no sentido contrário. */
+/* O afundar do clique. Continua sem `transform`: o retorno é a mudança de
+   brilho, agora com o registro **encostando** — de 3px para 1px, como se as duas
+   tintas se alinhassem sob a pressão. O deslocamento não é animado (a
+   `transition` desta regra é só de `filter`, e ela muda de valor, não de tempo),
+   então continua não havendo movimento no sentido do `EXPERIENCE.md`. */
 .botao:active:not(:disabled) {
-  filter: brightness(0.9);
+  filter: drop-shadow(1px 1px 0 var(--fio2)) brightness(0.9);
+}
+
+/* ⚠️ **O foco precisa de anel próprio por causa do chanfro**, e isto não é
+   desligar o contorno: `clip-path` recorta **tudo** que o elemento pinta, e o
+   `outline` do `globals.css` é pintado pelo elemento. Ele continua declarado
+   globalmente e continua valendo em todo o resto do produto; aqui ele seria
+   cortado nos dois cantos e sumiria por inteiro nas bordas — um foco invisível,
+   que é exatamente o que o projeto proíbe.
+
+   `box-shadow: inset` é pintado **dentro** da área recortada e sobrevive ao
+   corte, acompanhando o chanfro. Em `--breu`, o chão da página, ele lê como um
+   filete vazado sobre o neon — o mesmo contraste do texto do botão.
+
+   Fica no `:focus-visible`, e não no `:focus`: quem clica com o mouse não vê
+   anel nenhum, quem chega pelo Tab vê. */
+.botao:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--breu);
 }
 
 /* `cursor: default` junto com a opacidade: o cursor não pode prometer um clique

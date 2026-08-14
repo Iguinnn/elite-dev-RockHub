@@ -33,13 +33,13 @@
 }
 
 .titulo {
-  font: 400 24px/1.2 var(--serif);
+  font: 400 26px/1.2 var(--serif);
   letter-spacing: -0.01em;
 }
 
 .consequencia {
   margin-top: 12px;
-  font: 400 16px/1.55 var(--serif);
+  font: 400 18px/1.55 var(--serif);
   color: var(--fumaca);
 }
 
@@ -56,7 +56,7 @@
 
 /* O `<Botao>` é `width: 100%`; a largura de verdade é desta caixa. */
 .acao {
-  width: 170px;
+  width: 190px;
 }
 
 /* Secundário: fio e texto, sem tinta — molde do `.copiar` do
@@ -66,7 +66,7 @@
   border: 1px solid var(--fio2);
   background: none;
   color: var(--fumaca);
-  font: 700 12px/1 var(--mono);
+  font: 700 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;

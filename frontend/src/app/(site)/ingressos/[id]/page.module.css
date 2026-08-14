@@ -14,7 +14,7 @@
   margin: 20px 0 6px;
   padding: 6px 12px;
   color: var(--fumaca);
-  font: 600 14px/1.2 var(--mono);
+  font: 600 16px/1.2 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   text-decoration: none;
@@ -24,11 +24,14 @@
   color: var(--neon);
 }
 
+/* Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
+   `.aviso` do `(site)/page.module.css`. */
 .aviso {
   max-width: 52ch;
-  margin-top: 28px;
-  padding: 0 12px;
-  font: 19px/1.5 var(--serif);
+  margin: 28px 12px 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
 }
 
 /* Neutro, não vermelho (EXPERIENCE.md#veredito): um canhoto já utilizado não
@@ -43,7 +46,7 @@
   margin: 22px 12px 0;
   padding: 2px 0 2px 14px;
   border-left: 2px solid var(--fio2);
-  font: 17px/1.6 var(--serif);
+  font: 19px/1.6 var(--serif);
   color: var(--fumaca);
 }
 

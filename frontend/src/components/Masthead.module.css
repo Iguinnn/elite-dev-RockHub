@@ -1,9 +1,20 @@
 /* Anatomia do masthead — DESIGN.md#Components/masthead.
 
-   RockHub                      ← serifada 44px, "Hub" itálico neon
-   ────────────────────────────  ← fio simples
-   INÍCIO  MEUS INGRESSOS  ...   ← mono versalete, ativo com fio neon embaixo
-   ────────────────────────────  ← fio simples, fecha o bloco                */
+   RockHub    INÍCIO  MEUS INGRESSOS  ...   ← logotipo e menu na MESMA linha
+   ──────────────────────────────────────   ← fio simples, fecha o bloco
+
+   ⚠️ **O menu descia embaixo do logotipo, com um fio entre os dois** (decisão do
+   Igor, 2026-08-13), e é assim que o `DESIGN.md` desenha — que **não** foi
+   atualizado, por ser artefato de planejamento congelado. O motivo da troca é
+   contagem: a tela inicial abria com quatro fios nos primeiros 200px (logotipo,
+   menu, busca, chips de período), e o jornal noturno vive de fio — quando todo
+   bloco tem um, nenhum separa nada. Juntar as duas faixas numa só apaga um fio
+   sem custar informação: o logotipo e o menu nunca disseram coisas diferentes.
+
+   O fio de baixo **fica**, e é compartilhado com todas as telas do grupo
+   `(site)`: ele é o que separa o cabeçalho do conteúdo em `/conta`,
+   `/ingressos` e `/organizador/*`, onde não há barra de busca logo abaixo para
+   assumir esse papel.                                                       */
 
 /* ⚠️ **O fio de baixo era `3px double`, e virou simples** (decisão do Igor,
    2026-08-12). O duplo é convenção de jornal impresso e está assim no
@@ -15,15 +26,29 @@
    masthead do conteúdo passou a ser o espaço em volta dele. */
 .masthead {
   padding-top: 26px;
+  /* Era `padding` do `.navbar`, que agora divide a faixa com o logotipo. Subiu de
+     13px para 18px quando os itens ganharam caixa: fio de caixa a 13px do fio do
+     masthead são dois filetes quase encostados, e o de baixo deixa de ler como o
+     fecho do cabeçalho. */
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--fio);
 }
 
+/* ⚠️ **Era `align-items: flex-end` e virou `center`** (13/08/2026), junto com as
+   caixas do menu. O alinhamento pela base existia porque o versalete sentado na
+   linha de base da serifada é o que fazia logotipo e menu lerem como uma faixa
+   só; com o menu dentro de caixas, o que encosta na base do logotipo deixa de
+   ser a letra e passa a ser o **fio de baixo** da caixa, e a letra fica boiando
+   acima dele. Caixa se alinha pelo centro, texto solto se alinha pela base.
+
+   `flex-wrap` porque em tela estreita o menu não cabe ao lado — ali ele volta a
+   descer para baixo do logotipo, agora sem fio no meio. */
 .topo {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-end;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--fio);
+  align-items: center;
+  gap: 10px 32px;
 }
 
 /* O logotipo mora em `Logotipo.module.css` — ele é compartilhado com a casca
@@ -31,32 +56,82 @@
 
 /* Em tela estreita os três itens não cabem lado a lado. Quebram linha em vez de
    transbordar — a entreletra larga do versalete é parte da identidade e não vai
-   diminuir para caber. */
+   diminuir para caber.
+
+   ⚠️ O intervalo caiu de 26px para 10px quando os itens ganharam caixa: com a
+   folga antiga, quatro retângulos separados por quase três dedos de breu leem
+   como quatro botões avulsos em vez de uma fileira só. Agora o que separa um do
+   outro é o próprio fio. */
 .navbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 26px;
-  padding: 9px 0;
+  gap: 8px 10px;
 }
 
-/* A borda transparente já ocupa o espaço do fio neon do item ativo: a linha
-   não muda de altura quando a navegação troca de página. */
+/* ⚠️ **Cada item virou uma caixa vazada, e o hover virou varredura** (decisão do
+   Igor, 13/08/2026). Antes era texto solto com um fio neon de 2px embaixo do
+   item ativo, e o movimento era só a cor mudando em 120ms.
+
+   **A caixa é a mesma anatomia do chip de período da capa** — `1px` em `--fio2`,
+   mono versalete, raio zero (UX-DR3) — e é de propósito que as duas se pareçam:
+   o produto passa a ter uma forma só de "item selecionável em fileira", e ela
+   vale tanto na barra de filtros quanto no masthead. Fio em `--fio2` e não em
+   `--neon`, pelo UX-DR1: o acento único continua sendo do item **ativo**.
+
+   ⚠️ **A varredura contraria o `EXPERIENCE.md#Movimento`**, que limita o produto
+   a mudança de cor em até 120ms e reserva a única animação para a espera do
+   checkout. Foi pedido explícito do Igor (referência: o menu do Battlefield 3), e
+   fica registrado aqui como exceção consciente — a segunda do projeto.
+
+   **Como ela é feita, e por que não é um `::before`:** a tinta é uma imagem de
+   fundo de largura zero ancorada à esquerda, e o que anima é o `background-size`.
+   Um pseudo-elemento precisaria de `z-index: -1` para passar por baixo do texto,
+   o que joga a faixa para trás do próprio fundo do elemento e depende de contexto
+   de empilhamento para funcionar. Aqui o texto fica por cima de graça, sem
+   camada nova e sem uma linha de JavaScript.
+
+   Quem pediu menos movimento recebe o preenchimento instantâneo: o bloco de
+   `prefers-reduced-motion` do `globals.css` desliga toda transição do projeto, e
+   o estado final — caixa cheia, texto no breu — continua idêntico. A informação
+   nunca esteve no movimento.                                                 */
 .navLink {
-  padding-bottom: 3px;
-  font: 600 11px/1 var(--mono);
+  padding: 12px 18px;
+  border: 1px solid var(--fio2);
+  color: var(--fumaca);
+  font: 600 15px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--fumaca);
-  border-bottom: 2px solid transparent;
-  transition: color 120ms linear;
+  background-image: linear-gradient(var(--fumaca), var(--fumaca));
+  background-repeat: no-repeat;
+  background-size: 0 100%;
+  transition:
+    background-size 180ms ease-out,
+    color 180ms ease-out,
+    border-color 180ms ease-out;
 }
 
+/* A faixa fecha os 100% e o texto inverte para o breu da página — é a leitura de
+   "selecionado", a mesma inversão do `.chipAtivo` da capa. O fio acompanha em
+   `--fumaca` para a caixa não ficar mais escura que o próprio preenchimento. */
 .navLink:hover {
-  color: var(--cal);
+  border-color: var(--fumaca);
+  background-size: 100% 100%;
+  color: var(--breu);
 }
 
+/* O item ativo é o **único** neon da faixa (UX-DR1), e é marcado por fio e texto
+   — não por caixa cheia: preenchido, ele competiria com o `Buscar` logo abaixo,
+   que é a ação primária da tela inicial. A varredura dele também é neon, então
+   passar o mouse sobre a página em que já se está devolve a mesma resposta dos
+   outros itens, na tinta que já era dele. */
 .ativo {
-  color: var(--cal);
-  border-bottom-color: var(--neon);
+  border-color: var(--neon);
+  color: var(--neon);
+  background-image: linear-gradient(var(--neon), var(--neon));
+}
+
+.ativo:hover {
+  border-color: var(--neon);
+  color: var(--breu);
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { partesDaFilaPublica } from "@/lib/formato";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 import { listarTurnos, type TurnoDaPortaria } from "@/lib/turnos";
 
@@ -45,7 +46,7 @@ export default async function Turnos() {
     redirect("/login?voltar=%2Fportaria");
   }
   if (usuario.papel !== "PORTARIA") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   // `listarTurnos` nunca levanta: o projeto não tem `error.tsx`, e a
@@ -79,7 +80,7 @@ export default async function Turnos() {
         // Estado vazio (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração e sem
         // botão grande — não há nada que esta pessoa possa fazer daqui para
         // aparecer numa escala; quem escala é o organizador.
-        <p className={estilos.aviso}>Você não foi escalado para nenhum evento.</p>
+        <p className={estilos.vazio}>Você não foi escalado para nenhum evento.</p>
       )}
 
       {itens.length > 0 && (

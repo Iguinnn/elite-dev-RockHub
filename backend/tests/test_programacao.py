@@ -721,22 +721,54 @@ def test_o_filtro_de_cidade_recorta_por_igualdade_exata(
     assert _nomes(resposta) == ["Em SP"]
 
 
-def test_cidade_escrita_diferente_do_chip_nao_casa(
+def test_cidade_pela_metade_nao_casa(
     cliente: TestClient,
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """Igualdade exata, e não `ilike` (decisão do Igor).
+    """Igualdade, e não `ilike` (decisão do Igor).
 
-    O valor vem sempre dos nossos próprios chips. Quem digitar `?cidade=sao
-    paulo` à mão recebe lista vazia — e o campo de busca serve exatamente para
-    isso, porque ele **casa cidade** e ignora acento.
+    ⚠️ **Este teste afirmava outra coisa até 13/08/2026**: que `?cidade=sao
+    paulo`, sem acento, devolvia lista vazia. A regra mudou junto com o
+    agrupamento das grafias — a igualdade passou a ser sobre
+    `unaccent(lower(...))`, e o teste abaixo cobre o caso novo.
+
+    O que **não** mudou, e é o que esta função guarda: continua sendo igualdade
+    de string inteira. `?cidade=sao` não casa `São Paulo`, porque o parâmetro não
+    é campo de digitação — quem quer digitar tem o `?q=`, que casa cidade por
+    pedaço.
     """
     _evento_gravado(sessao, _organizador(fabricar_usuario), cidade="São Paulo")
     cliente.cookies.clear()
 
-    assert cliente.get("/eventos", params={"cidade": "sao paulo"}).json() == []
-    assert _nomes(cliente.get("/eventos", params={"q": "sao paulo"})) != []
+    assert cliente.get("/eventos", params={"cidade": "sao"}).json() == []
+    assert _nomes(cliente.get("/eventos", params={"q": "sao"})) != []
+
+
+def test_o_filtro_de_cidade_ignora_acento_e_caixa(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """As grafias da mesma cidade são a mesma cidade — inclusive no filtro.
+
+    ⚠️ **O caso real, e o motivo de a regra ter mudado**: a Ticketmaster manda
+    `São Paulo` e `Sao Paulo` para a mesma cidade, e nós copiamos o que vem
+    (AD-1). Com igualdade crua, o chip `São Paulo` achava um dos dois e **escondia
+    o outro sem dizer nada** — o resultado parecia completo.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="Com til", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="Sem til", cidade="Sao Paulo")
+    _evento_gravado(sessao, organizador, nome="No Rio", cidade="Rio de Janeiro")
+    cliente.cookies.clear()
+
+    # Os dois eventos, venha o parâmetro com til, sem til ou em caixa baixa.
+    for escrita in ("São Paulo", "Sao Paulo", "são paulo"):
+        assert sorted(_nomes(cliente.get("/eventos", params={"cidade": escrita}))) == [
+            "Com til",
+            "Sem til",
+        ], escrita
 
 
 def test_evento_sem_cidade_fica_fora_do_filtro_e_dentro_da_lista(
@@ -942,6 +974,36 @@ def test_as_cidades_vem_distintas_ordenadas_e_sem_nulo_sem_nenhum_cookie(
 
     assert resposta.status_code == 200
     assert resposta.json() == ["Belo Horizonte", "Rio de Janeiro", "São Paulo"]
+
+
+def test_as_grafias_da_mesma_cidade_viram_um_chip_so(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Um chip por cidade, na grafia mais frequente (13/08/2026).
+
+    O `venue.city.name` da Ticketmaster não é normalizado, e o `DISTINCT` cru
+    desenhava **dois chips com o mesmo nome** na barra — um deles achando um
+    evento só. Aqui `Sao Paulo` (um evento) e `São Paulo` (dois) são a mesma
+    cidade, e quem aparece é a grafia da maioria.
+    """
+    organizador = _organizador(fabricar_usuario)
+    _evento_gravado(sessao, organizador, nome="A", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="B", cidade="São Paulo")
+    _evento_gravado(sessao, organizador, nome="C", cidade="Sao Paulo")
+    _evento_gravado(sessao, organizador, nome="D", cidade="rio de janeiro")
+    _evento_gravado(sessao, organizador, nome="E", cidade="Rio de Janeiro")
+    cliente.cookies.clear()
+
+    resposta = cliente.get("/eventos/cidades")
+
+    assert resposta.status_code == 200
+    # Duas cidades, não quatro. `São Paulo` ganha por frequência (dois contra
+    # um); `Rio de Janeiro` empata em um evento cada e ganha por ter maiúscula —
+    # o desempate que **não** depende do collation do banco. Sem ele, o glibc põe
+    # a minúscula na frente e o chip aparece como "rio de janeiro".
+    assert resposta.json() == ["Rio de Janeiro", "São Paulo"]
 
 
 def test_as_cidades_usam_o_mesmo_recorte_de_publicado_e_futuro(

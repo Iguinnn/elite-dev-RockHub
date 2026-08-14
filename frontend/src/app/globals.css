@@ -52,7 +52,24 @@
      Serifada é a voz do jornal: nome de artista, título, valor, corpo.
      Monoespaçada é tudo que é máquina ou etiqueta: código, kicker, rótulo,
      hora, estado — sempre em versalete com entreletra larga.
-     Nunca serifada em etiqueta, nunca monoespaçada em nome próprio.        */
+     Nunca serifada em etiqueta, nunca monoespaçada em nome próprio.
+
+     ⚠️ **A escala inteira subiu um degrau em 13/08/2026** (decisão do Igor), e
+     o corpo passou de 16px para 18px. O problema estava na monoespaçada: 40 das
+     185 declarações do frontend eram 10px e outras 20 eram 11px — e é justamente
+     nesse tamanho que moram os rótulos em `--fumaca` (`CASA`, `CIDADE`, `A
+     PARTIR DE`, o kicker de toda seção). Versalete cinza com 0,15em de entreletra
+     em 10px não é discrição, é texto que não se lê.
+
+     A regra aplicada: **até 24px soma 2px, acima disso multiplica por 1,09**. O
+     pequeno cresce 20% e o display cresce 9% — se a manchete subisse na mesma
+     proporção do rótulo, a hierarquia continuaria idêntica e nada teria sido
+     resolvido; o que precisava encurtar era a distância entre os dois extremos.
+
+     As larguras fixas que seguram esse texto subiram junto (coluna de data da
+     fila, coluna de rótulo da ficha, célula do stepper, largura dos botões):
+     tipografia maior dentro de caixa do tamanho antigo é como se quebra linha
+     onde antes não quebrava.                                               */
   --serif: Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -69,14 +86,50 @@ html,
 body {
   background: var(--breu);
   color: var(--cal);
-  font: 16px/1.55 var(--serif);
+  font: 18px/1.55 var(--serif);
+}
+
+/* ---- interface nativa do navegador --------------------------------------
+   ⚠️ **`color-scheme` é o que faz o navegador saber que este produto é
+   escuro**, e sem ele nada aqui é escolha nossa: o padrão é claro, e o
+   navegador pinta em claro tudo que ele desenha por conta própria — barra de
+   rolagem, o amarelo do preenchimento automático, a lista aberta de um
+   `<select>`, o seletor de data. Era uma faixa cinza-clara na borda de um
+   produto que não tem uma única superfície clara.
+
+   `scrollbar-color` vem junto porque `color-scheme` sozinho entrega o cinza
+   escuro genérico do sistema operacional, e não a nossa paleta. Polegar em
+   `--fio2` — o mesmo fio das superfícies elevadas —, trilho no fundo da
+   aplicação: presente o bastante para se pegar, discreto o bastante para não
+   competir com o conteúdo.
+
+   **Sem `--neon` aqui**, e não é esquecimento: o acento único é da ação e do
+   item ativo (UX-DR1). Barra de rolagem não é ação.
+
+   Sem `::-webkit-scrollbar` de propósito: definir aquelas regras desliga a
+   barra sobreposta do macOS e força uma barra permanente ocupando largura em
+   toda tela. As duas propriedades padrão abaixo já cobrem Chrome, Firefox e
+   Safari atuais, e onde não cobrirem o `color-scheme` ainda entrega uma barra
+   escura.                                                                  */
+:root {
+  color-scheme: dark;
+  scrollbar-color: var(--fio2) var(--breu);
 }
 
 /* Só vale para link com âncora (`#passo-2`, na tela do organizador): ir de um
    ponto a outro da mesma página sem corte seco, para quem clicou entender que
    continua onde estava. Não é animação de entrada nem transição de tela —
    quem pediu menos movimento recebe o salto instantâneo, pelo bloco de
-   `prefers-reduced-motion` mais abaixo. */
+   `prefers-reduced-motion` mais abaixo.
+
+   ⚠️ **Estas duas linhas só se comportam por causa de um atributo no
+   `layout.tsx`.** Até o Next 15 o roteador anulava esta regra durante a
+   navegação; o Next 16 não anula mais, e a rolagem para o topo da tela nova
+   virava uma animação que corria contra a renderização dela — a pessoa entrava
+   pelo login e caía no meio da programação, com o masthead fora da vista. O
+   `data-scroll-behavior="smooth"` do `<html>` é o que devolve o salto
+   instantâneo na navegação; o motivo inteiro está lá. **Se ele sumir, o defeito
+   volta — e volta intermitente**, que é a pior forma de ele voltar. */
 html {
   scroll-behavior: smooth;
 }
@@ -113,7 +166,7 @@ a {
 
 /* Etiqueta que abre um bloco. Sempre acima do conteúdo que nomeia. */
 .kicker {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -125,9 +178,22 @@ a {
 
 /* ---- medida do texto ----------------------------------------------------
    Largura única da aplicação. O masthead e o conteúdo compartilham a mesma
-   coluna para que os fios se alinhem de ponta a ponta.                     */
+   coluna para que os fios se alinhem de ponta a ponta.
+
+   ⚠️ **Era 1180px, e virou 1440px** (decisão do Igor, 13/08/2026). Num monitor
+   de 1900px sobravam ~360px de breu de cada lado, e a capa lia como uma coluna
+   estreita no meio de uma tela vazia — não como um jornal aberto. Aqui a sobra
+   cai para ~230px de cada lado, que é margem de página e não terreno baldio.
+
+   **Não virou largura total**: as linhas de texto corrido continuam presas aos
+   `52ch`/`46ch` de cada tela, porque medida de leitura é medida de leitura, e é
+   a grade (capa, fila de quatro colunas, ficha do evento) que ganha o espaço.
+
+   O recuo lateral subiu junto, de 18px para 28px: com a coluna mais larga, o
+   fio precisa de mais folga até a borda da janela para não parecer que o
+   conteúdo está encostado nela.                                            */
 .conteudo {
-  max-width: 1180px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 18px;
+  padding: 0 28px;
 }

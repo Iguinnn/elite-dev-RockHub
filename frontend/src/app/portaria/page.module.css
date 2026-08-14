@@ -1,8 +1,9 @@
 /* A lista de turnos (Story 5.1).
 
    ┌──────────────────────────────────────────┐
-   │ Turnos                          PORTARIA │  ← título e kicker, com fio
-   │ ─────────────────────────────────────────│
+   │ Turnos                          PORTARIA │  ← título e kicker, sem fio
+   │                                          │
+   │ ─────────────────────────────────────────│  ← o fio é o da lista
    │ SEX                                      │
    │  15   Sepultura                    21h00 │  ← o bloco inteiro é o alvo
    │ AGO   ESPAÇO UNIMED · SÃO PAULO          │
@@ -26,32 +27,58 @@
   padding: 40px 0 96px;
 }
 
-/* Mesma anatomia do título de "Meus eventos" e "Meus ingressos": serifada
-   grande, kicker do outro lado, fio embaixo. Repetido em vez de importado
-   porque CSS Module não compartilha classe entre arquivos. */
+/* Anatomia do título de "Meus eventos" e "Meus ingressos": serifada grande,
+   kicker do outro lado. Repetido em vez de importado porque CSS Module não
+   compartilha classe entre arquivos.
+
+   ⚠️ **Sem fio embaixo, e aqui ele diverge das outras duas telas** (decisão do
+   Igor, 13/08/2026). O fio estava lá — é o que a anatomia pedia —, e o que a tela
+   montada mostrou é que ele nunca esteve sozinho: a `.lista` logo abaixo abre com
+   `border-top`, então eram **dois filetes paralelos a 22px um do outro**, sem
+   nada entre eles. Dois fios assim não separam duas coisas; leem como sobra de
+   grade. O que fecha o título passa a ser o intervalo, e quem abre a lista é o
+   fio dela — que é o mesmo fio que separa um turno do seguinte.
+
+   É a mesma correção que a capa do `(site)` já tinha feito, pelo mesmo motivo
+   escrito lá: "dois fios quase paralelos, sem nada entre eles, leem como sobra
+   de grade e não como separação". */
 .secTitulo {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 11px;
-  border-bottom: 1px solid var(--fio);
 }
 
 .secTitulo h1 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
 /* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+/* Filete `--brasa` = falha; sem filete = ausência (13/08/2026). Esta classe
+   servia às duas coisas. A régua inteira está no `.aviso` do
+   `(site)/page.module.css`. */
 .aviso {
   max-width: 52ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
 }
 
+/* "Você não foi escalado para nenhum evento" não é falha: é o turno de quem não
+   tem turno. Frase, fim, sem marca. */
+.vazio {
+  max-width: 52ch;
+  margin-top: 28px;
+  font: 21px/1.5 var(--serif);
+}
+
+/* 30px e não os 22px de antes: o intervalo virou o único separador entre o
+   título e a lista, e ele herdou os 11px que o `padding` do fio removido
+   ocupava. Intervalo que substitui fio precisa ser do tamanho do que substituiu. */
 .lista {
-  margin-top: 22px;
+  margin-top: 30px;
   border-top: 1px solid var(--fio);
 }
 
@@ -62,7 +89,7 @@
    diferença entre acertar e errar o toque com uma mão, no escuro. */
 .turno {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) auto;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
   gap: 4px 18px;
   align-items: center;
   padding: 18px 8px 18px 4px;
@@ -93,14 +120,14 @@
 
 .diaDaSemana,
 .mesEAno {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .dia {
-  font: 400 30px/1 var(--serif);
+  font: 400 33px/1 var(--serif);
 }
 
 .corpo {
@@ -108,13 +135,13 @@
 }
 
 .nome {
-  font: 400 21px/1.2 var(--serif);
+  font: 400 23px/1.2 var(--serif);
   overflow-wrap: break-word;
 }
 
 .origem {
   margin-top: 5px;
-  font: 10px/1.4 var(--mono);
+  font: 12px/1.4 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -125,7 +152,7 @@
    escala normal da noite parecer um problema. */
 .fechado {
   margin-top: 8px;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.1em;
   color: var(--fumaca);
 }
@@ -141,14 +168,14 @@
    rodapé. */
 .entradas {
   margin-top: 8px;
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--cal);
 }
 
 .hora {
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
   letter-spacing: 0.06em;
   align-self: center;
 }
@@ -166,7 +193,7 @@
    sai da terceira coluna e vai para baixo do dia, onde há espaço sobrando. */
 @media (max-width: 380px) {
   .turno {
-    grid-template-columns: 54px minmax(0, 1fr);
+    grid-template-columns: 62px minmax(0, 1fr);
   }
 
   .hora {

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { obterMeuEvento } from "@/lib/eventos";
 import { centavosParaReais, dataPorExtenso, momentoDaPublicacao } from "@/lib/formato";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "../page.module.css";
@@ -36,7 +37,7 @@ export default async function DetalheDoEvento({
     redirect("/login?voltar=%2Forganizador%2Feventos");
   }
   if (usuario.papel !== "ORGANIZADOR") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   // ⚠️ `params` é `Promise` nesta versão do Next — sem o `await`, `id` viraria

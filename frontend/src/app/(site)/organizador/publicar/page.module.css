@@ -7,18 +7,22 @@
   padding: 40px 0 96px;
 }
 
+/* ⚠️ **Sem fio embaixo** (decisão do Igor, 2026-08-13). O título da etapa já se
+   separa do que vem abaixo pelo corpo de 27px em serifada contra o versalete de
+   13px do rótulo seguinte — o fio repetia essa separação com tinta. Vale para os
+   **dois** passos: `.secTituloPasso2` compõe esta classe, e deixar o fio só num
+   deles faria os títulos de etapa parecerem inconsistentes. */
 .secTitulo {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
   padding-bottom: 11px;
-  border-bottom: 1px solid var(--fio);
 }
 
 .secTitulo h1,
 .secTitulo h2 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
@@ -44,7 +48,7 @@
 
 .botaoBusca {
   flex-shrink: 0;
-  width: 160px;
+  width: 182px;
   /* `Campo` traz `margin-bottom: 20px` do rótulo — sem isso o botão fica
      mais alto que a entrada, porque ele não tem rótulo acima. */
   margin-bottom: 20px;
@@ -53,10 +57,26 @@
 /* Estado vazio (EXPERIENCE.md#Vazio): kicker (o da seção, acima), frase, fim.
    Sem ilustração e sem botão grande — vale para os três estados: sem busca
    ainda, busca sem resultado, catálogo indisponível. */
+/* ⚠️ **Esta tela tinha cinco mensagens na mesma classe** — três de falha
+   (catálogo fora do ar, sessão expirada, busca longa demais) e duas de ausência
+   (nenhum show para a busca, catálogo sem shows). Desde 13/08/2026 são duas
+   classes: filete `--brasa` = falha; sem filete = ausência. A régua inteira está
+   no `.aviso` do `(site)/page.module.css`. */
 .aviso {
   max-width: 46ch;
   margin-top: 28px;
-  font: 19px/1.5 var(--serif);
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* Ausência e regra do produto: "nenhum show para essa busca", "não há conta de
+   portaria cadastrada", "são até 20 setores por evento". Nada falhou em nenhuma
+   das três — a última nem é sobre dado, é o teto dito em voz alta. */
+.vazio {
+  max-width: 46ch;
+  margin-top: 28px;
+  font: 21px/1.5 var(--serif);
 }
 
 .catalogo {
@@ -69,7 +89,7 @@
    mudou, a aparência não podia mudar junto. */
 .item {
   display: grid;
-  grid-template-columns: 70px 1fr auto;
+  grid-template-columns: 80px 1fr auto;
   gap: 20px;
   align-items: center;
   padding: 16px 0;
@@ -91,7 +111,7 @@
 }
 
 .estado {
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -103,28 +123,49 @@
 }
 
 .miniatura {
-  width: 70px;
+  /* Âncora do `::after` logo abaixo — sem ela o pseudo-elemento se posiciona
+     contra a página inteira e o disco cobriria a tela. Não muda o layout: o
+     `<img>` continua na mesma célula da grade. */
+  position: relative;
+  width: 80px;
   height: 70px;
   aspect-ratio: 1;
   object-fit: cover;
-  /* Bloco vazio do mesmo tamanho quando não há `imagem_url` — a grade não
-     pode dançar entre uma fila e outra. */
+  /* Piso do quadro: o cinza aparece enquanto a imagem carrega, e a grade não
+     dança entre uma fila e outra. Desde 13/08/2026 ele não é mais o que se vê
+     no item sem arte — esse caso agora tem a arte de reserva (`lib/arte.ts`). */
   background: var(--breu2);
 }
 
+/* ⚠️ **A arte morta também vira o disco, e aqui a proteção é nova.** As telas
+   públicas já cobriam o `<img>` quebrado desde a Story 3.3; esta lista nunca
+   cobriu, e o ícone de imagem faltando aparecia na fila do catálogo. Ele fica
+   mais provável aqui do que em qualquer outro lugar: as URLs vêm da Discovery
+   ao vivo, uma por fila, e nenhuma delas passou por nós antes.
+
+   Mesmo mecanismo do `.imagemDaArte::after` da raiz — pseudo-elemento em `<img>`
+   só ganha caixa quando a imagem falha —, com a arte **quadrada**, que é a
+   proporção deste quadro de 70px. */
+.miniatura::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--breu2) url("/disco-rockhub-quadrado.jpg") center / cover;
+}
+
 .nome {
-  font: 400 20px/1.2 var(--serif);
+  font: 400 22px/1.2 var(--serif);
 }
 
 .origem {
   margin-top: 5px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
-/* ---- passo 2: data, local e setores (Story 2.4) -------------------------- */
+/* ---- passo 2: data e setores (Story 2.4) --------------------------------- */
 
 .formulario {
   margin-top: 26px;
@@ -134,11 +175,27 @@
    ninguém pode editar é campo que não deveria ser campo. */
 .atracao {
   display: grid;
-  grid-template-columns: 70px 1fr;
+  grid-template-columns: 80px 1fr;
   gap: 20px;
   align-items: center;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--fio);
+}
+
+/* Onde o show acontece — dois campos do formulário até 13/08/2026, texto daqui
+   em diante. Serifada, e não o mono de `.origem`: procedência é etiqueta, isto
+   é conteúdo do evento que está sendo publicado. */
+.ondeAcontece {
+  margin-top: 6px;
+  font: 19px/1.4 var(--serif);
+}
+
+/* O mesmo lugar, quando a Discovery não mandou o local. Fumaça em vez de cal:
+   é uma pendência declarada, não um dado. */
+.semLocal {
+  margin-top: 6px;
+  font: italic 19px/1.4 var(--serif);
+  color: var(--fumaca);
 }
 
 .colunas {
@@ -161,7 +218,7 @@
 .colunasDoSetor,
 .linhaSetor {
   display: grid;
-  grid-template-columns: 1fr 120px 130px 44px;
+  grid-template-columns: 1fr 136px 148px 48px;
   gap: 12px;
   align-items: center;
 }
@@ -184,7 +241,7 @@
   border: 1px solid var(--fio);
   color: var(--cal);
   padding: 11px;
-  font: 14px/1 var(--mono);
+  font: 16px/1 var(--mono);
 }
 
 .entrada:focus {
@@ -210,7 +267,7 @@
   background: none;
   border: none;
   color: var(--fumaca);
-  font: 20px/1 var(--mono);
+  font: 22px/1 var(--mono);
   cursor: pointer;
 }
 
@@ -224,7 +281,7 @@
   background: none;
   border: 1px solid var(--fio2);
   color: var(--cal);
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
@@ -262,14 +319,14 @@
 }
 
 .secTituloPasso3 h3 {
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
 .explicacaoEscala {
   max-width: 52ch;
   margin-top: 16px;
-  font: 17px/1.5 var(--serif);
+  font: 19px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -312,11 +369,11 @@
 }
 
 .nomeDaConta {
-  font: 400 18px/1.2 var(--serif);
+  font: 400 20px/1.2 var(--serif);
 }
 
 .emailDaConta {
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -324,7 +381,7 @@
 
 .contagemEscalados {
   margin-top: 12px;
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--neon);
@@ -338,13 +395,13 @@
 
 .nomePublicado {
   margin-top: 12px;
-  font: 400 30px/1.15 var(--serif);
+  font: 400 33px/1.15 var(--serif);
   letter-spacing: -0.02em;
 }
 
 .linhaDoShow {
   margin-top: 8px;
-  font: 18px/1.5 var(--serif);
+  font: 20px/1.5 var(--serif);
   color: var(--fumaca);
 }
 
@@ -357,20 +414,20 @@
    organizador vê inventário, não medidor (UX-DR7). */
 .linhaInventario {
   display: grid;
-  grid-template-columns: 1fr 140px 140px;
+  grid-template-columns: 1fr 160px 160px;
   gap: 12px;
   padding: 13px 0;
   border-bottom: 1px solid var(--fio);
 }
 
 .setorPublicado {
-  font: 600 10px/1.6 var(--mono);
+  font: 600 12px/1.6 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .numero {
-  font: 14px/1.15 var(--mono);
+  font: 16px/1.15 var(--mono);
   text-align: right;
 }
 
@@ -381,7 +438,7 @@
 
 .nomesEscalados {
   margin-top: 7px;
-  font: 18px/1.5 var(--serif);
+  font: 20px/1.5 var(--serif);
 }
 
 /* As duas saídas da confirmação, lado a lado: publicar o próximo ou ir ver o
@@ -396,7 +453,7 @@
 
 .saida {
   color: var(--neon);
-  font: 600 10px/1 var(--mono);
+  font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -434,7 +491,7 @@
     overflow: visible;
     clip-path: none;
     display: block;
-    font: 600 10px/1 var(--mono);
+    font: 600 12px/1 var(--mono);
     letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--fumaca);
@@ -494,7 +551,7 @@
 
   .item,
   .atracao {
-    grid-template-columns: 56px 1fr;
+    grid-template-columns: 64px 1fr;
   }
 
   /* Sem a terceira coluna, o estado da fila desce para baixo do nome em vez
@@ -505,11 +562,11 @@
   }
 
   .miniatura {
-    width: 56px;
+    width: 64px;
     height: 56px;
   }
 
   .nomePublicado {
-    font-size: 25px;
+    font-size: 27px;
   }
 }

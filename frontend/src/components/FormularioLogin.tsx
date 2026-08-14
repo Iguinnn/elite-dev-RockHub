@@ -6,7 +6,10 @@ import { useState, type FormEvent } from "react";
 import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import CampoDeSenha from "@/components/CampoDeSenha";
+import ContasDeAvaliacao from "@/components/ContasDeAvaliacao";
 import { ErroDaApi, chamarApi } from "@/lib/api";
+import { casaDoPapel } from "@/lib/papel";
 
 import type { UsuarioDaSessao } from "@/lib/sessao";
 
@@ -43,14 +46,11 @@ type RespostaDoLogin = { papel: UsuarioDaSessao["papel"] };
  * portaria. Cliente e organizador continuam caindo na raiz, que é a programação
  * e é onde os dois querem estar.
  *
- * Uma função e não um `Record`: o mapa completo teria duas entradas iguais a
- * `"/"` só para não parecer que faltou papel, e uma consulta a um mapa
- * incompleto devolve `undefined` — que o `router.push` não sabe navegar. Aqui o
- * caso não previsto cai no `"/"` por construção.
+ * ⚠️ **A função saiu daqui em 13/08/2026** e mora em `lib/papel.ts`. Ela servia
+ * a este arquivo só, e a conferência mostrou que as **guardas de papel** das
+ * páginas precisavam do mesmo mapa: elas faziam `redirect("/")`, e `/` não é a
+ * casa da portaria. O motivo inteiro está lá.
  */
-function casaDoPapel(papel: string): string {
-  return papel === "PORTARIA" ? "/portaria" : "/";
-}
 
 /**
  * O `voltar` chega **já validado** por `caminhoInternoSeguro`, do Server
@@ -66,27 +66,38 @@ function casaDoPapel(papel: string): string {
  * destino por papel simplesmente não aconteceria — sem erro, sem log, com a
  * portaria caindo na programação como sempre caiu.
  */
-type Props = { voltar?: string };
+/**
+ * `children` é o rodapé "Ainda não tem conta?", que continua sendo montado no
+ * Server Component da página — o `<Link>` dele depende do `?voltar=` já
+ * validado lá. Ele chega aqui como children para que as *Contas de avaliação*
+ * possam ficar **abaixo** dele sem que a página precise saber preencher campo
+ * nenhum: o estado dos dois campos mora neste componente, e só nele.
+ *
+ * A alternativa era o bloco de contas escrever direto no DOM por
+ * `document.getElementById`, o que dispensaria o children e traria de volta um
+ * segundo dono do valor dos campos.
+ */
+type Props = { voltar?: string; children?: React.ReactNode };
 
-export default function FormularioLogin({ voltar }: Props) {
+export default function FormularioLogin({ voltar, children }: Props) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // ⚠️ **Os campos passaram a ser controlados**, e antes eram lidos por
+  // `FormData` no envio. É o que permite às *Contas de avaliação* preenchê-los:
+  // com entrada não controlada, escrever o valor exigiria alcançar o nó do DOM.
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
 
   async function aoEnviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     setErro(null);
     setEnviando(true);
 
-    const dados = new FormData(evento.currentTarget);
-
     try {
       const usuario = await chamarApi<RespostaDoLogin>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({
-          email: dados.get("email"),
-          senha: dados.get("senha"),
-        }),
+        body: JSON.stringify({ email, senha }),
       });
       // ⚠️ O `refresh()` vem antes do `push` e não é opcional: o masthead é
       // Server Component e o roteador serviria a versão em cache, ainda com
@@ -106,22 +117,53 @@ export default function FormularioLogin({ voltar }: Props) {
   }
 
   return (
-    <form onSubmit={aoEnviar}>
-      <Campo id="email" name="email" rotulo="E-mail" type="email" autoComplete="email" required />
-      <Campo
-        id="senha"
-        name="senha"
-        rotulo="Senha"
-        type="password"
-        autoComplete="current-password"
-        required
+    <>
+      <form onSubmit={aoEnviar}>
+        <Campo
+          id="email"
+          name="email"
+          rotulo="E-mail"
+          type="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(evento) => setEmail(evento.target.value)}
+        />
+        <CampoDeSenha
+          id="senha"
+          name="senha"
+          rotulo="Senha"
+          autoComplete="current-password"
+          required
+          value={senha}
+          onChange={(evento) => setSenha(evento.target.value)}
+        />
+
+        <AvisoDeErro mensagem={erro} />
+
+        {/* ⚠️ **O rótulo muda desde 13/08/2026** (decisão do Igor, depois da
+            varredura de superfícies de erro). Quatro botões do produto já
+            trocavam de palavra durante o envio e quatro não — sem regra, só pela
+            ordem em que foram escritos. O `disabled` sozinho **não anuncia
+            progresso**: quem usa leitor de tela ouve "botão indisponível" e não
+            fica sabendo que algo está acontecendo. A palavra é o anúncio. */}
+        <Botao type="submit" disabled={enviando}>
+          {enviando ? "Entrando…" : "Entrar"}
+        </Botao>
+      </form>
+
+      {children}
+
+      {/* O erro anterior sai junto: preencher com outra conta e continuar
+          lendo "E-mail ou senha incorretos" da tentativa passada faria a tela
+          responder pelo que não está mais nos campos. */}
+      <ContasDeAvaliacao
+        onEscolher={(emailEscolhido, senhaEscolhida) => {
+          setEmail(emailEscolhido);
+          setSenha(senhaEscolhida);
+          setErro(null);
+        }}
       />
-
-      <AvisoDeErro mensagem={erro} />
-
-      <Botao type="submit" disabled={enviando}>
-        Entrar
-      </Botao>
-    </form>
+    </>
   );
 }

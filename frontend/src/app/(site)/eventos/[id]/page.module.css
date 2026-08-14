@@ -25,14 +25,14 @@
 }
 
 /* O caminho de volta, na anatomia do `.voltar` de "Meus eventos": mono versalete
-   em 14px, com `padding` dando alvo de toque sem virar botão — voltar é
+   em 16px, com `padding` dando alvo de toque sem virar botão — voltar é
    navegação, e a identidade não usa botão para isso. */
 .voltar {
   display: inline-block;
   margin: 20px 0 6px;
   padding: 6px 12px;
   color: var(--fumaca);
-  font: 600 14px/1.2 var(--mono);
+  font: 600 16px/1.2 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   text-decoration: none;
@@ -44,11 +44,14 @@
 
 /* A frase de indisponível (EXPERIENCE.md#Vazio): frase, fim. Mesma anatomia do
    `.aviso` da raiz e da tela do organizador. */
+/* Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
+   `.aviso` do `(site)/page.module.css`. */
 .aviso {
   max-width: 52ch;
-  margin-top: 28px;
-  padding: 0 12px;
-  font: 19px/1.5 var(--serif);
+  margin: 28px 12px 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
 }
 
 /* ---- o cabeçalho: ficha à esquerda, arte à direita --------------------- */
@@ -71,7 +74,7 @@
   min-width: 0;
 }
 
-/* Serifada 52px, `-0.035em` (DESIGN.md#Typography). É a maior tipografia do
+/* Serifada 57px, `-0.035em` (DESIGN.md#Typography). É a maior tipografia do
    produto, e nesta tela ela é a identidade da página — é por isso que abaixo de
    900px o cabeçalho vem **acima** da arte, ao contrário da capa.
 
@@ -79,7 +82,7 @@
    primeiro elemento depois do link de volta. */
 .nomeDoEvento {
   margin: 0 0 20px;
-  font: 400 52px/1 var(--serif);
+  font: 400 57px/1 var(--serif);
   letter-spacing: -0.035em;
 }
 
@@ -94,29 +97,39 @@
    desenho vertical volta a ser o certo: ele lê como ficha de jornal e é ele que
    preenche a coluna de texto, que era o problema a resolver.
 
-   Cada par é uma grade de duas colunas, com fio embaixo — os fios entre as linhas
-   fazem o trabalho que um card faria, sem card (UX-DR3). */
+   ⚠️ **Eram quatro fios — um no topo e um sob cada par — e viraram um filete
+   vertical** (decisão do Igor, 2026-08-13). O comentário acima dizia que "os
+   fios entre as linhas fazem o trabalho que um card faria, sem card"; o que
+   apareceu na tela montada é que três dados curtos não precisam de quatro
+   réguas para serem lidos como um conjunto. Agora eles são **um bloco só**, e
+   quem o delimita é o filete à esquerda.
+
+   **Mesmo tratamento do `DadosDaConta`**, e isso é o ponto: os dois blocos são
+   pares de rótulo e valor, e passam a se parecer. `--fio2` e não `--neon`, pelo
+   UX-DR1 — o acento único é da ação.
+
+   Cada par continua sendo uma grade de duas colunas; o que saiu foi a borda. */
 .ficha {
-  border-top: 1px solid var(--fio);
+  padding-left: 18px;
+  border-left: 2px solid var(--fio2);
 }
 
 .ficha > div {
   display: grid;
-  grid-template-columns: 104px 1fr;
+  grid-template-columns: 118px 1fr;
   gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--fio);
+  padding: 7px 0;
 }
 
 .fichaRotulo {
-  font: 600 10px/1.8 var(--mono);
+  font: 600 12px/1.8 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .fichaValor {
-  font: 400 16px/1.5 var(--serif);
+  font: 400 18px/1.5 var(--serif);
   color: var(--cal);
 }
 
@@ -136,9 +149,8 @@
    altura em vez da largura. Em 16/10 a arte fica com ~305px e o cabeçalho
    equilibra com o texto — e o produto passa a ter **uma** proporção de arte só.
 
-   O fundo em `--breu2` está aqui **sempre**, e não só no `.arteVazia`: ele é o
-   piso do quadro. Enquanto a imagem carrega, e se ela nunca carregar, o que se vê
-   é o mesmo bloco cinza do evento sem arte — nunca o breu da página com um buraco
+   O fundo em `--breu2` é o piso do quadro: enquanto a imagem carrega, e se ela
+   nunca carregar, o que se vê é o cinza — nunca o breu da página com um buraco
    na grade. */
 .arte {
   position: relative;
@@ -149,11 +161,11 @@
 
 /* Sem degradê aqui, ao contrário da capa: lá ele assenta a arte na base da faixa
    larga; aqui a imagem é uma coluna ao lado do texto, e escurecer o pé dela só
-   apagaria parte da foto. O `.arteVazia` existe para o caso nulo ficar nomeado no
-   JSX — o bloco cinza já vem do `.arte`. */
-.arteVazia {
-  background: var(--breu2);
-}
+   apagaria parte da foto.
+
+   ⚠️ **O `.arteVazia` foi removido em 13/08/2026**, aqui e na capa: ele nomeava
+   no JSX um caso nulo que deixou de existir quando a arte de reserva entrou
+   (`lib/arte.ts`). O cinza de piso continua vindo do `.arte` acima. */
 
 .imagemDaArte {
   position: relative;
@@ -163,7 +175,7 @@
   object-fit: cover;
 }
 
-/* ⚠️ **A arte que não carrega vira o mesmo bloco cinza, e isto é CSS, não
+/* ⚠️ **A arte que não carrega vira o disco do RockHub, e isto é CSS, não
    JavaScript** — a regra é copiada da capa da Story 3.3, onde o problema apareceu
    na conferência visual: a URL é da Ticketmaster, pode morrer sem aviso, e o
    navegador desenha o ícone de imagem faltando.
@@ -171,12 +183,17 @@
    **Pseudo-elemento em `<img>` só ganha caixa quando a imagem falha**: no caso
    feliz o `<img>` é elemento substituído e o `::after` não renderiza. A
    alternativa era um `onError`, e ela custava `"use client"` nesta metade da
-   página — que é justamente a metade que não precisa de navegador. */
+   página — que é justamente a metade que não precisa de navegador.
+
+   ⚠️ **A arte de reserva entrou aqui em 13/08/2026** pelo mesmo motivo da capa: o
+   `??` do JSX só cobre `imagem_url` nulo, e a URL que existe mas responde 403 —
+   caso real, encontrado na conferência — passava direto por ele e caía neste
+   cinza. O motivo inteiro está no `page.module.css` da raiz. */
 .imagemDaArte::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: var(--breu2);
+  background: var(--breu2) url("/disco-rockhub.jpg") center / cover;
 }
 
 /* ---- a lista de setores ------------------------------------------------- */
@@ -193,7 +210,7 @@
 }
 
 .instrucao {
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -208,7 +225,7 @@
    o que separa (UX-DR3). */
 .setor {
   display: grid;
-  grid-template-columns: 1fr 230px;
+  grid-template-columns: 1fr 264px;
   gap: 26px;
   align-items: center;
   padding: 22px 12px;
@@ -229,7 +246,7 @@
 
 .nomeDoSetor {
   display: block;
-  font: 400 25px/1 var(--serif);
+  font: 400 27px/1 var(--serif);
   letter-spacing: -0.02em;
 }
 
@@ -241,7 +258,7 @@
    que o UX-DR7 mantém fora da tela do cliente. */
 .medidor {
   position: relative;
-  max-width: 280px;
+  max-width: 320px;
   height: 5px;
   margin-top: 11px;
   background: var(--breu2);
@@ -276,7 +293,7 @@
 .estado {
   display: block;
   margin-top: 9px;
-  font: 10px/1 var(--mono);
+  font: 12px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -290,7 +307,7 @@
 }
 
 .preco {
-  font: 400 23px/1 var(--serif);
+  font: 400 25px/1 var(--serif);
   white-space: nowrap;
 }
 
@@ -301,7 +318,7 @@
   padding: 5px 10px;
   border: 1px solid var(--brasa);
   color: var(--brasa);
-  font: 700 10px/1 var(--mono);
+  font: 700 12px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -323,13 +340,13 @@
    do formulário de publicar já escrevem estas duas linhas. Os fios do stepper vêm
    do `.stepper` e do `.quantidade` — a célula em si não tem borda nenhuma. */
 .passo {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   background: none;
   border: none;
   color: var(--cal);
   cursor: pointer;
-  font: 18px/1 var(--serif);
+  font: 20px/1 var(--serif);
 }
 
 .passo:hover:not(:disabled) {
@@ -348,10 +365,10 @@
 .quantidade {
   display: grid;
   place-items: center;
-  width: 46px;
+  width: 52px;
   border-right: 1px solid var(--fio);
   border-left: 1px solid var(--fio);
-  font: 600 15px/1 var(--mono);
+  font: 600 17px/1 var(--mono);
 }
 
 /* ---- o rodapé do total -------------------------------------------------- */
@@ -391,7 +408,7 @@
    com todas as letras. O contêiner resolve, e o botão continua um só. */
 .acao {
   flex: 0 0 auto;
-  width: 210px;
+  width: 236px;
 }
 
 /* O caminho de quem não está logado como cliente, no lugar do botão: **link, e
@@ -403,7 +420,7 @@
   padding: 18px 20px;
   border: 1px solid var(--neon);
   color: var(--neon);
-  font: 700 12px/1 var(--mono);
+  font: 700 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -416,14 +433,14 @@
 }
 
 .resumo {
-  font: 600 11px/1.4 var(--mono);
+  font: 600 13px/1.4 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .total {
-  font: 400 30px/1 var(--serif);
+  font: 400 33px/1 var(--serif);
   white-space: nowrap;
 }
 
@@ -431,7 +448,7 @@
 .vazio {
   max-width: 46ch;
   padding: 24px 12px 0;
-  font: 19px/1.5 var(--serif);
+  font: 21px/1.5 var(--serif);
 }
 
 /* ---- abaixo de 900px: uma coluna, e o setor em duas linhas -------------- */
@@ -449,18 +466,18 @@
     gap: 22px;
   }
 
-  /* Menor, mas ainda a maior da tela: aos 52px de largura cheia, um nome de
+  /* Menor, mas ainda a maior da tela: aos 57px de largura cheia, um nome de
      artista longo quebrava em três linhas e empurrava a ficha para baixo da
      dobra. */
   .nomeDoEvento {
     margin: 8px 0 14px;
-    font-size: 36px;
+    font-size: 39px;
   }
 
   /* A coluna do rótulo encolhe em vez de o valor quebrar: `CIDADE` e `DATA` cabem
      em 78px, e o que precisa de largura é `sexta, 14 de agosto de 2026, 21h00`. */
   .ficha > div {
-    grid-template-columns: 78px 1fr;
+    grid-template-columns: 88px 1fr;
     gap: 10px;
   }
 
@@ -482,7 +499,7 @@
   }
 
   .total {
-    font-size: 25px;
+    font-size: 27px;
   }
 
   /* O rodapé empilha: resumo e total numa linha, o botão em outra, de largura

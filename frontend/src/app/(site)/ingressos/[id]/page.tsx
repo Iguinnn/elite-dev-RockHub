@@ -5,6 +5,7 @@ import Canhoto from "@/components/Canhoto";
 import CompartilharIngresso from "@/components/CompartilharIngresso";
 import { horaDeEntrada } from "@/lib/formato";
 import { obterIngresso } from "@/lib/ingressos";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
@@ -36,7 +37,7 @@ export default async function CanhotoDoIngresso({
     redirect(`/login?voltar=${encodeURIComponent(`/ingressos/${id}`)}`);
   }
   if (usuario.papel !== "CLIENTE") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   const resultado = await obterIngresso(id);
