@@ -11,19 +11,25 @@
 .rotulo {
   display: block;
   margin-bottom: 7px;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
+/* A caixa vem dos tokens do `globals.css` desde 14/08/2026 — ver o bloco
+   `--campo-altura` de lá para o motivo. **Altura fixa e não derivada de
+   padding**: `type="date"`, `time`, `number` e `search` têm caixas intrínsecas
+   diferentes, e este componente serve aos quatro. O respiro vertical sai do
+   `height` com `box-sizing: border-box`; o `padding` fica só na horizontal. */
 .entrada {
   width: 100%;
+  height: var(--campo-altura);
   background: var(--breu2);
   border: 1px solid var(--fio);
   color: var(--cal);
-  padding: 14px;
-  font: 18px/1 var(--mono);
+  padding: 0 var(--campo-inset);
+  font: var(--campo-corpo)/1 var(--mono);
 }
 
 /* ALÉM do :focus-visible global neon, nunca em vez dele: o contorno de foco

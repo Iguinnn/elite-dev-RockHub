@@ -69,9 +69,58 @@
      As larguras fixas que seguram esse texto subiram junto (coluna de data da
      fila, coluna de rótulo da ficha, célula do stepper, largura dos botões):
      tipografia maior dentro de caixa do tamanho antigo é como se quebra linha
-     onde antes não quebrava.                                               */
+     onde antes não quebrava.
+
+     ⚠️ **A base pequena subiu outro degrau em 14/08/2026** (decisão do Igor,
+     tomada com as telas prontas na frente): tudo que estava entre 11px e 15px
+     ganhou +2px, e a serifada de corpo não mudou. O alvo é o mesmo de antes — o
+     versalete cinza em `--fumaca` com 0,13em a 0,22em de entreletra, que é onde
+     moram `LOCAL`, `CIDADE`, `A PARTIR DE`, `VENDIDOS`, `AGO 2026` e todo kicker
+     de seção. Depois da primeira subida eles ficaram legíveis; continuavam
+     **miúdos**, e miúdo numa tela de avaliação lê como descuido de UI, não como
+     discrição editorial.
+
+     **+2px linear, e não um fator**: a proporção entre 12 e 15 é o que separa
+     rótulo, valor e ação dentro de uma mesma ficha, e multiplicar preservaria a
+     razão mas devolveria o problema — 12 × 1,17 ainda é 14. Somar o mesmo em
+     todos mantém a ordem intacta (nenhum par de tamanhos empatou) e encurta a
+     distância relativa entre o menor e o maior, que é exatamente o que fazia o
+     rótulo sumir ao lado do nome do artista em serifada de 29px.
+
+     As três larguras fixas que o corpo novo estourava subiram junto, pela regra
+     do parágrafo acima: o botão `Reservar e pagar`, a coluna de data da fila da
+     portaria e a caixa de ação da confirmação. O motivo de cada uma está no
+     arquivo dela.                                                          */
   --serif: Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---- a caixa de entrada, num lugar só (14/08/2026) ---------------------
+     Três arquivos desenham a mesma caixa — `Campo.module.css`,
+     `SeletorDeData.module.css` e a linha de setor de `organizador/publicar` —,
+     e até hoje eles a desenhavam por cópia, com um comentário mandando manter
+     igual. **A estratégia falhou na tela:** a cópia do formulário de setores
+     tinha drifado para `11px` de respiro e corpo de `16px`, virando uma caixa
+     de 40px ao lado de duas de 48px. A convenção do projeto é copiar em dois e
+     extrair no terceiro, e o terceiro chegou.
+
+     ⚠️ **`--campo-altura` é o token que importa, e ele existe porque padding
+     mais corpo NÃO dá a mesma altura em todo `<input>`.** Cada tipo tem caixa
+     intrínseca própria no motor do navegador: `date` e `time` carregam o
+     `::-webkit-datetime-edit`, `number` carrega as setinhas, `search` carrega o
+     botão de limpar. Somar `14 + 18 + 14` e esperar 48px nos cinco é o que fazia
+     o campo `DATA` sair mais baixo que o `HORÁRIO` ao lado dele, com os dois
+     escritos com exatamente as mesmas regras. Com a altura fixa e
+     `box-sizing: border-box`, o tipo do input deixa de opinar.
+
+     `CampoDeSenha` já fazia conta em cima destes 48px para posicionar o botão
+     do olho — o comentário de lá soletra a aritmética. Agora ela é garantida em
+     vez de derivada.
+
+     **O `Leitor` fica fora, por escolha declarada**: o campo do código na porta
+     é maior de propósito (`17px`/`22px`), e o motivo está escrito lá.        */
+  --campo-altura: 48px;
+  --campo-inset: 14px;
+  --campo-corpo: 18px;
 }
 
 /* ---- reset -------------------------------------------------------------- */
@@ -166,7 +215,7 @@ a {
 
 /* Etiqueta que abre um bloco. Sempre acima do conteúdo que nomeia. */
 .kicker {
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);

@@ -70,7 +70,7 @@
    aqui são quatro etiquetas dividindo 420px, e os 12px com 0,22em do global
    estouram `INVÁLIDOS` na coluna de 96px. */
 .rotulo {
-  font: 600 11px/1 var(--mono);
+  font: 600 13px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fumaca);

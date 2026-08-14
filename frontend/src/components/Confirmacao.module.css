@@ -56,7 +56,7 @@
 
 /* O `<Botao>` é `width: 100%`; a largura de verdade é desta caixa. */
 .acao {
-  width: 190px;
+  width: 206px;
 }
 
 /* Secundário: fio e texto, sem tinta — molde do `.copiar` do
@@ -66,7 +66,7 @@
   border: 1px solid var(--fio2);
   background: none;
   color: var(--fumaca);
-  font: 700 14px/1 var(--mono);
+  font: 700 16px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;

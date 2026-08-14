@@ -124,7 +124,7 @@
 }
 
 .estado {
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -172,7 +172,7 @@
 
 .origem {
   margin-top: 5px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -234,17 +234,22 @@
    `SETORES` que ele espaçava (decisão do Igor): era um título de grupo em cima
    de uma faixa que já abre com a palavra `SETOR`. */
 
+/* ⚠️ **`CAPACIDADE` e `PREÇO` passaram a ter a mesma largura** (14/08/2026,
+   decisão do Igor com a tela montada). Eram `136px` e `148px`, e a diferença de
+   12px não vinha de regra nenhuma — nenhum dos dois conteúdos precisa de mais
+   espaço que o outro. Duas colunas de número quase do mesmo tamanho leem como
+   grade torta, não como hierarquia. */
 .colunasDoSetor,
 .linhaSetor {
   display: grid;
-  grid-template-columns: 1fr 136px 148px 48px;
+  grid-template-columns: 1fr 148px 148px 48px;
   gap: 12px;
   align-items: center;
 }
 
 /* ⚠️ **7px, e não 9px, para casar com a coluna da esquerda** (13/08/2026). O
    `.rotulo` do `Campo` e o `.kicker` do `globals.css` têm a mesma caixa —
-   `600 12px/1` na mono —, então o que decide se as duas metades do passo 2
+   `600 14px/1` na mono —, então o que decide se as duas metades do passo 2
    começam na mesma linha é só o espaço abaixo do rótulo. Com o kicker `SETORES`
    removido, igualar este valor ao `margin-bottom` do `Campo` põe a primeira
    entrada de setor exatamente na altura dos campos `DATA` e `HORÁRIO`. */
@@ -257,22 +262,43 @@
    quatro réguas para separar quatro linhas de campo que o intervalo já separa.
    Fio é divisória de etapa nesta tela — ver o `.atracao`.
 
-   O `padding: 11px 0` fica: era ele que dava respiro ao fio, e agora é ele
-   sozinho que separa uma linha de setor da seguinte. */
+   ⚠️ **O espaço é todo embaixo, e não `11px 0`** (14/08/2026). Este era metade do
+   desalinhamento que a tela mostrava: o `padding-top` de 11px empurrava a
+   **primeira** entrada de setor 11px abaixo dos campos `DATA` e `HORÁRIO`, e o
+   cálculo do `.colunasDoSetor` acima — que existe justamente para as duas metades
+   começarem na mesma linha — era anulado pela linha seguinte. Com `0` em cima, o
+   topo da primeira entrada é `14px` de kicker mais `7px`, exatamente o mesmo do
+   `.rotulo` do `Campo`.
+
+   Os 22px de baixo são os mesmos 11 + 11 que separavam uma linha da outra: o
+   ritmo entre setores não mudou, só saiu de cima da primeira. */
 .linhaSetor {
-  padding: 11px 0;
+  padding: 0 0 22px;
 }
 
-/* Mesmos valores da entrada do `Campo`, com o `padding` menor que a linha de
-   quatro colunas pede. Não é o `Campo` porque aqui o rótulo é oculto e a
-   grade é da linha, não do campo. */
+/* ⚠️ **Idêntica ao `Campo`, e agora pelos tokens em vez de por cópia**
+   (14/08/2026). O comentário aqui dizia "mesmos valores do `Campo`, com o
+   `padding` menor que a linha de quatro colunas pede" — e essa diferença
+   deliberada era metade do desalinhamento que a tela mostrava: `11px` de padding
+   com corpo de `16px` dá uma caixa de **40px**, contra os **48px** dos campos
+   `DATA` e `HORÁRIO` na coluna ao lado. Três entradas na mesma dobra, duas de um
+   tamanho e uma de outro — e 40px ainda ficava abaixo do alvo de toque de 44px
+   do UX-DR6.
+
+   Não é o componente `Campo` porque aqui o rótulo é oculto e a grade é da linha,
+   não do campo. Mas a caixa é a mesma caixa, e desde agora ela vem do mesmo
+   lugar: foi esta cópia que drifou, e é por causa dela que os tokens existem
+   (ver o bloco `--campo-altura` do `globals.css`). O `capacidade` é um
+   `type="number"`, que tem caixa intrínseca própria — mais um motivo para a
+   altura ser fixa e não somada. */
 .entrada {
   width: 100%;
+  height: var(--campo-altura);
   background: var(--breu2);
   border: 1px solid var(--fio);
   color: var(--cal);
-  padding: 11px;
-  font: 16px/1 var(--mono);
+  padding: 0 var(--campo-inset);
+  font: var(--campo-corpo)/1 var(--mono);
 }
 
 .entrada:focus {
@@ -306,13 +332,17 @@
   color: var(--brasa);
 }
 
+/* ⚠️ **Sem `margin-top` desde 14/08/2026.** Os 14px daqui somavam com os 11px de
+   `padding-bottom` da última linha de setor e davam 25px; com o espaço da linha
+   agora todo embaixo (22px), somariam 36 e o botão descolaria da lista que ele
+   continua. Os 22px da linha sozinhos mantêm o mesmo ritmo entre a última
+   entrada e o botão que existe entre uma entrada e a seguinte. */
 .acrescentar {
-  margin-top: 14px;
   padding: 11px 18px;
   background: none;
   border: 1px solid var(--fio2);
   color: var(--cal);
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
@@ -431,7 +461,7 @@
 }
 
 .emailDaConta {
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -439,7 +469,7 @@
 
 .contagemEscalados {
   margin-top: 12px;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--neon);
@@ -479,7 +509,7 @@
 }
 
 .setorPublicado {
-  font: 600 12px/1.6 var(--mono);
+  font: 600 14px/1.6 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
@@ -511,7 +541,7 @@
 
 .saida {
   color: var(--neon);
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -537,8 +567,16 @@
     display: none;
   }
 
+  /* Empilhado, o espaço volta para os dois lados: aqui não há coluna vizinha
+     com que alinhar o topo, e cada linha de setor vira um bloco de três campos
+     rotulados que precisa respirar em cima e embaixo. */
   .linhaSetor {
     padding: 18px 0;
+  }
+
+  /* E o botão recupera a margem que perdeu no desktop, pelo mesmo motivo. */
+  .acrescentar {
+    margin-top: 14px;
   }
 
   .oculto {
@@ -549,7 +587,7 @@
     overflow: visible;
     clip-path: none;
     display: block;
-    font: 600 12px/1 var(--mono);
+    font: 600 14px/1 var(--mono);
     letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--fumaca);

@@ -50,7 +50,7 @@
 .texto {
   margin: 0;
   color: var(--cal);
-  font: 13px/1.7 var(--mono);
+  font: 15px/1.7 var(--mono);
 }
 
 /* O `<strong>` da primeira frase ("Esgotou enquanto você decidia") é o que

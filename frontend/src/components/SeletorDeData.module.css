@@ -15,17 +15,26 @@
 .rotulo {
   display: block;
   margin-bottom: 7px;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 /* A entrada e o botão dividem uma caixa só: a borda é do invólucro, e não de
-   cada um, para não haver dois fios encostados no meio do campo. */
+   cada um, para não haver dois fios encostados no meio do campo.
+
+   ⚠️ **É aqui que mora a altura, e ela é fixa desde 14/08/2026.** Este campo é
+   o `type="date"`, e ele tem caixa intrínseca própria no motor do navegador —
+   o `::-webkit-datetime-edit` do Chrome não mede como o texto de um
+   `type="text"`. Com a altura derivada de `padding + corpo`, o `DATA` saía mais
+   baixo que o `HORÁRIO` ao lado dele **com as duas regras escritas idênticas**,
+   e não havia número para ajustar que resolvesse nos dois navegadores. O
+   `--campo-altura` do `globals.css` tira o tipo do input da conta. */
 .linha {
   display: flex;
   align-items: stretch;
+  height: var(--campo-altura);
   background: var(--breu2);
   border: 1px solid var(--fio);
 }
@@ -34,14 +43,17 @@
   border-color: var(--neon);
 }
 
+/* Sem altura própria: quem a define é o `.linha` acima, e o `align-items:
+   stretch` estica os dois filhos até ela. O respiro vertical vem daí; o
+   `padding` fica só na horizontal, como no `Campo`. */
 .entrada {
   flex: 1;
   min-width: 0;
   background: none;
   border: 0;
   color: var(--cal);
-  padding: 14px;
-  font: 18px/1 var(--mono);
+  padding: 0 var(--campo-inset);
+  font: var(--campo-corpo)/1 var(--mono);
 }
 
 /* ⚠️ **É esta regra que apaga o popup feio do navegador.** O indicador é o
@@ -127,13 +139,13 @@
   --rdp-animation_duration: 0s;
 
   color: var(--cal);
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
 }
 
 /* O mês em versalete mono, como todo kicker do sistema — a biblioteca escreve
    "agosto de 2026" em caixa baixa e serifada do navegador. */
 .popover :global(.rdp-month_caption) {
-  font: 600 13px/1 var(--mono);
+  font: 600 15px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--cal);
@@ -142,14 +154,14 @@
 /* As iniciais dos dias da semana: a mesma etiqueta em `--fumaca` das colunas de
    setor. */
 .popover :global(.rdp-weekday) {
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .popover :global(.rdp-day_button) {
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
   color: var(--cal);
 }
 

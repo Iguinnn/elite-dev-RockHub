@@ -1,7 +1,6 @@
 /* A ficha do show no cabeçalho do leitor (Story 5.3).
 
    ┌──────────────────────────────────────────┐
-   │ LEITOR                                   │  ← kicker
    │ Baco Exu do Blues                        │  ← serifada, o dado que confirma
    │ SEX, 15 AGO 2026 · 21H00 · ESPAÇO UNIMED │  ← ficha em mono versalete
    └──────────────────────────────────────────┘
@@ -11,6 +10,13 @@
    que esta tela precisa responder antes de começar — é este o show certo? Um
    título genérico grande empurraria o nome do evento para baixo e gastaria a
    primeira dobra da tela mais apertada do produto.
+
+   ⚠️ **E o kicker `LEITOR` saiu em 14/08/2026** (decisão do Igor, com a tela
+   montada), pelo mesmo argumento levado até o fim: se um título genérico grande
+   não paga o espaço que ocupa, um rótulo genérico pequeno também não. A tela se
+   nomeia sozinha três linhas abaixo — `LER PELA CÂMERA`, `CÓDIGO DO INGRESSO`,
+   `VALIDAR`. Com ele fora, o `.nome` perdeu o `margin-top` que existia só para
+   afastá-lo do rótulo.
 
    **O fio de baixo fecha só a identificação do show.** O `<ContadorDoTurno>` tem
    faixa própria logo abaixo, com o fio dele — são duas camadas da tela, e não um
@@ -29,7 +35,6 @@
 }
 
 .nome {
-  margin-top: 8px;
   font: 400 32px/1.15 var(--serif);
   letter-spacing: -0.02em;
   /* O nome vem da Ticketmaster e pode ser longo ("Baco Exu do Blues — Turnê
@@ -39,7 +44,7 @@
 
 .ficha {
   margin-top: 9px;
-  font: 12px/1.5 var(--mono);
+  font: 14px/1.5 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);

@@ -14,7 +14,7 @@
 
 .titulo {
   margin: 0 0 4px;
-  font: 600 13px/1.4 var(--mono);
+  font: 600 15px/1.4 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -60,7 +60,7 @@
 .legenda {
   margin-bottom: 10px;
   padding: 0;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -84,7 +84,7 @@
   border: 1px solid var(--fio);
   background: var(--breu2);
   color: var(--fumaca);
-  font: 600 14px/1 var(--mono);
+  font: 600 16px/1 var(--mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
@@ -131,7 +131,7 @@
 }
 
 .dicaDoCartao code {
-  font: 600 15px/1 var(--mono);
+  font: 600 17px/1 var(--mono);
   color: var(--cal);
 }
 
@@ -160,7 +160,7 @@
 .rotuloDoCodigo {
   display: block;
   margin-bottom: 8px;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -173,7 +173,7 @@
   padding: 12px;
   border: 1px solid var(--fio);
   background: var(--breu2);
-  font: 15px/1.5 var(--mono);
+  font: 17px/1.5 var(--mono);
   color: var(--cal);
   overflow-wrap: anywhere;
 }

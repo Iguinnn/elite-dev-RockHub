@@ -129,7 +129,7 @@
 }
 
 .fichaRotulo {
-  font: 600 12px/1.8 var(--mono);
+  font: 600 14px/1.8 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -217,7 +217,7 @@
 }
 
 .instrucao {
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -300,7 +300,7 @@
 .estado {
   display: block;
   margin-top: 9px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -325,7 +325,7 @@
   padding: 5px 10px;
   border: 1px solid var(--brasa);
   color: var(--brasa);
-  font: 700 12px/1 var(--mono);
+  font: 700 14px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -413,9 +413,14 @@
    solto nesta linha ele comeria o espaço do resumo e do total. Uma prop
    `variante` para um caso só seria abstração inventada — o `Botao.tsx` diz isso
    com todas as letras. O contêiner resolve, e o botão continua um só. */
+/* ⚠️ **Era 236px, e subiu junto com a tipografia** (14/08/2026): `Reservar e
+   pagar` são 16 caracteres de mono versalete com 0,18em de entreletra, e no
+   corpo novo do `Botao` eles passam a ocupar quase exatamente os 200px que
+   sobravam entre os dois `padding` de 18px. Rótulo que quebra em duas linhas
+   dentro de um botão de `line-height: 1` corta a segunda pela metade. */
 .acao {
   flex: 0 0 auto;
-  width: 236px;
+  width: 268px;
 }
 
 /* O caminho de quem não está logado como cliente, no lugar do botão: **link, e
@@ -427,7 +432,7 @@
   padding: 18px 20px;
   border: 1px solid var(--neon);
   color: var(--neon);
-  font: 700 14px/1 var(--mono);
+  font: 700 16px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -440,7 +445,7 @@
 }
 
 .resumo {
-  font: 600 13px/1.4 var(--mono);
+  font: 600 15px/1.4 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fumaca);
