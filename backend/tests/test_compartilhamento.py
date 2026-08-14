@@ -839,6 +839,7 @@ def test_duas_conexoes_compartilhando_o_mesmo_ingresso_geram_um_token_so(
                 organizador_id=organizador_id,
                 nome="Show da corrida do link",
                 data_hora=datetime.now(timezone.utc) + timedelta(days=30),
+                data_hora_fim=datetime.now(timezone.utc) + timedelta(days=30, hours=4),
                 local="Espaço Unimed",
                 cidade="São Paulo",
                 origem_externa_id="G5vYZ9a1kd",

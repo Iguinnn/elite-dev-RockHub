@@ -80,6 +80,15 @@ evento_portaria = Table(
 
 class Evento(Base):
     __tablename__ = "evento"
+    __table_args__ = (
+        # Rede de segurança do banco, no molde do `estoque_valido` do `Setor`
+        # logo abaixo: a regra de verdade é o `FIM_ANTES_DO_INICIO` que
+        # `publicar` e `atualizar` recusam com `422` e uma frase em português.
+        # Esta constraint é o que sobra de pé se algum caminho da aplicação
+        # escapar das duas — e o único jeito de prová-la é um `INSERT` direto,
+        # porque nenhuma rota consegue chegar aqui.
+        CheckConstraint("data_hora_fim > data_hora", name="fim_depois_do_inicio"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     # Sem `ondelete`: apagar um organizador com eventos publicados deve doer.
@@ -93,6 +102,25 @@ class Evento(Base):
     nome: Mapped[str] = mapped_column(String(200), nullable=False)
     # TIMESTAMPTZ em UTC, como todo tempo do projeto (AD-11).
     data_hora: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # A hora em que o show acaba (techspec `docs/techspec-fim-do-evento.md`).
+    #
+    # **Obrigatória, e é isso que faz o defeito sumir também nos eventos que já
+    # existem.** Sem esta coluna o sistema não sabia quando um show termina: o
+    # ingresso ficava `Ativo` para sempre na conta do cliente e o turno
+    # continuava validável dias depois. A migração calcula `data_hora + 6h` para
+    # todo evento já gravado, inclusive os da Railway.
+    #
+    # *Descartei* deixá-la anulável: `porta_aberta`, a tela do ingresso e a do
+    # turno passariam a carregar um "e se não tem término?" para sempre, e os
+    # eventos de produção continuariam exatamente com o bug. Invariante que vale
+    # para os novos e não para os antigos é invariante pela metade — mesma
+    # disciplina do `EVENTO_SEM_PORTARIA`.
+    #
+    # ⚠️ **Não há coluna de duração**, e não deve haver: duração é `data_hora_fim
+    # - data_hora`, e guardar as duas seria duas fontes para o mesmo fato.
+    data_hora_fim: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
     # Quem preenche é o organizador na 2.4; o catálogo entra só como sugestão.

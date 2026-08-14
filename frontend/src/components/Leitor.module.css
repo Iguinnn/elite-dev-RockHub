@@ -169,6 +169,10 @@
 
 /* ALÉM do `:focus-visible` global, nunca em vez dele — mesma regra do `Campo`.
    O contorno de foco não é desligado em lugar nenhum do projeto. */
+/* `--neon` e não `--neon2`, como no `Campo`. Aqui não muda um pixel — a portaria
+   é travada no escuro, e no escuro os dois tokens valem a mesma coisa —, e é
+   justamente por isso que ela entra: campo focado do produto inteiro obedece a
+   uma regra só, e não a uma regra que depende de onde o campo mora. */
 .entrada:focus {
   border-color: var(--neon);
 }

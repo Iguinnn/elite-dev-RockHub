@@ -41,7 +41,7 @@
   max-width: 52ch;
   margin-top: 28px;
   padding-left: 14px;
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   font: 21px/1.5 var(--serif);
 }
 
@@ -150,7 +150,7 @@
 }
 
 .voltar:hover {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* O título do evento e a ação de editar nas pontas (13/08/2026, techspec de
@@ -207,8 +207,8 @@
 
 .editar:hover,
 .cancelarExclusao:hover {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* ⚠️ **Em repouso, o `Excluir` é idêntico ao `Editar` — mesma `--cal`, mesmo
@@ -223,8 +223,8 @@
    hover em `--brasa` (contra o `--neon` do `Editar`) e, sobretudo, o segundo
    estágio preenchido de vermelho logo abaixo. */
 .excluir:hover {
-  border-color: var(--brasa);
-  color: var(--brasa);
+  border-color: var(--brasa2);
+  color: var(--brasa2);
 }
 
 /* O segundo estágio: os dois botões juntos, para o `Cancelar` nascer onde a mão
@@ -240,8 +240,8 @@
    os vizinhos. */
 .confirmarExclusao {
   background: var(--brasa);
-  border-color: var(--brasa);
-  color: var(--breu);
+  border-color: var(--brasa2);
+  color: var(--vazado);
 }
 
 .confirmarExclusao:disabled,

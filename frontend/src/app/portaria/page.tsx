@@ -22,9 +22,15 @@ import estilos from "./page.module.css";
  * uma constante de duas horas comparada com o relógio da requisição, e a 5.2
  * passou a recusar validação fora da janela — com a regra valendo dos dois
  * lados, as duas constantes discordariam algum dia e esta tela liberaria o link
- * de um turno que a API recusa. A tela agora **lê `turno.aberto`** e não calcula
- * nada: dentro da janela o item é link para a tela do evento, fora dela é um
- * bloco sem link com a frase "O evento ainda não começou".
+ * de um turno que a API recusa. A tela agora **lê `turno.estado`** e não calcula
+ * nada: `ABERTO` é link para a tela do evento, `NAO_COMECOU` e `ENCERRADO` são
+ * blocos sem link, com a frase de cada um.
+ *
+ * ⚠️ **O turno encerrado continua na lista, e sumir com ele seria o erro.**
+ * `listar_escalados` é o inventário de quem lê, não a vitrine de quem compra —
+ * tirar o show que acabou transformaria esta lista na quinta cópia do corte
+ * público, o mesmo que o parágrafo acima recusa pelo outro lado. Quem trabalhou
+ * ontem à noite precisa reconhecer o turno de ontem ao abrir a tela.
  *
  * **As mesmas duas guardas de `/organizador/eventos` e `/ingressos`**, com outro
  * papel: sem sessão, `redirect` para o login com o caminho de volta preservado;
@@ -107,10 +113,16 @@ export default async function Turnos() {
  * é o que impede a ficha de imprimir um separador solto — ou pior, a palavra
  * "null" — quando ela não vem.
  *
- * ⚠️ **`turno.aberto` vem pronto do backend, e o componente não recebe mais
+ * ⚠️ **`turno.estado` vem pronto do backend, e o componente não recebe mais
  * relógio nenhum** (Story 5.2). Ele deixou de comparar `data_hora` com
  * `Date.now()` porque a mesma janela decide o `403` da rota de validação: com o
  * cálculo aqui, esta tela poderia liberar o link de um turno que a API recusa.
+ *
+ * ⚠️ **O campo era `aberto: boolean` e virou um enum de três valores**
+ * (techspec `docs/techspec-fim-do-evento.md`). O motivo aparece inteiro nesta
+ * tela: sem o terceiro estado, o turno de um show da semana passada continuava
+ * com link — a portaria clicava, chegava ao leitor e só ali descobria, pelo
+ * `403`, que o evento tinha acabado. Agora ele diz isso na própria lista.
  *
  * ⚠️ **`entradas` é desenhado, e só nos turnos abertos** (Story 5.6). O campo
  * entrou no `TurnoDaPortaria`, que **duas** telas leem, e ignorá-lo aqui seria
@@ -120,9 +132,12 @@ export default async function Turnos() {
  *
  * **Fora da janela ele não aparece**, e a ausência é a decisão: um `0 ENTRADAS`
  * ao lado de "O evento ainda não começou" seria um número dizendo o que a frase
- * já disse, e zero antes de a porta abrir não é medida de nada. As três recusas
- * não vêm nem no contrato desta rota — elas são do `TurnoDoLeitor`, e numa tela
- * de escolha seriam ruído operacional.
+ * já disse, e zero antes de a porta abrir não é medida de nada. **No turno
+ * encerrado ele também some**, e aí a escolha é outra: o número existiria e seria
+ * verdadeiro, mas esta é uma tela de **escolher onde trabalhar**, e o encerrado
+ * não é escolha nenhuma — o total da noite é assunto do leitor, que continua
+ * mostrando os quatro contadores. As três recusas não vêm nem no contrato desta
+ * rota: elas são do `TurnoDoLeitor`, e numa tela de escolha seriam ruído.
  */
 function Turno({ turno }: { turno: TurnoDaPortaria }) {
   // `partesDaFilaPublica` e não `partesDaData`: é a única que devolve a **hora**
@@ -143,11 +158,17 @@ function Turno({ turno }: { turno: TurnoDaPortaria }) {
       <div className={estilos.corpo}>
         <h2 className={estilos.nome}>{turno.nome}</h2>
         <div className={estilos.origem}>{origem}</div>
-        {turno.aberto ? (
+        {turno.estado === "ABERTO" ? (
           // O plural fixo é escolha: "1 entradas" é feio e "1 entrada" custaria
           // uma regra de concordância numa etiqueta em versalete, onde a palavra
           // funciona como rótulo de coluna e não como frase.
           <p className={estilos.entradas}>{turno.entradas} entradas</p>
+        ) : turno.estado === "ENCERRADO" ? (
+          // ⚠️ **A mesma classe do `NAO_COMECOU`, e não uma cor nova.** Os dois
+          // são turnos que não se abrem, e o que muda é a frase — no pretérito de
+          // um lado, no futuro do outro. Um tom de alerta aqui diria que algo
+          // falhou, e nada falhou: o show acabou.
+          <p className={estilos.fechado}>O evento acabou</p>
         ) : (
           <p className={estilos.fechado}>O evento ainda não começou</p>
         )}
@@ -160,7 +181,12 @@ function Turno({ turno }: { turno: TurnoDaPortaria }) {
   // Sem link, o elemento é uma `<div>` e não um `<a>` desativado: link que não
   // navega continua recebendo foco de teclado e continua sendo anunciado como
   // link, e a pessoa descobre que não vai a lugar nenhum depois de tentar.
-  return turno.aberto ? (
+  //
+  // ⚠️ **`=== "ABERTO"`, e não `!== "ENCERRADO"`.** A comparação positiva é o que
+  // mantém o quarto estado — se um dia existir — nascendo sem link, em vez de
+  // ganhando um por omissão. O mesmo raciocínio do `!= VALIDO` do
+  // `contar_recusas`, do lado de lá.
+  return turno.estado === "ABERTO" ? (
     <Link href={`/portaria/eventos/${turno.id}`} className={estilos.turno}>
       {conteudo}
     </Link>

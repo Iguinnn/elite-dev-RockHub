@@ -31,7 +31,7 @@
      vazio**, sem símbolo e sem palavra, que é um bloco quebrado e não um
      fallback. A defesa contra isso é o `tsc`, e ela vale enquanto os quatro
      nomes vierem do tipo do `lib/validacao.ts`. */
-  --tinta: var(--brasa);
+  --tinta: var(--brasa2);
 
   border: 2px solid var(--tinta);
   /* 22px na horizontal, e não os 26 do protótipo: são 8px de coluna que a
@@ -42,7 +42,7 @@
 }
 
 .veredito[data-veredito="VALIDO"] {
-  --tinta: var(--verde);
+  --tinta: var(--verde2);
 }
 
 /* `display: block` porque `<svg>` é inline por padrão, e inline carrega o

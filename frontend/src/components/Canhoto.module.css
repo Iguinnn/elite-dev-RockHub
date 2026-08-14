@@ -58,7 +58,16 @@
   font: 400 19px/1.4 var(--serif);
 }
 
-/* O picote: fio tracejado entre o talão e o corpo. */
+/* O picote: fio tracejado entre o talão e o corpo.
+
+   ⚠️ **O par `--cal`/`--breu` fica invertido de propósito, e continua invertido
+   nos dois temas** (14/08/2026, com a paleta em dois modos). Este bloco é o
+   único do produto que já era o negativo da página, e os dois tokens viram
+   juntos: no escuro é papel claro com letra escura, no claro é bloco escuro com
+   letra clara — 15,21:1 nos dois casos, porque é o mesmo par. **Não troque o
+   `--breu` por `--vazado`**: o preenchimento aqui é `--cal`, que vira, e travar
+   só a letra deixaria piche sobre piche. O QR ao lado não participa disso — ele
+   é literal no `Canhoto.tsx` porque leitor óptico exige fundo claro. */
 .corpo {
   display: flex;
   flex-direction: column;

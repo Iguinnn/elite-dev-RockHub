@@ -45,6 +45,7 @@ def _evento_gravado(
     *,
     nome: str = "Um show qualquer",
     data_hora: datetime | None = None,
+    data_hora_fim: datetime | None = None,
     cidade: str | None = "São Paulo",
     portarias: list[Usuario] | None = None,
     publicado: bool = True,
@@ -58,10 +59,15 @@ def _evento_gravado(
     (`EVENTO_NO_PASSADO`), e o teste que mais importa neste arquivo é justamente
     o do evento que já aconteceu. Pela rota ele seria impossível de montar.
     """
+    # ⚠️ **O término é parâmetro próprio, e é ele que decide o `estado` do turno**
+    # (techspec `docs/techspec-fim-do-evento.md`). O padrão deriva do início; os
+    # testes de `ENCERRADO` mandam um valor no passado.
+    inicio = data_hora or datetime(2026, 8, 15, 21, 0, tzinfo=timezone.utc)
     evento = Evento(
         organizador_id=organizador.id,
         nome=nome,
-        data_hora=data_hora or datetime(2026, 8, 15, 21, 0, tzinfo=timezone.utc),
+        data_hora=inicio,
+        data_hora_fim=data_hora_fim or (inicio + timedelta(hours=4)),
         local="Espaço Unimed",
         cidade=cidade,
         origem_externa_id="G5vYZ9a1kd",
@@ -268,7 +274,7 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """Sem `capacidade`, `vendidos` nem `setores` — e **com** `aberto` e `entradas`.
+    """Sem `capacidade`, `vendidos` nem `setores` — e **com** `estado` e `entradas`.
 
     Os três primeiros continuam fora: inventário é do organizador.
 
@@ -282,6 +288,16 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
     da tela. Desde que a rota de validação passou a recusar fora da janela, a
     janela tem um dono só — `ABERTURA_DOS_PORTOES`, no service —, e a tela lê o
     campo em vez de recalcular.
+
+    ⚠️ **E `aberto` virou `estado` em 14/08/2026** (techspec
+    `docs/techspec-fim-do-evento.md`): com `evento.data_hora_fim`, a noite tem
+    três partes e o booleano não tinha onde pôr o show que acabou. Este teste
+    trava o **nome** do campo, e é ele que quebra se alguém acrescentar um
+    `encerrado: bool` ao lado em vez de trocar.
+
+    ⚠️ **`data_hora_fim` não entra no contrato do turno.** A tela lê o `estado`,
+    que já é a resposta; devolver o instante deixaria a portaria recalculando a
+    mesma regra do outro lado — exatamente o que a 5.2 desfez com o `aberto`.
 
     ⚠️ **`recusas` fica de fora, e a ausência é asserção.** As três recusas são do
     `TurnoDoLeitor`, o schema da rota de um turno só; a lista não as desenha, e
@@ -302,22 +318,27 @@ def test_o_turno_tem_exatamente_as_chaves_do_turno_da_portaria(
         "data_hora",
         "local",
         "cidade",
-        "aberto",
+        "estado",
         "entradas",
     }
+    assert "data_hora_fim" not in resposta.text
 
 
-def test_aberto_segue_a_janela_de_duas_horas_do_service(
+def test_o_estado_segue_a_janela_de_duas_horas_do_service(
     cliente: TestClient,
     sessao: Session,
     fabricar_usuario: Callable[..., Usuario],
 ) -> None:
-    """O campo é `data_hora - ABERTURA_DOS_PORTOES <= agora`, e nada mais.
+    """`ABERTO` é `data_hora - ABERTURA_DOS_PORTOES <= agora < data_hora_fim`.
 
-    Três turnos numa resposta só: um daqui a três horas (fechado), um daqui a uma
-    hora (aberto, dentro da janela) e um que começou há meia hora (aberto, do
-    outro lado do corte que as rotas públicas fazem). O terceiro é o que importa
-    — é a hora em que a fila anda.
+    Três turnos numa resposta só: um daqui a três horas (`NAO_COMECOU`), um daqui
+    a uma hora (`ABERTO`, dentro da janela) e um que começou há meia hora
+    (`ABERTO`, do outro lado do corte que as rotas públicas fazem). O terceiro é o
+    que importa — é a hora em que a fila anda.
+
+    ⚠️ **Todos os cinco têm término no futuro**, de propósito: este teste é o da
+    borda de **abrir**, e o da borda de fechar é o próximo. Misturar os dois faria
+    um deles passar por causa do outro.
 
     ⚠️ **Os dois da borda existem porque os três de cima não prendem duas horas**
     (code review da Epic 5): −30min, +1h e +3h são satisfeitos por qualquer janela
@@ -346,12 +367,74 @@ def test_aberto_segue_a_janela_de_duas_horas_do_service(
     resposta = cliente.get("/portaria/eventos")
 
     assert resposta.status_code == 200
-    assert [(turno["nome"], turno["aberto"]) for turno in resposta.json()] == [
-        ("Começou faz meia hora", True),
-        ("Daqui a uma hora", True),
-        ("Abriu faz um minuto", True),
-        ("Abre daqui a um minuto", False),
-        ("Daqui a três horas", False),
+    assert [(turno["nome"], turno["estado"]) for turno in resposta.json()] == [
+        ("Começou faz meia hora", "ABERTO"),
+        ("Daqui a uma hora", "ABERTO"),
+        ("Abriu faz um minuto", "ABERTO"),
+        ("Abre daqui a um minuto", "NAO_COMECOU"),
+        ("Daqui a três horas", "NAO_COMECOU"),
+    ]
+
+
+def test_o_estado_vira_encerrado_no_instante_exato_do_termino(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A borda de fechar — techspec `docs/techspec-fim-do-evento.md`, commit 3.
+
+    **É o defeito que motivou a spec, visto pela lista.** Antes dela `porta_aberta`
+    não tinha teto: um show da semana passada continuava `aberto`, e o turno
+    aparecia clicável e validável dias depois. Os três casos aqui são um minuto de
+    cada lado do término e um show de ontem.
+
+    ⚠️ **Sem tolerância**, e é o que o caso do meio trava: o portão fecha no
+    instante exato de `data_hora_fim`, e não X horas depois. Uma
+    `TOLERANCIA_APOS_O_FIM` que alguém acrescentasse faria o "Acabou faz um
+    minuto" voltar a sair `ABERTO` — e a tela do cliente diria outra coisa,
+    porque a `situacao` do ingresso não tem folga nenhuma.
+
+    ⚠️ **O turno encerrado continua na lista**, e a asserção são os três itens
+    presentes. Some-lo seria transformar `listar_escalados` na quinta cópia do
+    corte público, e o docstring dela recusa isso desde a 5.1.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "fim@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "fim-porta@exemplo.com")
+    agora = datetime.now(timezone.utc)
+    for nome, inicio, fim in (
+        (
+            "Show de ontem",
+            agora - timedelta(days=1, hours=4),
+            agora - timedelta(days=1),
+        ),
+        (
+            "Acabou faz um minuto",
+            agora - timedelta(hours=4, minutes=1),
+            agora - timedelta(minutes=1),
+        ),
+        (
+            "Acaba daqui a um minuto",
+            agora - timedelta(hours=3, minutes=59),
+            agora + timedelta(minutes=1),
+        ),
+    ):
+        _evento_gravado(
+            sessao,
+            organizador,
+            nome=nome,
+            data_hora=inicio,
+            data_hora_fim=fim,
+            portarias=[porteiro],
+        )
+    _entrar(cliente, porteiro)
+
+    resposta = cliente.get("/portaria/eventos")
+
+    assert resposta.status_code == 200
+    assert [(turno["nome"], turno["estado"]) for turno in resposta.json()] == [
+        ("Show de ontem", "ENCERRADO"),
+        ("Acabou faz um minuto", "ENCERRADO"),
+        ("Acaba daqui a um minuto", "ABERTO"),
     ]
 
 
@@ -484,13 +567,13 @@ def test_o_turno_de_um_evento_so_traz_a_mesma_ficha_da_lista(
         "data_hora",
         "local",
         "cidade",
-        "aberto",
+        "estado",
         "entradas",
         "recusas",
     }
     assert turno["id"] == str(evento.id)
     assert turno["nome"] == "Sepultura"
-    assert turno["aberto"] is True
+    assert turno["estado"] == "ABERTO"
     # Show sem ninguém na porta ainda: os quatro são zero, e **existem**. Um
     # veredito ausente faria a tela desenhar `undefined` no começo do turno, que é
     # quando o contador passa mais tempo zerado.

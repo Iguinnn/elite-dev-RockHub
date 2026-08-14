@@ -21,7 +21,7 @@ o que o paradigma da espinha proíbe. O critério inteiro está no docstring de
 """
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -67,10 +67,12 @@ def _evento_gravado(
     if setores is None:
         setores = [("Pista", 800, 0)]
 
+    inicio = data_hora or datetime(2026, 8, 15, 21, 0, tzinfo=timezone.utc)
     evento = Evento(
         organizador_id=organizador.id,
         nome=nome,
-        data_hora=data_hora or datetime(2026, 8, 15, 21, 0, tzinfo=timezone.utc),
+        data_hora=inicio,
+        data_hora_fim=inicio + timedelta(hours=4),
         local="Espaço Unimed",
         cidade="São Paulo",
         origem_externa_id="G5vYZ9a1kd",
@@ -252,6 +254,11 @@ def test_o_resumo_tem_exatamente_as_chaves_do_evento_resumo(
         "capacidade_total",
         "vendidos_total",
     }
+    # ⚠️ **`data_hora_fim` fica de fora do resumo, e entra só no detalhe**
+    # (`EventoSaida`). A fila do organizador é escaneável — data, nome, local e um
+    # par de números —, e quem precisa do término é o formulário de edição, que
+    # abre pelo detalhe. Campo sem consumidor não viaja.
+    assert "data_hora_fim" not in resposta.text
 
 
 # --------------------------------------------------------------------------- #

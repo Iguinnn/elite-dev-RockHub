@@ -26,6 +26,22 @@
   letter-spacing: -0.02em;
 }
 
+/* O título da etapa 1 mais o `?` da `Dica` (14/08/2026).
+
+   Existe porque a dica **não pode morar dentro do `<h1>`** — ali o texto do
+   painel entraria no nome acessível do heading (o motivo inteiro está na
+   `page.tsx`). Com os dois irmãos soltos dentro do `.secTitulo`, que é um flex
+   de duas pontas, o `space-between` espalharia três filhos e a dica flutuaria no
+   meio da linha. Este invólucro os mantém como um bloco só, e o kicker continua
+   encostado na direita.
+
+   `align-items: center` e não `baseline`: o `?` é um círculo de 20px ao lado de
+   uma serifada de 27px, e pela baseline ele fica visivelmente caído. */
+.tituloComDica {
+  display: flex;
+  align-items: center;
+}
+
 /* O passo 2 abre longe da última fila do catálogo: são duas etapas, não uma
    lista que continua.
 
@@ -79,7 +95,7 @@
   max-width: 46ch;
   margin-top: 28px;
   padding-left: 14px;
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   font: 21px/1.5 var(--serif);
 }
 
@@ -119,7 +135,7 @@
 }
 
 .itemEscolhido {
-  border-left: 3px solid var(--neon);
+  border-left: 3px solid var(--neon2);
   padding-left: 14px;
 }
 
@@ -132,7 +148,7 @@
 }
 
 .itemEscolhido .estado {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 .miniatura {
@@ -301,6 +317,8 @@
   font: var(--campo-corpo)/1 var(--mono);
 }
 
+/* `--neon` e não `--neon2`, como no `Campo`: campo focado é rosa vivo nos dois
+   modos, e o porquê está escrito lá. */
 .entrada:focus {
   border-color: var(--neon);
 }
@@ -329,7 +347,7 @@
 }
 
 .remover:hover {
-  color: var(--brasa);
+  color: var(--brasa2);
 }
 
 /* ⚠️ **Sem `margin-top` desde 14/08/2026.** Os 14px daqui somavam com os 11px de
@@ -349,8 +367,8 @@
 }
 
 .acrescentar:hover {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* ⚠️ `gap` e `align-items` entraram em 13/08/2026 para o `FormularioEdicao`, que
@@ -472,7 +490,7 @@
   font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* ---- a confirmação, no lugar do formulário ------------------------------ */
@@ -540,7 +558,7 @@
 }
 
 .saida {
-  color: var(--neon);
+  color: var(--neon2);
   font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;

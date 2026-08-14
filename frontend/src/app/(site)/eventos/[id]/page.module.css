@@ -39,7 +39,7 @@
 }
 
 .voltar:hover {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* A frase de indisponível (EXPERIENCE.md#Vazio): frase, fim. Mesma anatomia do
@@ -50,7 +50,7 @@
   max-width: 52ch;
   margin: 28px 12px 0;
   padding-left: 14px;
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   font: 21px/1.5 var(--serif);
 }
 
@@ -323,8 +323,8 @@
 .selo {
   display: inline-block;
   padding: 5px 10px;
-  border: 1px solid var(--brasa);
-  color: var(--brasa);
+  border: 1px solid var(--brasa2);
+  color: var(--brasa2);
   font: 700 14px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -358,7 +358,7 @@
 
 .passo:hover:not(:disabled) {
   background: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
 }
 
 /* ⚠️ O botão no limite é `disabled` **de verdade** — atributo, não classe: ele sai
@@ -430,8 +430,8 @@
 .entrar {
   flex: 0 0 auto;
   padding: 18px 20px;
-  border: 1px solid var(--neon);
-  color: var(--neon);
+  border: 1px solid var(--neon2);
+  color: var(--neon2);
   font: 700 16px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -441,7 +441,7 @@
 
 .entrar:hover {
   background: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
 }
 
 .resumo {

@@ -26,7 +26,7 @@
 .botao {
   width: 100%;
   background: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
   padding: 18px;
   font: 700 16px/1 var(--mono);
   letter-spacing: 0.18em;
@@ -97,7 +97,7 @@
    Fica no `:focus-visible`, e não no `:focus`: quem clica com o mouse não vê
    anel nenhum, quem chega pelo Tab vê. */
 .botao:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--breu);
+  box-shadow: inset 0 0 0 2px var(--vazado);
 }
 
 /* `cursor: default` junto com a opacidade: o cursor não pode prometer um clique

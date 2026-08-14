@@ -603,6 +603,55 @@ development_status:
   # de `/portaria` desenha o número nos turnos abertos — por escolha, não por
   # esquecimento. As três recusas ficam só no `TurnoDoLeitor`.
   5-6-acompanhar-as-entradas-do-turno: done
+  # ---------------------------------------------------------------------------
+  # Fora da numeração: a hora em que o show acaba (14/08/2026)
+  # Techspec em docs/techspec-fim-do-evento.md — três commits `feat`, nenhuma
+  # linha de status nova. Mesmo precedente do filtro do catálogo e do
+  # editar/excluir evento: as epics 1 a 5 estão fechadas e só a 6 sobra.
+  #
+  # O comentário mora **aqui**, no bloco da Epic 5, porque é aqui que o assunto
+  # mais pesado dele acontece: o portão da portaria ganhou o outro lado.
+  #
+  # **O que motivou:** um defeito de produção. Evento que já aconteceu continuava
+  # com o ingresso marcado `Ativo` na conta do cliente, e o turno continuava na
+  # lista da portaria — clicável, validável — dias depois do show. Duas metades
+  # com causas diferentes e uma raiz só: **o sistema não sabia quando um show
+  # termina.** O comentário do `ABERTURA_DOS_PORTOES` dizia isso com todas as
+  # letras — "não há fechamento, de propósito (…) sem contar que este projeto não
+  # tem coluna de duração nenhuma".
+  #
+  # Commit 1 — `evento.data_hora_fim` (migração a1c9f4d3b7e2, em três passos:
+  # cria anulável, preenche com `data_hora + 6h`, aplica o NOT NULL), o `CHECK
+  # fim_depois_do_inicio`, `data_hora_fim` nos dois schemas de entrada e no
+  # `EventoSaida`, a sexta recusa `FIM_ANTES_DO_INICIO` nas duas rotas, e o campo
+  # `Termina às` nos dois formulários.
+  # Commit 2 — `SituacaoDoIngresso` (ATIVO/UTILIZADO/EXPIRADO) derivada na
+  # leitura, o terceiro bloco em `/ingressos` e o canhoto encerrado, que atravessa
+  # para o link compartilhado pelo mesmo `_montar_detalhe`.
+  # Commit 3 — `porta_aberta` com teto, `403 EVENTO_ENCERRADO` na dependência
+  # **antes** do `EVENTO_NAO_ABERTO`, `EstadoDoTurno` no lugar de `aberto: bool` e
+  # a tag na lista de turnos. A suíte foi de 556 para 577.
+  #
+  # Decisões do Igor: **só a hora de término, com a virada de meia-noite
+  # inferida** — o show das 23h que acaba às 02h cai no dia seguinte sozinho, e a
+  # tela diz isso em voz alta; descartado um segundo `SeletorDeData`, que nada
+  # inferiria ao custo de um calendário a mais. **Coluna obrigatória, com os
+  # eventos antigos ganhando `data_hora + 6h`** — é o que faz o defeito sumir
+  # também na Railway; descartado deixá-la anulável, que manteria o bug em
+  # produção e um "e se não tem término?" em três telas para sempre. **Ingresso
+  # expirado é estado derivado, não coluna** — descartada uma colheita preguiçosa
+  # no molde do AD-4, que existe porque estoque volta para alguém, e aqui nada é
+  # liberado. **`403` na dependência, não um quinto veredito** — descartado
+  # `EVENTO_ENCERRADO` respondido `200` pelo `validar`, que custaria o CHECK da
+  # `validacao`, o enum `Veredito`, o `RecusasDoTurno`, o contador e um quinto
+  # símbolo SVG, contrariando de uma vez as decisões "sem quinto veredito" (5.2) e
+  # "duas tintas para quatro vereditos" (5.4).
+  #
+  # ⚠️ **O corte das rotas públicas continua em `data_hora`**, e isso ficou de
+  # fora de propósito — mover para o término deixaria o show visível e vendável
+  # enquanto acontece, que é uma pergunta de produto nova. Está declarado no
+  # `README.md#o-que-não-está-pronto`, junto com o fechamento sem tolerância.
+  # ---------------------------------------------------------------------------
   # ⚠️ Fica 'in-progress' até o merge da branch na main, como as epics 1 a 4.
   # O `bmad-code-review` da epic inteira ainda não rodou.
   epic-5-retrospective: optional

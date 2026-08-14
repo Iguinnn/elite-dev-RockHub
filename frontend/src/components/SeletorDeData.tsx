@@ -48,6 +48,7 @@ export default function SeletorDeData({
   minimo,
   obrigatorio = false,
   valorInicial = "",
+  aoMudar,
 }: {
   id: string;
   name: string;
@@ -55,6 +56,23 @@ export default function SeletorDeData({
   /** `AAAA-MM-DD`, o mesmo formato do `min` do `<input type="date">`. */
   minimo: string;
   obrigatorio?: boolean;
+  /**
+   * Avisa o formulário a cada mudança — digitada ou escolhida no calendário
+   * (techspec `docs/techspec-fim-do-evento.md`).
+   *
+   * ⚠️ **Ele não transforma o campo em controlado pelo pai**, e a diferença
+   * importa: o `valorInicial` acima continua sendo valor inicial, o estado
+   * continua morando aqui, e quem manda no campo depois da primeira renderização
+   * continua sendo quem está digitando. O que este retorno dá ao pai é uma
+   * **cópia derivada**, para ele conseguir dizer em que dia o show termina quando
+   * a hora de fim vira a meia-noite. Sem ele, o formulário só descobriria a data
+   * no envio, que é tarde demais para avisar.
+   *
+   * Chamado nos **dois** lugares que escrevem `valor`. Um só deixaria a frase da
+   * virada desatualizada por um dos dois caminhos — e seria justamente o do
+   * calendário, que é o mais usado.
+   */
+  aoMudar?: (valor: string) => void;
   /**
    * `AAAA-MM-DD` com que o campo abre — vazio ao publicar, a data do show ao
    * editar (13/08/2026).
@@ -115,7 +133,10 @@ export default function SeletorDeData({
           min={minimo}
           required={obrigatorio}
           value={valor}
-          onChange={(e) => setValor(e.target.value)}
+          onChange={(e) => {
+            setValor(e.target.value);
+            aoMudar?.(e.target.value);
+          }}
         />
 
         {/* `aria-expanded` e `aria-haspopup` porque este botão abre uma coisa que
@@ -175,7 +196,9 @@ export default function SeletorDeData({
             autoFocus
             onSelect={(escolhida) => {
               if (!escolhida) return;
-              setValor(emISO(escolhida));
+              const iso = emISO(escolhida);
+              setValor(iso);
+              aoMudar?.(iso);
               setAberto(false);
             }}
           />

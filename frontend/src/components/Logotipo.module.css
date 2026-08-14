@@ -17,3 +17,22 @@
   height: 44px;
   width: auto;
 }
+
+/* ⚠️ **São dois arquivos, e é o tema que diz qual aparece** (14/08/2026, commit
+   2 do modo claro). O lettering é o mesmo desenho nos dois — o claro foi
+   derivado do escuro trocando só o RGB dos pixels do "Rock", com o canal alfa
+   copiado byte a byte —, então as duas imagens têm as mesmas 388×160 e a marca
+   **não muda de largura** quando o tema troca. Se algum dia um dos dois for
+   reexportado, é essa igualdade que precisa sobreviver: proporção diferente
+   entre os dois faz o masthead pular na hora do clique.
+
+   O `display` vem de token, e não de um seletor `[data-tema=...]` aqui, porque
+   este arquivo não deve saber que existe um segundo modo — o porquê inteiro
+   está no `globals.css`, junto dos dois tokens. */
+.escura {
+  display: var(--marca-escura);
+}
+
+.clara {
+  display: var(--marca-clara);
+}

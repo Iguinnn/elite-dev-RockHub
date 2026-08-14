@@ -1,0 +1,204 @@
+/* A gaveta de navegação das telas estreitas. Anatomia:
+
+   ┌──────────────┐
+   │ MENU       ✕ │  ← kicker e saída, na mesma linha
+   │ ──────────── │
+   │ INÍCIO       │  ← os mesmos `.navLink` do masthead, empilhados
+   │ MEUS EVENTOS │     e de largura inteira
+   │ ...          │
+   └──────────────┘
+        colada à direita, altura inteira da janela
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
+
+/* O botão sanduíche. **Só existe abaixo de 900px** — o mesmo ponto de virada da
+   tabela do `EXPERIENCE.md#Responsive & Platform`, e não uma medida nova. Acima
+   dele a fileira de destinos cabe ao lado do logotipo e a gaveta não tem razão
+   de ser.
+
+   44px de lado exatos: é o piso de alvo de toque do UX-DR6, e este é o único
+   controle de navegação que sobra na faixa quando os destinos saem dela. */
+.sanduiche {
+  display: none;
+  width: 44px;
+  height: 44px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--fio2);
+  background: none;
+  cursor: pointer;
+  /* Mudança de cor, 120ms — o único movimento que o `globals.css` permite fora
+     das duas exceções registradas. */
+  transition: border-color 120ms;
+}
+
+@media (max-width: 900px) {
+  .sanduiche {
+    display: flex;
+  }
+}
+
+.sanduiche:hover {
+  border-color: var(--fumaca);
+}
+
+/* Os filetes têm a mesma espessura de 1px dos fios do produto inteiro. Dois
+   pixels aqui fariam o único traço grosso da identidade. */
+.filete {
+  display: block;
+  height: 1px;
+  background: var(--fumaca);
+}
+
+/* ⚠️ **`margin: 0 0 0 auto` é o que cola a gaveta à direita**, e não `position:
+   fixed`. Um `<dialog>` aberto por `showModal()` já é posicionado pelo
+   navegador na *top layer*, fora do fluxo da página; trocar isso por `fixed`
+   descartaria o posicionamento nativo para reimplementá-lo, e é justamente o
+   que o `::backdrop` e a trava de foco dependem que continue de pé.
+
+   `height: 100dvh` e não `100vh`: no celular a barra de endereço entra e sai da
+   conta, e `vh` deixa a gaveta mais alta que a janela — o fim da lista fica
+   embaixo da barra do navegador.
+
+   Os dois `max-*` existem porque o `<dialog>` traz `max-width: calc(100% -
+   6px)` e `max-height` do agente do usuário; sem sobrescrever, a altura inteira
+   não acontece. */
+.gaveta {
+  margin: 0 0 0 auto;
+  width: min(300px, 82vw);
+  max-width: 82vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 22px;
+  border: none;
+  border-left: 1px solid var(--fio);
+  background: var(--breu);
+  color: var(--cal);
+
+  /* ⚠️ **O deslize é a TERCEIRA exceção consciente ao `EXPERIENCE.md`**, pedido
+     pelo Igor em 14/08/2026 — as outras duas são a espera de 6s do checkout e a
+     varredura do item de menu. O `EXPERIENCE.md#Interaction Primitives` proíbe
+     travessia com todas as letras (*"nada desliza de uma lateral à outra"*, o
+     primeiro anti-padrão da lista) e libera só mudança de cor até 120ms. Fica
+     registrado aqui, ao lado da linha que contraria a regra, no mesmo tratamento
+     que as outras duas receberam.
+
+     **O argumento a favor:** gaveta lateral é o único componente do produto cuja
+     origem é informação. Aparecendo parada, ela não diz de onde veio nem para
+     onde volta, e o `✕` vira o único vínculo entre a lista e a borda que a
+     guarda. Aqui o movimento **é** o que diz "isto saiu da direita e volta para
+     lá" — é a exceção que carrega significado, não enfeite.
+
+     200ms e `ease-out`: a saída é rápida o bastante para não atrasar quem já
+     sabe onde vai tocar, e a desaceleração no fim é o que faz a gaveta parecer
+     encostar na borda em vez de bater nela.
+
+     **`allow-discrete` nas duas últimas é o que faz o deslize existir na
+     saída.** Sem elas o `display: none` e a remoção da *top layer* acontecem no
+     primeiro quadro do fechamento, e a gaveta some antes de andar um pixel — o
+     defeito clássico de animar `<dialog>`, e ele só aparece ao fechar, nunca ao
+     abrir.
+
+     Quem pede menos movimento recebe a gaveta parada: o bloco de
+     `prefers-reduced-motion` do `globals.css` desliga toda transição do projeto
+     com `!important`, e o estado final — gaveta aberta, colada à direita — é
+     idêntico. A informação nunca esteve no movimento. */
+  translate: 100% 0;
+  transition:
+    translate 200ms ease-out,
+    overlay 200ms allow-discrete,
+    display 200ms allow-discrete;
+}
+
+.gaveta[open] {
+  translate: 0 0;
+}
+
+/* O estado de onde a animação parte na abertura. Sem este bloco o navegador não
+   tem quadro inicial para interpolar e a gaveta nasce já no lugar. */
+@starting-style {
+  .gaveta[open] {
+    translate: 100% 0;
+  }
+}
+
+/* O breu por cima da página, e não um preto puro: no modo claro um `rgb(0 0 0 /
+   .6)` chapado escureceria uma tela que é gelo, e a gaveta pareceria pertencer
+   a outro produto. `color-mix` deixa o véu seguir o tema pelo mesmo token que
+   pinta o fundo dela.
+
+   O véu acompanha o deslize em opacidade — ele é o que separa a gaveta da
+   página, e aparecer de uma vez sob um painel que ainda está chegando entrega
+   a chegada antes dela. */
+.gaveta::backdrop {
+  background: color-mix(in srgb, var(--breu) 72%, transparent);
+  opacity: 0;
+  transition:
+    opacity 200ms ease-out,
+    overlay 200ms allow-discrete,
+    display 200ms allow-discrete;
+}
+
+.gaveta[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .gaveta[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.topoDaGaveta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--fio);
+}
+
+/* Mesma anatomia de kicker do resto do produto — mono, versalete, entreletra
+   larga. Repetida porque CSS Module não compartilha classe entre arquivos. */
+.kicker {
+  font: 600 14px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fumaca);
+}
+
+/* 44px de alvo, como o sanduíche: fechar é tão tocável quanto abrir, e no
+   celular esta é a saída principal — não há `Esc`. */
+.fechar {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--fio2);
+  background: none;
+  color: var(--fumaca);
+  font: 400 18px/1 var(--mono);
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms;
+}
+
+.fechar:hover {
+  border-color: var(--cal);
+  color: var(--cal);
+}
+
+/* Os destinos empilham e ocupam a largura da gaveta. **Largura inteira, e não
+   caixas do tamanho do texto:** numa lista vertical, caixas de larguras
+   diferentes desenham uma serrilha na margem direita, e o alvo de toque de
+   `INÍCIO` ficaria com um terço do de `PUBLICAR EVENTO`. */
+.destinos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.destinos > * {
+  display: block;
+  width: 100%;
+  text-align: left;
+}

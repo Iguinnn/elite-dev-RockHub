@@ -111,10 +111,15 @@ def _evento_gravado(
     if setores is None:
         setores = [("Pista", 800, 0, 12000)]
 
+    inicio = data_hora or _daqui_a(30)
     evento = Evento(
         organizador_id=organizador.id,
         nome=nome,
-        data_hora=data_hora or _daqui_a(30),
+        data_hora=inicio,
+        # Quatro horas de show. As rotas públicas continuam cortando em
+        # `data_hora`, e não no término (decisão descartada na techspec
+        # `docs/techspec-fim-do-evento.md`) — nada neste arquivo o lê.
+        data_hora_fim=inicio + timedelta(hours=4),
         local=local,
         cidade=cidade,
         imagem_url=imagem_url,

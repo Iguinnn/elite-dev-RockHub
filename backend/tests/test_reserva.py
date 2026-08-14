@@ -46,6 +46,11 @@ def _evento(sessao: Session, organizador: Usuario, **campos: Any) -> Evento:
         "local": "Casa de Shows",
     }
     valores.update(campos)
+    # Derivado depois do `update` pelo mesmo motivo do helper gêmeo em
+    # `test_evento.py`: um teste que troca `data_hora` precisa que o término
+    # acompanhe, senão ele esbarra no `CHECK fim_depois_do_inicio` por uma razão
+    # que nada tem a ver com o que ele prova.
+    valores.setdefault("data_hora_fim", valores["data_hora"] + timedelta(hours=4))
 
     evento = Evento(**valores)
     sessao.add(evento)

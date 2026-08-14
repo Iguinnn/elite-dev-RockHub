@@ -27,26 +27,80 @@
      `--acento` quando deixou de ser âmbar: um token nomeado por função no
      meio de oito nomeados por material quebra a leitura do conjunto. E
      `--breu` sobreviveu à troca sem uma linha de mudança — piche é escuro e
-     mineral, e continua dizendo a verdade sobre um chão de petróleo.       */
-  --breu: #0b1618;     /* fundo de toda a aplicação                          */
-  --breu2: #112124;    /* superfície elevada: resumo, campo, fila em hover   */
-  --cal: #e4ebea;      /* texto principal                                    */
-  --fumaca: #7e9295;   /* texto secundário, etiquetas, kickers               */
-  --neon: #ff4f9a;     /* acento único: ação primária, item ativo, escassez  */
-  /* Era `#d93b2b`, que dava 4,26:1 sobre o breu antigo e 4,04:1 sobre este —
-     os dois **abaixo** do piso de 4,5:1, na cor de toda mensagem de erro do
-     sistema. `#e4574a` dá 5,0:1 e é o mesmo vermelho, um passo mais claro. */
-  --brasa: #e4574a;    /* erro, esgotado, pagamento recusado                 */
-  /* Limão, e não o verde-mata de antes: sobre um chão de petróleo — que é
-     azul-esverdeado — o verde anterior era vizinho de matiz do próprio fundo
-     e deixava de saltar. O ganho maior não é a matiz, é a **luminância**:
-     `VÁLIDO` fica em 11,5:1 e `INVÁLIDO` em 5,0:1, e é essa distância que faz
-     os dois se separarem para quem tem daltonismo vermelho-verde. Verde e
-     vermelho na mesma luminosidade viram o mesmo marrom, e a portaria lê isso
-     a três metros, no escuro, com pressa (Epic 5).                         */
-  --verde: #9be04a;    /* só o veredito VÁLIDO e a confirmação de pagamento  */
-  --fio: #1e3134;      /* todos os fios, filetes e bordas                    */
-  --fio2: #2b4247;     /* fio sobre superfície elevada; medidor esgotado     */
+     mineral, e continua dizendo a verdade sobre um chão de petróleo.
+
+     ⚠️ **Os nomes de material passam a mentir no modo claro, e eu aceito**
+     (14/08/2026). Daqui para baixo cada tinta tem dois valores, e no modo
+     claro o `--breu` vale branco gelo e o `--cal` vale piche — o oposto
+     literal do que os nomes dizem. A alternativa honesta era uma camada
+     semântica (`--fundo`, `--texto`, `--secundario`), e ela reescreve 155
+     ocorrências em 29 arquivos para não mudar um pixel. Comprei a mentira: os
+     nomes descrevem o material do **modo escuro**, que é o padrão e a
+     identidade do produto. Quem lê `--breu` num `.module.css` deve pensar
+     "o chão da página", não "#0b1618".
+
+     ⚠️ **As duas tintas do modo claro são as mesmas do escuro, trocadas de
+     papel.** O fundo claro é o `#e4ebea` do `--cal` e o texto é o `#0b1618`
+     do `--breu`. Não inventei um branco gelo novo: este já foi calibrado
+     contra o rosa e contra o vermelho ao longo de três epics, e o par dá
+     15,21:1 nos dois sentidos porque é o mesmo par invertido — o modo claro
+     herda o contraste do escuro em vez de recomeçar do zero.
+
+     ⚠️ **Tinta chapada é `--neon`; letra e filete são `--neon2`.** Esta é a
+     regra do sistema daqui em diante, e vale para as três tintas. `#ff4f9a`
+     como **preenchimento** com letra escura dá 5,99:1 no claro exatamente
+     como dá no escuro — o botão primário, o destrutivo, o selo de esgotado e
+     o item ativo do menu atravessam sem uma linha de mudança. O que quebra é
+     o rosa como **letra**: 2,85:1 sobre o gelo. Por isso cada tinta tem uma
+     segunda versão, escurecida só no claro e **idêntica à primeira no
+     escuro** — é o que garante que o modo escuro não mudou um pixel.
+
+     Os pares abaixo espelham a razão de contraste do escuro em vez de
+     buscarem o número mais alto possível: é por isso que `--fumaca` cai para
+     5,73:1 (e não para 8:1) e que os fios ficam em 1,3–1,7. `--verde2` é a
+     única exceção deliberada — 11,5:1 não tem correspondente claro que não
+     seja verde-quase-preto, e o veredito que precisava daquela distância mora
+     na portaria, que não clareia.                                          */
+
+  /* os valores, uma vez cada — nenhum `.module.css` os enxerga */
+  --breu-escuro: #0b1618;    --breu-claro: #e4ebea;    /* fundo da aplicação */
+  --breu2-escuro: #112124;   --breu2-claro: #d8e1e0;   /* superfície elevada */
+  --cal-escuro: #e4ebea;     --cal-claro: #0b1618;     /* texto principal    */
+  --fumaca-escuro: #7e9295;  --fumaca-claro: #4a5d61;  /* texto secundário   */
+  --neon-escuro: #ff4f9a;    --neon-claro: #ff4f9a;    /* preenchimento      */
+  --neon2-escuro: #ff4f9a;   --neon2-claro: #aa0d52;   /* letra e filete     */
+  /* `--brasa` era `#d93b2b`, que dava 4,26:1 sobre o breu antigo e 4,04:1
+     sobre este — os dois **abaixo** do piso de 4,5:1, na cor de toda mensagem
+     de erro do sistema. `#e4574a` dá 5,0:1 e é o mesmo vermelho, um passo
+     mais claro.                                                            */
+  --brasa-escuro: #e4574a;   --brasa-claro: #e4574a;   /* preenchimento      */
+  --brasa2-escuro: #e4574a;  --brasa2-claro: #b82e23;  /* letra e filete     */
+  /* `--verde` é limão, e não o verde-mata de antes: sobre um chão de petróleo
+     — que é azul-esverdeado — o verde anterior era vizinho de matiz do
+     próprio fundo e deixava de saltar. O ganho maior não é a matiz, é a
+     **luminância**: `VÁLIDO` fica em 11,5:1 e `INVÁLIDO` em 5,0:1, e é essa
+     distância que faz os dois se separarem para quem tem daltonismo
+     vermelho-verde. Verde e vermelho na mesma luminosidade viram o mesmo
+     marrom, e a portaria lê isso a três metros, no escuro, com pressa
+     (Epic 5) — e é por isso que ela é a única casca travada no escuro.     */
+  --verde-escuro: #9be04a;   --verde-claro: #9be04a;   /* preenchimento      */
+  --verde2-escuro: #9be04a;  --verde2-claro: #2a5a0b;  /* letra e filete     */
+  --fio-escuro: #1e3134;     --fio-claro: #c3cfce;     /* fios e filetes     */
+  --fio2-escuro: #2b4247;    --fio2-claro: #aabab9;    /* fio sobre elevada  */
+
+  /* ⚠️ **`--vazado` é o único token sem par: a letra dentro do bloco de tinta
+     não tem tema.** Dez declarações escrevem letra ou filete em cima de um
+     preenchimento que não vira (`--neon`, `--brasa`); se elas usassem
+     `--breu`, virariam branco sobre rosa no modo claro. Constante nos dois
+     modos, dá os mesmos 5,99:1 sobre o neon em qualquer tema, e é a única
+     forma de o botão sobreviver à troca sem um `if` por componente. O nome é
+     o termo de impressão que o `DESIGN.md` já usa ("selo `brasa` vazado"): a
+     letra reservada dentro da tinta.
+
+     Onde o preenchimento **vira** (o gradiente `--fumaca` do `.navLink`, o
+     `--cal` do corpo do canhoto), continua valendo `--breu`: lá a inversão já
+     acontece sozinha e travar a letra apagaria o texto.                    */
+  --vazado: #0b1618;
 
   /* ---- tipografia -------------------------------------------------------
      Serifada é a voz do jornal: nome de artista, título, valor, corpo.
@@ -123,6 +177,67 @@
   --campo-corpo: 18px;
 }
 
+/* ---- os dois mapas ------------------------------------------------------
+   Os nomes de material acima recebem valor aqui, e é só isto que a troca de
+   tema faz. Nenhum `.module.css` sabe que existe um segundo modo.
+
+   ⚠️ **A ordem dos três blocos não é negociável.** `:root` e
+   `[data-tema="claro"]` têm a mesma especificidade (0,1,0) e casam no mesmo
+   `<html>`; quem vem depois ganha. Se o bloco claro subir para cima do
+   escuro, o modo claro simplesmente não acontece — e não acontece em
+   silêncio, sem erro de build e sem aviso do navegador.
+
+   `[data-tema="escuro"]` vem junto do `:root` para que uma **ilha** possa
+   pedir escuro dentro de uma página clara: é assim que a portaria fica
+   travada no jornal noturno enquanto o resto do produto clareia.          */
+:root,
+[data-tema="escuro"] {
+  --breu: var(--breu-escuro);
+  --breu2: var(--breu2-escuro);
+  --cal: var(--cal-escuro);
+  --fumaca: var(--fumaca-escuro);
+  --neon: var(--neon-escuro);
+  --neon2: var(--neon2-escuro);
+  --brasa: var(--brasa-escuro);
+  --brasa2: var(--brasa2-escuro);
+  --verde: var(--verde-escuro);
+  --verde2: var(--verde2-escuro);
+  --fio: var(--fio-escuro);
+  --fio2: var(--fio2-escuro);
+
+  /* ⚠️ **A marca é o único desenho do produto que não se resolve por token de
+     cor**, porque ela é um PNG e não uma superfície pintada por CSS. São dois
+     arquivos, e o que troca é qual deles aparece — daí um par de tokens de
+     `display` no meio da paleta. Eles moram aqui, e não num seletor
+     `[data-tema="claro"] .escura` dentro do `Logotipo.module.css`, pelo mesmo
+     motivo de todos os outros: **nenhum `.module.css` sabe que existe um
+     segundo modo**. E há um caso em que a diferença é funcional, não estética —
+     a portaria abre uma ilha escura dentro de uma página clara, e por seletor
+     descendente a marca de lá herdaria a versão clara do `<html>`, ficando com
+     o "Rock" piche sobre o breu. Token resolve pelo ancestral mais próximo,
+     como toda cor deste arquivo já resolve.                                 */
+  --marca-escura: block;
+  --marca-clara: none;
+}
+
+[data-tema="claro"] {
+  --breu: var(--breu-claro);
+  --breu2: var(--breu2-claro);
+  --cal: var(--cal-claro);
+  --fumaca: var(--fumaca-claro);
+  --neon: var(--neon-claro);
+  --neon2: var(--neon2-claro);
+  --brasa: var(--brasa-claro);
+  --brasa2: var(--brasa2-claro);
+  --verde: var(--verde-claro);
+  --verde2: var(--verde2-claro);
+  --fio: var(--fio-claro);
+  --fio2: var(--fio2-claro);
+
+  --marca-escura: none;
+  --marca-clara: block;
+}
+
 /* ---- reset -------------------------------------------------------------- */
 
 * {
@@ -159,10 +274,33 @@ body {
    barra sobreposta do macOS e força uma barra permanente ocupando largura em
    toda tela. As duas propriedades padrão abaixo já cobrem Chrome, Firefox e
    Safari atuais, e onde não cobrirem o `color-scheme` ainda entrega uma barra
-   escura.                                                                  */
+   escura.
+
+   ⚠️ **Aqui os valores entram pelos nomes com sufixo, e não pelos tokens do
+   mapa**, porque estas duas propriedades são do **documento** e o documento
+   tem um tema só. Escrever `var(--fio2)` funcionaria no `<html>`, mas
+   esconderia que a regra de baixo existe: quando a página está clara e a
+   portaria abre sua ilha escura dentro dela, é a barra do documento inteiro
+   que precisa acompanhar a ilha — e aí não há token do mapa que sirva, porque
+   o `<html>` continua declarando claro.                                    */
 :root {
   color-scheme: dark;
-  scrollbar-color: var(--fio2) var(--breu);
+  scrollbar-color: var(--fio2-escuro) var(--breu-escuro);
+}
+
+:root[data-tema="claro"] {
+  color-scheme: light;
+  scrollbar-color: var(--fio2-claro) var(--breu-claro);
+}
+
+[data-tema="escuro"] {
+  color-scheme: dark;
+}
+
+/* A barra de rolagem do documento acompanha a ilha escura da portaria. */
+:root[data-tema="claro"]:has([data-tema="escuro"]) {
+  color-scheme: dark;
+  scrollbar-color: var(--fio2-escuro) var(--breu-escuro);
 }
 
 /* Só vale para link com âncora (`#passo-2`, na tela do organizador): ir de um
@@ -191,7 +329,22 @@ a {
 /* ---- acessibilidade -----------------------------------------------------
    Foco visível em neon em tudo que é focável, herdado por toda tela criada
    daqui em diante (UX-DR9). Ninguém desliga esse contorno: quem navega por
-   teclado precisa enxergar onde está.                                     */
+   teclado precisa enxergar onde está.
+
+   ⚠️ **`--neon`, e não `--neon2`** (14/08/2026, decisão do Igor com as telas na
+   frente). A regra do sistema manda traço usar a versão escurecida, e ela está
+   suspensa aqui pelo mesmo motivo do item ativo do masthead: o anel aparece
+   **ao lado** do rosa vivo — o campo de busca focado fica encostado no `Buscar`,
+   e o item de menu focado, no item ativo. Dois rosas a dois pixels um do outro
+   leem como defeito de renderização, não como sistema.
+
+   ⚠️ **O custo é real e está no anel de foco, que é a peça mais sensível do
+   arquivo**: `#ff4f9a` sobre o gelo dá 2,85:1, e o piso de indicador de foco é
+   3:1 (WCAG 1.4.11). No modo escuro nada muda — lá os dois tokens valem a mesma
+   coisa e o anel continua em 5,99:1. Se um dia a régua de acessibilidade
+   apertar, **é esta linha que volta para `--neon2`**, e ela sozinha: o
+   `outline-offset` de 2px já separa o anel do controle, então a troca não pede
+   mais nada. O que continua proibido, e não mudou, é **desligar** o contorno.  */
 
 :focus-visible {
   outline: 2px solid var(--neon);

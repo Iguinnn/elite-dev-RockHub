@@ -15,6 +15,12 @@ import type { RecusasDoTurno } from "./validacao";
  * porta aberta enquanto a API recusa. A janela agora tem um dono só:
  * `ABERTURA_DOS_PORTOES`, em `services/evento.py`.
  *
+ * ⚠️ **E ele virou `estado` em 14/08/2026**, quando o portão ganhou o outro lado
+ * — ver o `EstadoDoTurno` logo abaixo. `data_hora_fim` **não** entra no contrato:
+ * a tela lê o estado, que já é a resposta, e devolver o instante deixaria a
+ * portaria recalculando a mesma regra do outro lado, que é exatamente o que a 5.2
+ * desfez.
+ *
  * ⚠️ **`entradas` entrou na Story 5.6, e ele é o contador que este docstring
  * anunciava** — *"o contador do turno é a Story 5.6, que vai contar entradas e
  * não estoque"*. É `COUNT` sobre `ingresso.usado_em IS NOT NULL`, de todas as
@@ -28,9 +34,26 @@ export type TurnoDaPortaria = {
   data_hora: string;
   local: string;
   cidade: string | null;
-  aberto: boolean;
+  estado: EstadoDoTurno;
   entradas: number;
 };
+
+/**
+ * Espelha `app/schemas/evento.py::EstadoDoTurno` — onde este turno está na noite
+ * (techspec `docs/techspec-fim-do-evento.md`).
+ *
+ * ⚠️ **Ele substituiu o `aberto: boolean`, e não entrou ao lado dele.** Com
+ * `evento.data_hora_fim`, a noite passou a ter três partes em vez de duas: o
+ * booleano não tinha onde pôr o show que acabou, e por isso o turno de um evento
+ * da semana passada continuava clicável e validável. Um `encerrado: boolean` ao
+ * lado do que existia permitiria quatro combinações para três estados, e uma
+ * delas é impossível — a tela precisaria de um ramo para um caso que o backend
+ * jamais manda, ou o esqueceria.
+ *
+ * União de literais, e não `string`: é ela que faz o `tsc` cobrar o terceiro ramo
+ * de quem desenhar o cartão.
+ */
+export type EstadoDoTurno = "NAO_COMECOU" | "ABERTO" | "ENCERRADO";
 
 /**
  * Espelha `app/schemas/evento.py::TurnoDoLeitor` — o turno **do leitor**, com as

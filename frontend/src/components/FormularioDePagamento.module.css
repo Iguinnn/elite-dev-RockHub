@@ -28,7 +28,7 @@
 .aviso {
   margin: 0 0 26px;
   padding: 2px 0 2px 14px;
-  border-left: 2px solid var(--neon);
+  border-left: 2px solid var(--neon2);
   max-width: 60ch;
   font: 17px/1.6 var(--serif);
   color: var(--fumaca);
@@ -97,8 +97,8 @@
 /* O estado escolhido **não é dado só por cor** (UX-DR9): a borda muda junto, e
    o `aria-checked` do rádio é o que atravessa para quem não vê nenhum dos dois. */
 .opcaoAtiva {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* `clip` em vez de `display: none`/`visibility: hidden`: o rádio continua

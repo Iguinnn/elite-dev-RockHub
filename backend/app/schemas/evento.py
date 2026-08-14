@@ -149,6 +149,21 @@ class EventoEntrada(BaseModel):
     nome: TextoLimpo = Field(min_length=1, max_length=200)
     imagem_url: TextoLimpoOpcional = Field(default=None, max_length=500)
     data_hora: DataComFuso
+    # A hora em que o show acaba, **obrigatória** (techspec
+    # `docs/techspec-fim-do-evento.md`). Mesmo `DataComFuso` do início, e pelo
+    # mesmo AD-11: um horário sem fuso é um horário sem significado.
+    #
+    # ⚠️ **O schema não confere a relação entre os dois campos.** "Terminar
+    # depois de começar" é regra de negócio e mora no service, que responde
+    # `FIM_ANTES_DO_INICIO` — a mesma escolha que manda `setores` vazio para lá
+    # em vez de resolvê-lo num `min_length`. Com a checagem aqui, a recusa viraria
+    # `DADOS_INVALIDOS` e a tela não teria como dizer o que está errado.
+    #
+    # **A tela manda o instante já resolvido.** O formulário tem um `<input
+    # type="time">` só, e é ele que infere a virada de meia-noite (show das 23h
+    # que acaba às 02h cai no dia seguinte); o que chega aqui é ISO-8601 completo,
+    # como o `data_hora`.
+    data_hora_fim: DataComFuso
     # Preenchidos pelo organizador, sugeridos pelo catálogo: a mesma atração
     # vira várias datas em casas diferentes, e quem sabe onde o show dele
     # acontece é ele, não a Ticketmaster.
@@ -238,6 +253,13 @@ class EventoEdicao(BaseModel):
     """
 
     data_hora: DataComFuso
+    # **Obrigatório aqui também, e não opcional**, apesar de o `PUT` já mandar o
+    # estado final de tudo. Um `data_hora_fim` opcional na edição significaria
+    # "mantenha o que está lá" — e aí mudar a data do show sem tocar no término
+    # gravaria um evento que termina antes de começar, recusado pelo service com
+    # uma frase que o organizador não pediu. Os dois campos de tempo andam juntos
+    # porque o formulário os manda juntos.
+    data_hora_fim: DataComFuso
     setores: list[SetorEdicao] = Field(default_factory=list, max_length=20)
     portaria_ids: list[UUID] = Field(default_factory=list, max_length=20)
 
@@ -614,6 +636,17 @@ class EventoSaida(BaseModel):
     id: UUID
     nome: str
     data_hora: datetime
+    # É dele que o formulário de edição se preenche — o `<input type="time">` do
+    # término abre com este valor, como o de início abre com `data_hora`. Sem ele
+    # na saída, abrir a tela de editar e salvar sem mexer em nada apagaria o
+    # término, que é justamente a operação que o `FormularioEdicao` existe para
+    # tornar inofensiva.
+    #
+    # ⚠️ **Ele entra aqui e em nenhum dos três schemas públicos**
+    # (`EventoNaProgramacao`, `EventoEmDestaque`, `EventoPublico`): nenhuma tela
+    # pública lê o término, e campo sem consumidor não viaja — disciplina desde a
+    # 3.1.
+    data_hora_fim: datetime
     local: str
     cidade: str | None
     imagem_url: str | None
@@ -626,6 +659,31 @@ class EventoSaida(BaseModel):
 
     # `organizador_id` fica de fora: quem acabou de publicar já sabe quem é, e
     # devolvê-lo só daria a impressão de que é um campo que se escolhe.
+
+
+class EstadoDoTurno(str, Enum):
+    """Onde este turno está na noite (techspec `docs/techspec-fim-do-evento.md`).
+
+    **`str, Enum`, no molde do `DisponibilidadeDoSetor` e do
+    `PeriodoDaProgramacao`**: os três valores entram no OpenAPI, e a tela lê a
+    palavra e escolhe o que desenhar em vez de recalcular a janela.
+
+    ⚠️ **Ele substitui o `aberto: bool`, e não entra ao lado dele.** *Descartei*
+    acrescentar um `encerrado: bool` ao que existia: dois booleanos permitem
+    quatro combinações e uma delas é impossível (`aberto=True, encerrado=True`) —
+    exatamente o antipadrão que o `DisponibilidadeDoSetor` recusa por escrito. Um
+    enum fechado não tem estado inválido para esquecer, e a tela não precisa de um
+    `if` para tratar um estado que o backend jamais manda.
+
+    Os três saem de uma função só (`estado_do_turno`, em `services/evento.py`), e
+    ela e a `porta_aberta` da dependência dividem a **mesma** `evento_encerrado` —
+    é o motivo inteiro de a Story 5.2 ter descido a regra do portão para o
+    service, e vale igual do outro lado da noite.
+    """
+
+    NAO_COMECOU = "NAO_COMECOU"
+    ABERTO = "ABERTO"
+    ENCERRADO = "ENCERRADO"
 
 
 class TurnoDaPortaria(BaseModel):
@@ -649,6 +707,13 @@ class TurnoDaPortaria(BaseModel):
     A alternativa descartada foi duplicar a constante nas duas camadas com um
     comentário pedindo que ficassem iguais. Comentário não é mecanismo.
 
+    ⚠️ **`aberto` virou `estado` em 14/08/2026** (techspec
+    `docs/techspec-fim-do-evento.md`), e o motivo é que a noite passou a ter três
+    partes em vez de duas: com `evento.data_hora_fim`, existe o depois. O booleano
+    não tinha onde pôr o show que acabou — ele saía `True`, e o turno continuava
+    clicável e validável dias depois. O porquê de ser um enum, e não um
+    `encerrado: bool` ao lado, está no `EstadoDoTurno` logo acima.
+
     **O que ele continua não devolvendo, e por quê.** Nem `capacidade`, nem
     `vendidos`, nem `setores` — inventário é do organizador. O `entradas` que a
     Story 5.6 acrescentou logo abaixo **não** é uma exceção a isso: ele conta
@@ -658,13 +723,13 @@ class TurnoDaPortaria(BaseModel):
     `response_model` da rota, e não a tela: a mesma disciplina que a Story 3.1
     inaugurou.
 
-    **Sem `from_attributes`, e a ausência é consequência do `aberto`.** Enquanto
+    **Sem `from_attributes`, e a ausência é consequência do `estado`.** Enquanto
     os cinco campos eram colunas do `Evento`, a conversão de fato acontecia e a
-    declaração era honesta. `aberto` não é coluna nenhuma: é o relógio comparado
-    com `data_hora`, ou seja, exatamente a projeção que faltava. O critério
-    deste módulo é sempre o mesmo — declarar a conversão só quando ela acontece
-    —, e agora ela não acontece mais: quem monta o schema é `listar_escalados`,
-    campo a campo.
+    declaração era honesta. O estado não é coluna nenhuma: é o relógio comparado
+    com `data_hora` e `data_hora_fim`, ou seja, exatamente a projeção que faltava.
+    O critério deste módulo é sempre o mesmo — declarar a conversão só quando ela
+    acontece —, e agora ela não acontece mais: quem monta o schema é
+    `listar_escalados`, campo a campo.
     """
 
     id: UUID
@@ -675,11 +740,12 @@ class TurnoDaPortaria(BaseModel):
     # a ficha da tela precisa distinguir "sem cidade" de "campo que não veio"
     # para não imprimir um separador solto. Nada de `exclude_none` aqui.
     cidade: str | None
-    # `True` quando `data_hora - ABERTURA_DOS_PORTOES <= agora`. É a **mesma**
-    # função que a dependência `exigir_porta_aberta` chama antes de deixar
-    # validar um ingresso, e é essa identidade que impede a tela e a rota de
-    # discordarem sobre um turno na borda da janela.
-    aberto: bool
+    # `ABERTO` entre `data_hora - ABERTURA_DOS_PORTOES` e `data_hora_fim`. Sai da
+    # **mesma** `evento_encerrado` que a dependência `exigir_porta_aberta` chama
+    # antes de deixar validar um ingresso, e é essa identidade que impede a tela e
+    # a rota de discordarem sobre um turno em qualquer das duas bordas — a de
+    # abrir e, desde 14/08/2026, a de fechar.
+    estado: EstadoDoTurno
 
     # Quantas pessoas já entraram neste evento — **de todas as portas** (Story
     # 5.6). `COUNT` sobre `ingresso.usado_em IS NOT NULL`, sem filtrar por quem

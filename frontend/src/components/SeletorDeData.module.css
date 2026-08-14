@@ -39,6 +39,8 @@
   border: 1px solid var(--fio);
 }
 
+/* `--neon` e não `--neon2`, como no `Campo`: campo focado é rosa vivo nos dois
+   modos, e o porquê está escrito lá. */
 .linha:focus-within {
   border-color: var(--neon);
 }
@@ -87,7 +89,7 @@
 }
 
 .abrir:hover {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* Flutua sobre o conteúdo, ancorado no campo. Sem raio e sem sombra (UX-DR3):
@@ -113,13 +115,13 @@
    levaria a tela junto. */
 .popover :global(.rdp-root) {
   --rdp-accent-color: var(--neon);
-  --rdp-accent-background-color: var(--breu);
-  --rdp-today-color: var(--neon);
+  --rdp-accent-background-color: var(--vazado);
+  --rdp-today-color: var(--neon2);
 
   /* Quadrado, não redondo: não existe uma borda arredondada no produto
      inteiro. É a mudança que mais faz o calendário parecer nosso. */
   --rdp-day_button-border-radius: 0;
-  --rdp-selected-border: 1px solid var(--neon);
+  --rdp-selected-border: 1px solid var(--neon2);
   --rdp-day_button-border: 1px solid transparent;
 
   /* 44px de célula é o padrão da biblioteca e coincide com o alvo mínimo do
@@ -174,12 +176,12 @@
    texto vira o fundo da aplicação para o contraste sobreviver ao rosa. */
 .popover :global(.rdp-selected .rdp-day_button) {
   background: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
 }
 
 /* Hoje, quando não é o escolhido: só a cor do texto, sem bloco. */
 .popover :global(.rdp-today:not(.rdp-selected) .rdp-day_button) {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 .popover :global(.rdp-chevron) {

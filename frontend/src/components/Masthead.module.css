@@ -69,6 +69,37 @@
   gap: 8px 10px;
 }
 
+/* A faixa de controles à direita do logotipo: a fileira de destinos, o
+   alternador de tema e o sanduíche. Ela existe desde 14/08/2026, quando o
+   alternador saiu do `<nav>` — antes o `.topo` tinha dois filhos e o
+   `space-between` bastava. */
+.controles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ⚠️ **A fileira de destinos some abaixo de 900px, e a gaveta assume.** O ponto
+   de virada é o mesmo da tabela do `EXPERIENCE.md#Responsive & Platform`, e não
+   uma medida nova — é onde os quatro itens do organizador deixam de caber ao lado
+   do logotipo.
+
+   **Era `flex-wrap` fazendo o menu descer para baixo do logotipo** (decisão do
+   Igor, 13/08/2026), e o `.topo` ainda o tem, para o caso de um rótulo longo
+   estourar acima de 900. O que a quebra de linha resolvia era o menu não
+   transbordar; o que ela **não** resolvia é o que sobrou na tela: quatro caixas
+   em três linhas empurrando a busca e a manchete para baixo da dobra, com a
+   última encostando na borda. Empilhar não era o mesmo desenho em outro tamanho.
+
+   `display: none` e não `visibility`/`opacity`: o item precisa sair da árvore de
+   acessibilidade junto, senão o leitor de tela anuncia os destinos duas vezes —
+   uma na fileira invisível, outra na gaveta. */
+@media (max-width: 900px) {
+  .navbar {
+    display: none;
+  }
+}
+
 /* ⚠️ **Cada item virou uma caixa vazada, e o hover virou varredura** (decisão do
    Igor, 13/08/2026). Antes era texto solto com um fio neon de 2px embaixo do
    item ativo, e o movimento era só a cor mudando em 120ms.
@@ -113,7 +144,13 @@
 
 /* A faixa fecha os 100% e o texto inverte para o breu da página — é a leitura de
    "selecionado", a mesma inversão do `.chipAtivo` da capa. O fio acompanha em
-   `--fumaca` para a caixa não ficar mais escura que o próprio preenchimento. */
+   `--fumaca` para a caixa não ficar mais escura que o próprio preenchimento.
+
+   ⚠️ **`--breu` aqui, e não `--vazado`** (14/08/2026, com a paleta em dois
+   modos). O `--vazado` existe para a letra sobre um preenchimento que **não**
+   vira — o rosa do botão, a brasa do selo. Este preenchimento é `--fumaca`, que
+   vira: no modo claro ele é o cinza escuro, e a letra precisa clarear junto.
+   Travar em `--vazado` daria 2,66:1; `--breu`, que vira gelo, dá 5,38:1. */
 .navLink:hover {
   border-color: var(--fumaca);
   background-size: 100% 100%;
@@ -124,7 +161,24 @@
    — não por caixa cheia: preenchido, ele competiria com o `Buscar` logo abaixo,
    que é a ação primária da tela inicial. A varredura dele também é neon, então
    passar o mouse sobre a página em que já se está devolve a mesma resposta dos
-   outros itens, na tinta que já era dele. */
+   outros itens, na tinta que já era dele.
+
+   ⚠️ **`--neon`, e não `--neon2`, mesmo no modo claro** (14/08/2026, decisão do
+   Igor com a tela na frente). A regra do sistema é que letra e filete usam a
+   versão escurecida da tinta; aqui ela está suspensa de propósito, e o motivo é
+   que **o item ativo tem três estados e a regra os pintava com dois rosas
+   diferentes**: magenta escuro em repouso, rosa vivo quando a varredura fecha.
+   No modo escuro isso nunca apareceu, porque lá os dois tokens valem a mesma
+   coisa. Um controle que troca de matiz conforme o cursor não lê como um
+   controle só.
+
+   ⚠️ **O custo é contraste, e ele foi aceito explicitamente**: `#ff4f9a` sobre o
+   gelo dá 2,85:1, abaixo do piso de 4,5:1 do texto e do de 3:1 do filete. O que
+   segura a informação não é a cor — o `aria-current="page"` do `NavLink` diz
+   "esta é a página" para quem não distingue as duas, e a caixa do item ativo
+   continua tendo a mesma forma dos vizinhos. Vale para esta fileira e **só para
+   ela**: em qualquer outro lugar do produto, letra rosa continua sendo
+   `--neon2`. */
 .ativo {
   border-color: var(--neon);
   color: var(--neon);
@@ -133,5 +187,5 @@
 
 .ativo:hover {
   border-color: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
 }

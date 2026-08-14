@@ -74,8 +74,8 @@
 }
 
 .copiar:hover {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* O gatilho da revogação (Story 4.4) reusa o `.acao` acima — mesma largura do

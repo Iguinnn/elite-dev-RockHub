@@ -39,7 +39,42 @@ from app.schemas.ingresso import (
     IngressoNaLista,
     RecusasDoTurno,
     ResultadoDaValidacao,
+    SituacaoDoIngresso,
 )
+
+
+def situacao_do_ingresso(
+    usado_em: datetime | None, data_hora_fim: datetime, agora: datetime
+) -> SituacaoDoIngresso:
+    """Em que pé está este ingresso, **derivado do relógio** (fim do evento).
+
+    A regra inteira, num lugar só, chamada pelas duas leituras que a devolvem —
+    `listar` e `_montar_detalhe`. Ela existe porque a tela derivava a situação
+    sozinha, comparando `usado_em === null`, e essa comparação não sabe do término
+    do evento: um ingresso nunca usado de um show da semana passada saía *Ativo*.
+
+    ⚠️ **`usado_em` ganha de tudo, e é a ordem dos `if` que garante isso.**
+    Ingresso utilizado num show que já acabou é `UTILIZADO`, nunca `EXPIRADO` — a
+    pessoa entrou, e o canhoto precisa continuar dizendo a que horas. Invertidos,
+    todo ingresso usado viraria `EXPIRADO` no dia seguinte ao show e a tela
+    perderia a distinção que mais importa nela.
+
+    **`agora` é parâmetro, e não `datetime.now()` aqui dentro**, pelo mesmo motivo
+    do `porta_aberta` de `services/evento.py`: quem lista já leu o relógio uma vez
+    para a resposta inteira, e uma leitura por item faria dois ingressos na mesma
+    borda saírem com situações diferentes na mesma resposta. De quebra, é o que
+    torna os três valores testáveis sem congelar o relógio do processo.
+
+    **Recebe `usado_em` e `data_hora_fim` soltos, e não `Ingresso` e `Evento`.**
+    Os dois chamadores chegam aqui com formas diferentes — um com a tupla do
+    `select`, outro com as quatro entidades —, e pedir os objetos obrigaria um
+    deles a remontar o que já tem na mão para nada.
+    """
+    if usado_em is not None:
+        return SituacaoDoIngresso.UTILIZADO
+    if data_hora_fim <= agora:
+        return SituacaoDoIngresso.EXPIRADO
+    return SituacaoDoIngresso.ATIVO
 
 
 def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
@@ -55,9 +90,16 @@ def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
     condição desta consulta, é uma consequência de a linha existir.
 
     Ordenado por `evento.data_hora` **crescente**: o próximo show primeiro. A
-    tela corta em *Ativos*/*Utilizados* por `usado_em IS NULL`; esta função
+    tela corta em três blocos pelo `situacao` que vem pronto; esta função
     não sabe de blocos, só devolve a lista inteira, chapada — o mesmo molde do
     `listar_meus_eventos` da 2.6.
+
+    ⚠️ **A tela cortava por `usado_em === null`, e é isso que a `situacao`
+    desfaz.** Aquela comparação não sabe do término do evento, e por isso um
+    ingresso nunca usado de um show da semana passada saía *Ativo* para sempre —
+    o defeito de produção que a techspec `docs/techspec-fim-do-evento.md`
+    conserta. `evento.data_hora_fim` **não** entra na resposta: a tela não desenha
+    o término em lugar nenhum, e campo sem consumidor não viaja.
 
     Lista vazia é resposta legítima, nunca uma falha: quem nunca comprou tem
     zero ingressos, e isso não é diferente de ter zero eventos publicados.
@@ -71,6 +113,12 @@ def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
         .order_by(Evento.data_hora)
     ).all()
 
+    # ⚠️ **Um relógio só para a lista inteira**, e não uma leitura por item —
+    # mesma disciplina do `listar_escalados` de `services/evento.py`. Com
+    # `datetime.now()` dentro da montagem, dois ingressos de shows que terminam no
+    # mesmo instante poderiam sair com situações diferentes na mesma resposta.
+    agora = datetime.now(timezone.utc)
+
     return [
         IngressoNaLista(
             id=ingresso.id,
@@ -80,6 +128,9 @@ def listar(sessao: Session, cliente: Usuario) -> list[IngressoNaLista]:
             evento_local=evento.local,
             setor_nome=setor.nome,
             usado_em=ingresso.usado_em,
+            situacao=situacao_do_ingresso(
+                ingresso.usado_em, evento.data_hora_fim, agora
+            ),
         )
         for ingresso, evento, setor in linhas
     ]
@@ -167,6 +218,17 @@ def _montar_detalhe(
     que o dono — que é o requisito da Story 4.3, não um efeito colateral. A
     consequência é a que o docstring do schema já anuncia: campo novo aqui
     atravessa para quem não tem conta.
+
+    **`situacao` é o campo novo mais recente, e ele atravessa de propósito**
+    (techspec `docs/techspec-fim-do-evento.md`). Um canhoto que dissesse "ativo"
+    sobre um show que já acabou mandaria para a fila da porta alguém que não
+    entra mais — e quem recebeu o link por WhatsApp é justamente quem não tem
+    outra forma de descobrir isso.
+
+    ⚠️ **O relógio é lido aqui dentro, ao contrário do `listar`.** Lá o parâmetro
+    existe para uma resposta com N itens não sair com N relógios; aqui o canhoto é
+    um só, e não há nada para sincronizar. Passá-lo por parâmetro obrigaria as
+    três rotas a lê-lo e repassá-lo para nada.
     """
     return IngressoDetalhe(
         id=ingresso.id,
@@ -178,6 +240,9 @@ def _montar_detalhe(
         titular_nome=usuario.nome,
         codigo=ingresso.codigo,
         usado_em=ingresso.usado_em,
+        situacao=situacao_do_ingresso(
+            ingresso.usado_em, evento.data_hora_fim, datetime.now(timezone.utc)
+        ),
         share_token=ingresso.share_token,
     )
 

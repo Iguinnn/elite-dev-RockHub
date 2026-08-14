@@ -28,7 +28,29 @@ export type IngressoResumo = {
   evento_local: string;
   setor_nome: string;
   usado_em: string | null;
+  situacao: SituacaoDoIngresso;
 };
+
+/**
+ * Espelha `app/schemas/ingresso.py::SituacaoDoIngresso` — o balde de cada
+ * ingresso (techspec `docs/techspec-fim-do-evento.md`).
+ *
+ * ⚠️ **O nome do campo é `situacao`, e nunca `estado`.** Este módulo já usa
+ * `estado` como discriminante do **resultado da chamada** (`{estado: "ok"} |
+ * {estado: "indisponivel"}`), e um `item.estado` ao lado de um `resultado.estado`
+ * na mesma tela é a confusão pronta — com o agravante de que o `tsc` não acusa
+ * nada, porque os dois existem e os dois são strings.
+ *
+ * ⚠️ **`usado_em` continua no tipo ao lado dele, e não é redundância.**
+ * `situacao` é o balde que a tela agrupa; `usado_em` é a hora que ela imprime em
+ * *"Entrou às 21h14"*. O que a techspec desfaz é a tela **derivar** a situação de
+ * `usado_em` — aquela comparação não sabia quando o evento acabou, e por isso um
+ * ingresso nunca usado de um show da semana passada saía *Ativo* para sempre.
+ *
+ * União de literais, e não `string`: são os três valores do enum do backend, e é
+ * ela que faz o `tsc` cobrar o terceiro bloco quando alguém escrever um `switch`.
+ */
+export type SituacaoDoIngresso = "ATIVO" | "UTILIZADO" | "EXPIRADO";
 
 export type ResultadoDosIngressos =
   | { estado: "ok"; itens: IngressoResumo[] }
@@ -89,6 +111,13 @@ export type IngressoDetalhe = {
   titular_nome: string;
   codigo: string;
   usado_em: string | null;
+  /**
+   * O mesmo balde da lista, e aqui ele atravessa também para quem abriu o link
+   * compartilhado — de propósito. Um canhoto que dissesse "ativo" sobre um show
+   * que já acabou mandaria para a fila da porta alguém que não entra mais, e quem
+   * recebeu o link por WhatsApp é justamente quem não tem outra forma de saber.
+   */
+  situacao: SituacaoDoIngresso;
   /**
    * `null` é "nunca compartilhado" **ou** "revogado" — os dois são o mesmo
    * estado, e a ilha desenha *Compartilhar* nos dois casos. Ele **não** é o

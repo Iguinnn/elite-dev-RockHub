@@ -92,6 +92,42 @@ def _daqui_a(dias: int) -> str:
     return _instante(dias).isoformat().replace("+00:00", "Z")
 
 
+def _com_termino(corpo: dict[str, Any]) -> dict[str, Any]:
+    """Preenche `data_hora_fim` a partir do `data_hora` que sobrou no corpo.
+
+    ⚠️ **Derivado, e não um padrão fixo ao lado do `data_hora`.** Um valor fixo
+    quebraria todo teste que troca a data — o de offset `-03:00` publica para
+    daqui a 30 dias às 21h de Brasília, que em UTC é depois de um término fixo em
+    `agora + 30d + 4h`, e a resposta viria `FIM_ANTES_DO_INICIO` em vez do `201`
+    que o teste prova. Derivando, o término acompanha o início, que é exatamente
+    o que o formulário faz: o `<input type="time">` do fim é lido junto com a data
+    do show.
+
+    Quem testa a **relação** entre os dois passa `data_hora_fim` explicitamente e
+    esta função não encosta nele.
+
+    A data mal formada atravessa sem tratamento de propósito: os testes de AD-11
+    mandam instante sem fuso, e o que se espera deles é `DADOS_INVALIDOS` nos dois
+    campos — não uma exceção aqui dentro.
+    """
+    if "data_hora_fim" in corpo:
+        return corpo
+
+    bruto = str(corpo["data_hora"])
+    try:
+        inicio = datetime.fromisoformat(bruto.replace("Z", "+00:00"))
+    except ValueError:
+        # Data que nem o Python lê: o corpo segue como está, e quem recusa é o
+        # Pydantic — que é o ponto do teste que a mandou.
+        corpo["data_hora_fim"] = bruto
+        return corpo
+
+    corpo["data_hora_fim"] = (
+        (inicio + timedelta(hours=4)).isoformat().replace("+00:00", "Z")
+    )
+    return corpo
+
+
 def _corpo(**ajustes: Any) -> dict[str, Any]:
     """Corpo válido **menos a escala**, com ajuste por parâmetro.
 
@@ -116,7 +152,9 @@ def _corpo(**ajustes: Any) -> dict[str, Any]:
         ],
     }
     corpo.update(ajustes)
-    return corpo
+    # `data_hora_fim` é obrigatório desde a techspec `docs/techspec-fim-do-evento.md`,
+    # e sai derivado do início — ver `_com_termino`.
+    return _com_termino(corpo)
 
 
 def _quantos_eventos(sessao: Session) -> int:
@@ -898,6 +936,132 @@ def test_publicar_show_no_passado_e_422_evento_no_passado(
     assert _quantos_eventos(sessao) == antes
 
 
+# --------------------------------------------------------------------------- #
+# A sexta recusa — o show precisa terminar depois de começar
+# (techspec `docs/techspec-fim-do-evento.md`, commit 1)
+# --------------------------------------------------------------------------- #
+
+# A frase é uma constante porque **dois testes a comparam**, um por rota, e é a
+# igualdade entre eles que está sendo provada: o organizador não pode receber duas
+# explicações diferentes para a mesma recusa dependendo de estar publicando ou
+# editando — é o mesmo formulário, com um botão diferente.
+FRASE_DO_FIM_ANTES_DO_INICIO = (
+    "O show precisa terminar depois de começar. Confira o horário de término."
+)
+
+
+@pytest.mark.parametrize(
+    ("rotulo", "deslocamento"),
+    [
+        ("uma hora antes", timedelta(hours=-1)),
+        # ⚠️ O caso que um `<` mal escrito deixaria passar: um show que termina no
+        # instante em que começa dura zero minutos, e é o mesmo erro de digitação.
+        ("no mesmo instante", timedelta(0)),
+    ],
+)
+def test_publicar_com_termino_que_nao_vem_depois_do_inicio_e_422(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    rotulo: str,
+    deslocamento: timedelta,
+) -> None:
+    """O defeito que a techspec conserta começa aqui: sem término, não há fim.
+
+    A recusa acontece antes de qualquer `add`, como as cinco anteriores — nada
+    chega a existir no banco.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, f"fim-{rotulo[:6]}@ex.com")
+    _entrar(cliente, usuario)
+    antes = _quantos_eventos(sessao)
+
+    inicio = _instante(30)
+    resposta = cliente.post(
+        "/organizador/eventos",
+        json=_corpo(
+            data_hora=inicio.isoformat().replace("+00:00", "Z"),
+            data_hora_fim=(inicio + deslocamento).isoformat().replace("+00:00", "Z"),
+            portaria_ids=[str(porteiro.id)],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "FIM_ANTES_DO_INICIO"
+    assert resposta.json()["erro"]["mensagem"] == FRASE_DO_FIM_ANTES_DO_INICIO
+    assert _quantos_eventos(sessao) == antes
+
+
+def test_data_hora_fim_sem_fuso_e_422(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    """AD-11 vale nos dois campos de tempo — é o `DataComFuso` compartilhado.
+
+    Um horário sem fuso é um horário sem significado, e o término não é exceção:
+    "02:00" é 2h de onde? É `DADOS_INVALIDOS` do Pydantic, e não a recusa do
+    service — a estrutura falha antes de a regra de negócio ter o que comparar.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, "fim-sem-fuso@exemplo.com")
+    _entrar(cliente, usuario)
+
+    resposta = cliente.post(
+        "/organizador/eventos", json=_corpo(data_hora_fim="2027-08-15T02:00:00")
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+def test_data_hora_fim_ausente_e_422(
+    cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
+) -> None:
+    """Obrigatório, e não opcional com um padrão inventado no service.
+
+    Um default do tipo "seis horas depois" no schema faria o formulário poder
+    esquecer o campo e o sistema inventar uma duração — que é exatamente o que a
+    migração faz **uma vez**, para as linhas antigas, e não uma regra de produto.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, "fim-ausente@exemplo.com")
+    _entrar(cliente, usuario)
+
+    corpo = _corpo()
+    del corpo["data_hora_fim"]
+    resposta = cliente.post("/organizador/eventos", json=corpo)
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+def test_a_recusa_da_data_vem_antes_da_recusa_do_termino(
+    cliente: TestClient,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """A sexta entrou **por último**, como a quinta antes dela.
+
+    Um corpo que erra a data *e* o término recebe `EVENTO_NO_PASSADO` — a ordem
+    documentada no topo de `services/evento.py` continua valendo, e é ela que
+    mantém os testes das Stories 2.4 e 2.5 provando o que se propuseram a provar.
+    """
+    usuario = fabricar_usuario(PapelUsuario.ORGANIZADOR, "ordem-fim@exemplo.com")
+    _entrar(cliente, usuario)
+
+    passado = _instante(-1)
+    resposta = cliente.post(
+        "/organizador/eventos",
+        json=_corpo(
+            data_hora=passado.isoformat().replace("+00:00", "Z"),
+            data_hora_fim=(passado - timedelta(hours=1))
+            .isoformat()
+            .replace("+00:00", "Z"),
+            portaria_ids=[str(porteiro.id)],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_NO_PASSADO"
+
+
 def test_a_recusa_do_setor_vem_antes_da_recusa_da_data(
     cliente: TestClient, fabricar_usuario: Callable[..., Usuario]
 ) -> None:
@@ -1009,6 +1173,11 @@ def _evento_gravado(
         imagem_url="https://s1.ticketm.net/dam/a/bluesman.jpg",
         origem_externa_id="G5vYZ9a1kd",
         data_hora=data_hora if data_hora is not None else _instante(30),
+        # Derivado do início e não fixo: este helper existe justamente para gravar
+        # o que a rota recusa — inclusive data no passado —, e um término fixo
+        # cairia no `CHECK fim_depois_do_inicio` nesses casos.
+        data_hora_fim=(data_hora if data_hora is not None else _instante(30))
+        + timedelta(hours=4),
         local="Espaço Unimed",
         cidade="São Paulo",
         publicado_em=_instante(-1),
@@ -1088,7 +1257,11 @@ def _edicao(evento: Evento, porteiro: Usuario, **ajustes: Any) -> dict[str, Any]
         "portaria_ids": [str(porteiro.id)],
     }
     corpo.update(ajustes)
-    return corpo
+    # O término acompanha o início pelo mesmo `_com_termino` do `_corpo`: sem
+    # isso, todo teste que adia a data do show para daqui a 60 dias mandaria um
+    # término anterior a ela e receberia `FIM_ANTES_DO_INICIO` no lugar do que
+    # está provando.
+    return _com_termino(corpo)
 
 
 def _organizador(fabricar_usuario: Callable[..., Usuario], sufixo: str) -> Usuario:
@@ -1730,6 +1903,85 @@ def test_editar_show_que_ja_aconteceu_e_422_evento_no_passado(
     assert resposta.json()["erro"]["codigo"] == "EVENTO_NO_PASSADO"
 
 
+@pytest.mark.parametrize(
+    ("rotulo", "deslocamento"),
+    [
+        ("uma hora antes", timedelta(hours=-1)),
+        ("no mesmo instante", timedelta(0)),
+    ],
+)
+def test_editar_com_termino_que_nao_vem_depois_do_inicio_e_422(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    rotulo: str,
+    deslocamento: timedelta,
+) -> None:
+    """A sexta recusa vale nas duas rotas, **com a mesma frase**.
+
+    ⚠️ **A igualdade das frases é a asserção**, e não um detalhe: a recusa é uma
+    cópia no `atualizar`, e não uma função compartilhada (convenção do
+    `_limpar_texto`: duas ocorrências se copiam, a terceira vira código comum).
+    Cópia é o que diverge quando alguém melhora uma das duas — e o organizador
+    receberia duas explicações diferentes para o mesmo engano dependendo do botão
+    que apertou. Este teste é o que trava isso.
+    """
+    dono = _organizador(fabricar_usuario, f"fim-edicao-{rotulo[:6]}")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    inicio = _instante(30)
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            data_hora=inicio.isoformat().replace("+00:00", "Z"),
+            data_hora_fim=(inicio + deslocamento).isoformat().replace("+00:00", "Z"),
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "FIM_ANTES_DO_INICIO"
+    assert resposta.json()["erro"]["mensagem"] == FRASE_DO_FIM_ANTES_DO_INICIO
+
+
+def test_o_termino_editado_e_gravado_e_volta_no_detalhe(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O caminho feliz: adiar o fim do show e ler o valor novo.
+
+    **É o `EventoSaida` que o formulário de edição lê para abrir preenchido**, e
+    por isso a leitura pelo detalhe faz parte da prova — um campo gravado que não
+    voltasse na resposta faria a tela reabrir com o término em branco e apagá-lo no
+    salvamento seguinte.
+    """
+    dono = _organizador(fabricar_usuario, "fim-gravado")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    inicio = _instante(45)
+    novo_fim = (inicio + timedelta(hours=6)).isoformat().replace("+00:00", "Z")
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            data_hora=inicio.isoformat().replace("+00:00", "Z"),
+            data_hora_fim=novo_fim,
+        ),
+    )
+
+    assert resposta.status_code == 200
+
+    depois = cliente.get(f"/organizador/eventos/{evento.id}").json()
+    assert depois["data_hora_fim"].replace("+00:00", "Z") == novo_fim
+
+
 def test_data_hora_sem_fuso_na_edicao_e_422(
     cliente: TestClient,
     sessao: Session,
@@ -1928,7 +2180,12 @@ def test_a_rota_aparece_no_openapi_com_200_e_o_schema_de_saida(
     assert corpo["$ref"].endswith("/EventoEdicao")
     # Os cinco campos do catálogo não existem no contrato de entrada.
     propriedades = esquema["components"]["schemas"]["EventoEdicao"]["properties"]
-    assert sorted(propriedades) == ["data_hora", "portaria_ids", "setores"]
+    assert sorted(propriedades) == [
+        "data_hora",
+        "data_hora_fim",
+        "portaria_ids",
+        "setores",
+    ]
 
 
 # =========================================================================== #

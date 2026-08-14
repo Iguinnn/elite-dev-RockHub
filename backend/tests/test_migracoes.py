@@ -72,8 +72,127 @@ def test_dinheiro_e_bigint_e_datas_carregam_fuso(engine_teste: Engine) -> None:
 
     assert "BIGINT" in str(colunas_setor["preco_centavos"]["type"]).upper()
 
-    for coluna in ("data_hora", "publicado_em", "criado_em"):
+    for coluna in ("data_hora", "data_hora_fim", "publicado_em", "criado_em"):
         assert colunas_evento[coluna]["type"].timezone is True
+
+
+def test_data_hora_fim_e_obrigatoria_e_tem_o_check_do_banco(
+    engine_teste: Engine,
+) -> None:
+    """A coluna do término (`a1c9f4d3b7e2`), lida do banco.
+
+    ⚠️ **`NOT NULL`, e é essa palavra que faz o conserto valer para os eventos que
+    já existiam.** *Descartei* deixá-la anulável na techspec
+    `docs/techspec-fim-do-evento.md`: nada seria inventado, mas `porta_aberta`, a
+    tela do ingresso e a do turno passariam a carregar um "e se não tem término?"
+    para sempre — e os eventos de produção continuariam exatamente com o bug.
+    Invariante que vale para os novos e não para os antigos é invariante pela
+    metade.
+
+    O `CHECK` é rede de segurança, não a regra: quem recusa em português é o
+    `FIM_ANTES_DO_INICIO` do service. Ele é lido daqui, e não por comportamento,
+    porque nenhuma rota consegue chegar até ele — a prova por `INSERT` direto mora
+    em `test_evento.py`, com as outras invariantes que só o banco garante.
+    """
+    inspetor = inspect(engine_teste)
+    colunas = {c["name"]: c for c in inspetor.get_columns("evento")}
+
+    assert colunas["data_hora_fim"]["nullable"] is False
+
+    # `ck_evento_` é o prefixo que a convenção de nomes do `Base.metadata` aplica,
+    # e é ele que a migração e o modelo produzem — o nome curto entra nos dois
+    # lugares, e quem monta o nome final é a convenção, num lugar só.
+    restricoes = {c["name"] for c in inspetor.get_check_constraints("evento")}
+    assert "ck_evento_fim_depois_do_inicio" in restricoes
+
+
+def test_evento_gravado_antes_da_migracao_ganha_seis_horas_de_show(
+    engine_teste: Engine,
+) -> None:
+    """⚠️ **O teste que autoriza a frase "o defeito some também no que já existe".**
+
+    A `a1c9f4d3b7e2` não zera nada nem deixa buraco: ela calcula `data_hora + 6h`
+    para toda linha que já estava no banco — inclusive as da Railway, que servem o
+    roteiro de avaliação. Sem este teste, um `UPDATE` errado no meio da migração
+    só apareceria como um evento encerrado no meio de um teste manual, e a
+    alternativa descartada (coluna anulável) seria indistinguível da escolhida
+    para quem lê a suíte.
+
+    **As seis horas são folga deliberada, e a asserção as prende.** Com três, um
+    evento antigo do banco poderia aparecer já encerrado no meio de um teste — e o
+    comportamento novo seria descoberto pelo susto, e não pela leitura.
+
+    O caminho é o de um evento de verdade gravado antes da mudança: volta-se à
+    revisão anterior, grava-se a linha **sem** a coluna (por SQL cru — o modelo de
+    hoje não sabe escrever `Evento` sem `data_hora_fim`), roda-se `upgrade head` e
+    lê-se o resultado.
+
+    ⚠️ **Ele comita, então ele limpa** — mesma disciplina do teste do ingresso
+    logo abaixo: roda fora da transação revertida do `conftest.py`, e o `finally`
+    devolve o banco ao `head` mesmo se a asserção falhar.
+    """
+    cfg = _config_alembic()
+    Fabrica = sessionmaker(bind=engine_teste, expire_on_commit=False)
+
+    organizador_id = uuid4()
+    evento_id = uuid4()
+    comeco = datetime(2026, 8, 15, 21, 0, tzinfo=timezone.utc)
+
+    try:
+        # Volta ao schema de antes: `evento` sem `data_hora_fim`.
+        command.downgrade(cfg, "e5bf44a9f826")
+
+        with Fabrica() as preparo:
+            preparo.add(
+                Usuario(
+                    id=organizador_id,
+                    nome="Organizador de antes do término",
+                    email=f"org-fim-{organizador_id}@exemplo.com",
+                    senha_hash=gerar_hash("rockhub"),
+                    papel=PapelUsuario.ORGANIZADOR.value,
+                )
+            )
+            preparo.flush()
+            # SQL cru: o `Evento` de hoje tem `data_hora_fim`, que nesta revisão
+            # do schema não existe — pelo ORM o `INSERT` sairia com a coluna.
+            preparo.execute(
+                text(
+                    "INSERT INTO evento "
+                    "(id, organizador_id, nome, data_hora, local, cidade, "
+                    " origem_externa_id, publicado_em) "
+                    "VALUES (:id, :organizador, :nome, :data_hora, :local, "
+                    " :cidade, :origem, :publicado)"
+                ),
+                {
+                    "id": evento_id,
+                    "organizador": organizador_id,
+                    "nome": "Show sem hora de acabar",
+                    "data_hora": comeco,
+                    "local": "Espaço Unimed",
+                    "cidade": "São Paulo",
+                    "origem": "G5vYZ9a1kd",
+                    "publicado": datetime.now(timezone.utc),
+                },
+            )
+            preparo.commit()
+
+        command.upgrade(cfg, "head")
+
+        with Fabrica() as leitura:
+            fim = leitura.execute(
+                text("SELECT data_hora_fim FROM evento WHERE id = :id"),
+                {"id": evento_id},
+            ).scalar_one()
+
+        assert fim == comeco + timedelta(hours=6)
+    finally:
+        with Fabrica() as limpeza:
+            limpeza.execute(text("DELETE FROM evento WHERE id = :id"), {"id": evento_id})
+            limpeza.execute(
+                text("DELETE FROM usuario WHERE id = :id"), {"id": organizador_id}
+            )
+            limpeza.commit()
+        command.upgrade(cfg, "head")
 
 
 def test_publicado_em_e_anulavel_e_as_outras_datas_nao_sao(
@@ -573,25 +692,39 @@ def test_ingresso_emitido_antes_da_migracao_continua_valido(
                 ]
             )
             preparo.flush()
+            # ⚠️ **SQL cru para o evento também, e pelo motivo inverso ao do
+            # ingresso logo abaixo** (14/08/2026). Lá o modelo de hoje não sabe
+            # escrever colunas que já não existem; aqui ele sabe escrever uma que
+            # ainda **não** existe — `data_hora_fim` nasce na `a1c9f4d3b7e2`, e
+            # esta revisão é anterior a ela. Pelo ORM, o `INSERT` sairia com a
+            # coluna e estouraria `UndefinedColumn`.
+            preparo.execute(
+                text(
+                    "INSERT INTO evento "
+                    "(id, organizador_id, nome, data_hora, local, cidade, "
+                    " origem_externa_id, publicado_em) "
+                    "VALUES (:id, :organizador, :nome, :data_hora, :local, "
+                    " :cidade, :origem, :publicado)"
+                ),
+                {
+                    "id": evento_id,
+                    "organizador": organizador_id,
+                    "nome": "Show de antes da migração",
+                    "data_hora": datetime.now(timezone.utc) + timedelta(days=30),
+                    "local": "Espaço Unimed",
+                    "cidade": "São Paulo",
+                    "origem": "G5vYZ9a1kd",
+                    "publicado": datetime.now(timezone.utc),
+                },
+            )
             preparo.add(
-                Evento(
-                    id=evento_id,
-                    organizador_id=organizador_id,
-                    nome="Show de antes da migração",
-                    data_hora=datetime.now(timezone.utc) + timedelta(days=30),
-                    local="Espaço Unimed",
-                    cidade="São Paulo",
-                    origem_externa_id="G5vYZ9a1kd",
-                    publicado_em=datetime.now(timezone.utc),
-                    setores=[
-                        Setor(
-                            id=setor_id,
-                            nome="Pista",
-                            capacidade=10,
-                            vendidos=1,
-                            preco_centavos=12000,
-                        )
-                    ],
+                Setor(
+                    id=setor_id,
+                    evento_id=evento_id,
+                    nome="Pista",
+                    capacidade=10,
+                    vendidos=1,
+                    preco_centavos=12000,
                 )
             )
             preparo.flush()

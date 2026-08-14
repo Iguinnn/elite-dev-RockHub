@@ -130,7 +130,7 @@
 }
 
 .seletorCidade:hover {
-  border-color: var(--neon);
+  border-color: var(--neon2);
 }
 
 /* ⚠️ **O filtro ativo fica marcado em neon** — o AC da Story 3.2, que este
@@ -141,8 +141,8 @@
    `--neon`, o mesmo peso de sinal, sem inventar tratamento visual novo. */
 .seletorCidadeAtivo,
 .seletorCidadeAtivo:hover {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* ⚠️ O `Botao` é `width: 100%` (Story 1.4). Sem esta largura fixa e sem o
@@ -180,8 +180,28 @@
    para o `.filtros`, que agora é quem fecha o bloco inteiro — mantê-los aqui
    desenharia o fio no meio da faixa, cortando o `<select>` e o botão que a
    atravessam. */
+/* ⚠️ **`min-width: 0` não é enfeite: sem ele a barra inteira transborda.**
+   Item de grade tem largura mínima automática igual ao `min-content` do seu
+   conteúdo, e este bloco divide a coluna `1fr` com o `.campoBusca`. O campo tem
+   a declaração desde sempre; este não tinha, então o piso da faixa 1 virava a
+   largura do chip mais largo (`PRÓXIMOS`, ≈103px) e o `1fr` **nunca chegava a
+   zero**. Era a causa-raiz do transbordo horizontal da tela inicial em todo
+   celular comum — medido em +89px a 320, +49px a 360, +19px a 390, com o
+   `Buscar` saindo pela direita. Achado no code review de 14/08/2026. */
+/* ⚠️ **A linha inteira (`1 / -1`), e não a coluna 1** — corrigido em 14/08/2026.
+   Preso à primeira coluna, este bloco herdava a largura que sobrava depois do
+   `<select>` e do `Buscar`, e os três chips empilhavam um por linha sempre que
+   ela apertava: medido, isso acontecia de 561 a 768px **e** de 901 a ~1050px —
+   duas faixas, uma de tablet e uma de notebook pequeno, que nenhuma foto de
+   celular ia denunciar. Três botões de um conjunto fechado em três linhas
+   ocupam altura que a lista quer.
+
+   Eles nunca precisaram dividir a coluna com o campo: `.campoBusca`, `<select>`
+   e `Buscar` operam uns aos outros e formam a linha 1; o período é outro filtro,
+   na linha 2. Em telas largas nada muda de aparência — os chips já cabiam e são
+   alinhados à esquerda. */
 .grupos {
-  grid-column: 1;
+  grid-column: 1 / -1;
   grid-row: 2;
   display: flex;
   flex-wrap: wrap;
@@ -210,7 +230,7 @@
 }
 
 .chip:hover {
-  border-color: var(--neon);
+  border-color: var(--neon2);
   color: var(--cal);
 }
 
@@ -219,9 +239,9 @@
    coisa a quem não vê nenhuma das duas. */
 .chipAtivo,
 .chipAtivo:hover {
-  border-color: var(--neon);
+  border-color: var(--neon2);
   background: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
 }
 
 /* ---- a chamada principal (Story 3.3) ------------------------------------ */
@@ -262,7 +282,7 @@
    nenhum — a ausência de resposta é a informação (EXPERIENCE.md#fila-listagem),
    e ela vem de graça por o elemento não ser um link. */
 .chamada:hover .manchete {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* 16/10 como o DESIGN.md pede. `position: relative` para o selo e o degradê se
@@ -464,7 +484,7 @@
    Este comentário é a fonte; os outros nove `page.module.css` apontam para
    ele. */
 .aviso {
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   padding-left: 14px;
   max-width: 52ch;
   margin-top: 28px;
@@ -493,8 +513,8 @@
 }
 
 .linkDeTexto:hover {
-  border-bottom-color: var(--neon);
-  color: var(--neon);
+  border-bottom-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* ---- a fila de quatro colunas ------------------------------------------- */
@@ -646,7 +666,7 @@
   display: inline-block;
   padding: 8px 14px;
   background: var(--brasa);
-  color: var(--breu);
+  color: var(--vazado);
   font: 700 14px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -685,6 +705,21 @@
      curta. */
   .botaoBusca {
     width: 118px;
+  }
+
+  /* ⚠️ **O kicker ganha linha própria, e é isso que põe os três chips lado a
+     lado.** Inline ele consome ~100px da faixa; com 481px de barra a 561px de
+     janela, os três chips pedem 468 e não sobra espaço para ele junto — o
+     terceiro caía para a linha de baixo. Medido: a banda quebrada ia de 561 a
+     619px, e some inteira com esta declaração.
+
+     `flex-basis: 100%` e não um `<br>` ou um bloco novo: o kicker continua sendo
+     o mesmo `<span class="kicker">` que o resto do produto usa, e quem decide
+     que ele ocupa a linha é o contêiner — que é quem conhece a largura. */
+  .grupos > span:first-child {
+    flex: 0 0 100%;
+    margin-right: 0;
+    margin-bottom: 2px;
   }
 
   .seletorCidade {
@@ -769,5 +804,113 @@
 
   .aPartirDe {
     margin-bottom: 4px;
+  }
+}
+
+/* ---- a barra de busca em tela estreita ---------------------------------- */
+
+/* ⚠️ **Abaixo de 560px a barra deixa de ser uma linha e vira três** (decisão do
+   Igor, 14/08/2026, com a tela na frente).
+
+   **O que estava errado:** o `@media (max-width: 900px)` acima mantinha os três
+   controles na mesma linha e apenas os encolhia — `118px` de botão e `132px` de
+   `<select>`, com o campo absorvendo a sobra. Abaixo de ~410px não há sobra: a
+   página inteira passava a rolar na horizontal (medido: +89px a 320, +49px a
+   360, +19px a 390), o `Buscar` saía pela direita e os placeholders apareciam
+   cortados — *"Buscar art"*, *"Todas as ci"*. Os fios de 1px, que são a
+   assinatura do jornal noturno, deixavam de correr de ponta a ponta.
+
+   **A causa não era o campo.** O `.campoBusca` tem `min-width: 0` e encolhe até
+   zero; quem segurava a barra aberta era o `.grupos`, que divide a **mesma**
+   coluna `1fr` (linha 183) e **não** tem `min-width: 0` — o piso da faixa virava
+   o `min-content` do chip mais largo. Por isso a correção não é só apertar
+   números: os dois controles de 118 e 132px não cabem ao lado do campo em
+   celular nenhum, e o comentário do bloco de 900px — *"empilhá-los empurraria a
+   lista para baixo da dobra"* — vale a 768px e não vale aqui.
+
+   **O desenho novo, e ele é o mesmo dos formulários do produto:** campo em cima,
+   ocupando a linha inteira; cidade e `Buscar` embaixo, dividindo a segunda; os
+   chips de período na terceira. Continua sendo uma barra só — o que muda é que
+   ela passa a ler de cima para baixo, como todo formulário empilhado desta
+   identidade, em vez de espremer três controles numa linha que não os comporta. */
+@media (max-width: 560px) {
+  .filtros {
+    /* Duas colunas: a cidade cresce, o botão tem a largura que precisa. */
+    grid-template-columns: 1fr auto;
+    column-gap: 10px;
+  }
+
+  /* A linha inteira. É o que devolve o placeholder por extenso — `Buscar
+     artista, local ou cidade` é a única instrução de uso desta tela. */
+  .campoBusca {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    font-size: 19px;
+  }
+
+  /* Abaixo do campo, e não ao lado — o pedido do Igor, e o que dá largura ao
+     nome da cidade. O `max-width` dos blocos acima (224px, depois 132px) é
+     anulado de propósito: aqui o controle **quer** a sobra, porque nome de
+     cidade é o texto mais longo da barra. */
+  /* ⚠️ **`min-width: 0` é o que faz o `max-width: none` ser seguro.** Um
+     `<select>` tem largura mínima intrínseca igual à da **opção mais longa** —
+     `Todas as cidades` mede 180px —, e sem esta linha essa medida vira o piso da
+     coluna: a barra reabre para 295px e a página volta a rolar na horizontal a
+     320px (medido: +14px). É o mesmo defeito do `.grupos`, pela mesma causa, e
+     ele reaparece toda vez que um controle de conteúdo largo entra numa coluna
+     `1fr` sem esta declaração. */
+  .seletorCidade {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    padding: 13px 8px;
+  }
+
+  /* ⚠️ **104px, e o `Botao` lá dentro continua `width: 100%`.** O invólucro é
+     que manda, como desde a Story 1.4 — mexer no componente para caber aqui
+     mudaria o botão primário do produto inteiro por causa de uma tela. A
+     palavra `BUSCAR` em mono versalete a 14px pede ~92px; os 104 são ela mais o
+     respiro das duas bordas. */
+  .botaoBusca {
+    grid-column: 2;
+    grid-row: 2;
+    width: 104px;
+  }
+
+  /* ⚠️ **Grade de três colunas iguais, e não `flex-wrap`.** Com o `wrap` os
+     chips empilhavam um por linha (era o que a tela mostrava), porque
+     `PRÓXIMOS 30 DIAS` sozinho já passa da largura disponível. Em grade cada
+     chip recebe um terço fixo e o texto quebra **dentro** dele — os três ficam
+     lado a lado, do mesmo tamanho, que é a leitura de "três opções do mesmo
+     conjunto". O `minmax(0, 1fr)` é o que permite a coluna ser menor que o
+     conteúdo; com `1fr` puro o piso volta a ser o `min-content` e a barra
+     transborda de novo, que é exatamente o defeito que este bloco conserta. */
+  .grupos {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  /* O kicker toma a linha inteira acima dos três — ele nomeia o conjunto, e
+     dentro da grade roubaria a vaga de um chip. */
+  .grupos > span:first-child {
+    grid-column: 1 / -1;
+    margin-right: 0;
+    margin-bottom: 2px;
+  }
+
+  /* Corpo e entreletra menores **só aqui**: a 14px com `0.14em`, a palavra
+     `PRÓXIMOS` não cabe num terço de 320px, e a quebra sairia no meio dela.
+     Centrado porque agora o chip é uma caixa de largura fixa com texto de
+     duas linhas, não uma etiqueta do tamanho da palavra. */
+  .chip {
+    padding: 8px 4px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-align: center;
   }
 }

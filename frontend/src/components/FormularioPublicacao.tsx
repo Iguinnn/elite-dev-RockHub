@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
 
+import AvisoDaVirada from "@/components/AvisoDaVirada";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
 import SeletorDeData from "@/components/SeletorDeData";
@@ -33,6 +34,7 @@ import {
   hojeEmSaoPaulo,
   momentoDaPublicacao,
   reaisParaCentavos,
+  terminoDoShow,
 } from "@/lib/formato";
 import type { ResultadoDasPortarias } from "@/lib/portarias";
 
@@ -94,6 +96,19 @@ const MENSAGEM_GENERICA =
 const DATA_NO_PASSADO = "A data do show já passou. Confira o dia e o horário.";
 
 /**
+ * A recusa do término, **numa constante pelo mesmo motivo da de cima**: ela sai
+ * daqui na checagem local e na tradução do `FIM_ANTES_DO_INICIO` do servidor.
+ *
+ * ⚠️ **Só a checagem local dispara na prática hoje**, porque a tela infere a
+ * virada de meia-noite (ver `terminoDoShow`) e nunca monta um término anterior ao
+ * início. A tradução fica assim mesmo: o dia em que a inferência mudar, ou em que
+ * alguém chamar a rota por fora, a frase já está aqui — e é a mesma do
+ * `services/evento.py`, palavra por palavra.
+ */
+const FIM_ANTES_DO_INICIO =
+  "O show precisa terminar depois de começar. Confira o horário de término.";
+
+/**
  * ⚠️ **O que se grava quando nem o catálogo nem o organizador sabem a casa.**
  *
  * `ItemDoCatalogo.local` é anulável — a Discovery às vezes devolve um evento sem
@@ -149,6 +164,9 @@ function mensagemParaCodigo(codigo: string): React.ReactNode {
     // diferença basta para a checagem daqui aprovar o que a de lá recusa.
     return DATA_NO_PASSADO;
   }
+  if (codigo === "FIM_ANTES_DO_INICIO") {
+    return FIM_ANTES_DO_INICIO;
+  }
   if (codigo === "DADOS_INVALIDOS") {
     return "Confira os dados do formulário.";
   }
@@ -182,6 +200,16 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
   const [setores, setSetores] = useState<LinhaDeSetor[]>([
     { chave: 0, nome: "", capacidade: "", preco: "" },
   ]);
+  // ⚠️ **Os três campos de tempo passaram a ter estado em 14/08/2026**, e antes
+  // eram lidos só no envio, por `FormData`. O motivo é a frase da virada de
+  // meia-noite logo abaixo do término: para dizer em que dia o show acaba, a tela
+  // precisa saber os três **enquanto** a pessoa digita, e não no `submit`.
+  //
+  // O `data` é espelho do `SeletorDeData`, alimentado pelo `aoMudar` dele — o
+  // campo continua sendo o dono do valor (ver o docstring daquela prop).
+  const [data, setData] = useState("");
+  const [hora, setHora] = useState("");
+  const [horaFim, setHoraFim] = useState("");
   const [enviando, setEnviando] = useState(false);
   // `ReactNode` e não `string` desde 13/08/2026: a mensagem de sessão expirada
   // leva um `<Link>` dentro (ver `SessaoExpirada`). Foi a troca deste tipo que
@@ -251,9 +279,11 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     if (enviando) return;
     setErro(null);
 
+    // ⚠️ **O `FormData` sobrou só para a casa**, e a data, a hora e o término
+    // saem do estado desde 14/08/2026. Ler os mesmos três de duas fontes seria
+    // criar a chance de elas discordarem — a frase da virada mostraria um dia e o
+    // corpo enviaria outro.
     const dados = new FormData(evento.currentTarget);
-    const data = String(dados.get("data") ?? "");
-    const hora = String(dados.get("hora") ?? "");
 
     // A casa vem do catálogo (ver o topo do arquivo). O `FormData` só é
     // consultado no caso em que o campo existe — isto é, quando a Discovery não
@@ -287,6 +317,21 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     // propósito (ver `hojeEmSaoPaulo`).
     if (instante <= new Date()) {
       setErro(DATA_NO_PASSADO);
+      return;
+    }
+
+    // O término, com a virada de meia-noite já resolvida — o que viaja é um
+    // instante completo, e não uma hora solta (ver `terminoDoShow`).
+    const fim = terminoDoShow(data, horaFim, instante);
+    if (fim === null) {
+      setErro("Confira o horário de término do show.");
+      return;
+    }
+    // Cinto e suspensório: a inferência garante `fim > instante` por construção,
+    // e esta linha é o que sobra de pé se ela um dia mudar. A frase é a mesma do
+    // `FIM_ANTES_DO_INICIO` do servidor, pelo motivo escrito na constante.
+    if (fim <= instante) {
+      setErro(FIM_ANTES_DO_INICIO);
       return;
     }
 
@@ -342,6 +387,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           nome: item.nome,
           imagem_url: item.imagem_url,
           data_hora: instante.toISOString(),
+          data_hora_fim: fim.toISOString(),
           local,
           // Já chega `null` do catálogo quando a Discovery não manda a cidade —
           // a coluna é anulável, e não há campo de texto para produzir o `""`
@@ -511,9 +557,40 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
               rotulo="Data"
               minimo={hojeEmSaoPaulo()}
               obrigatorio
+              aoMudar={setData}
             />
-            <Campo id="hora" name="hora" rotulo="Horário" type="time" required />
+            <Campo
+              id="hora"
+              name="hora"
+              rotulo="Horário"
+              type="time"
+              value={hora}
+              onChange={(e) => setHora(e.target.value)}
+              required
+            />
           </div>
+
+          {/* ⚠️ **O término é uma hora, e não uma segunda data** (techspec
+              `docs/techspec-fim-do-evento.md`). O rótulo diz `Termina às` de
+              propósito: ele anuncia que o campo é uma hora do mesmo show, e não
+              um segundo dia a escolher. Quando a hora vira a meia-noite, quem diz
+              em que dia o show acaba é a frase logo abaixo — o preço da
+              inferência é dizê-la em voz alta.
+
+              ⚠️ **`min` não serve aqui, e não é esquecimento**: o atributo do
+              `<input type="time">` compara com uma constante, nunca com outro
+              campo. A recusa de fim antes do início é do service, e a tela só
+              evita a ida à rede — mesmo desenho do `EVENTO_NO_PASSADO`. */}
+          <Campo
+            id="hora-fim"
+            name="hora_fim"
+            rotulo="Termina às"
+            type="time"
+            value={horaFim}
+            onChange={(e) => setHoraFim(e.target.value)}
+            required
+          />
+          <AvisoDaVirada data={data} hora={hora} horaFim={horaFim} />
           {/* A data continua sendo digitada, e ela **não** seguiu a casa e a
               cidade para o bloco de cima. A Discovery manda `dates.start` de
               cada evento, mas quem publica aqui está anunciando a própria data

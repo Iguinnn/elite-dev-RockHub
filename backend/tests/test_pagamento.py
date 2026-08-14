@@ -60,6 +60,9 @@ def _evento_publicado(
         organizador_id=organizador.id,
         nome="Baco Exu do Blues",
         data_hora=_daqui_a(30),
+        # Quatro horas de show — nada neste arquivo depende do término, e o valor
+        # existe só para satisfazer a coluna obrigatória e o `CHECK`.
+        data_hora_fim=_daqui_a(30) + timedelta(hours=4),
         local="Espaço Unimed",
         cidade="São Paulo",
         origem_externa_id="G5vYZ9a1kd",
