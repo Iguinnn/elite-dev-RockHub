@@ -76,9 +76,22 @@ export default function Canhoto({ ingresso }: { ingresso: IngressoDetalhe }) {
               pode seguir o tema, porque leitor de QR precisa do contraste
               claro-sobre-escuro fixo. Se o `globals.css` mudar, esta linha muda
               junto — e é para isso que este comentário está aqui. */}
+          {/* ⚠️ **`marginSize={4}` é obrigatório, não enfeite.** É a *zona de
+              silêncio* que a especificação do QR exige em volta do símbolo, e o
+              `qrcode.react` v4 tem `DEFAULT_MARGIN_SIZE = 0` — ele mesmo guarda
+              a constante `SPEC_MARGIN_SIZE = 4` e não a usa. Sem ela o símbolo
+              nasce colado na borda e o leitor não acha os marcadores de canto.
+              **Passou despercebido até 14/08/2026 porque o defeito era invisível
+              no tema escuro:** ali o `.corpo` tem fundo `var(--cal)` = `#e4ebea`,
+              a *mesma* cor do `bgColor` abaixo, e o painel virava zona de
+              silêncio por acidente. Com a paleta em dois modos, o `--cal` do
+              tema claro passou a valer `#0b1618`, o painel escuro encostou nos
+              módulos externos e o QR parou de ser lido. Não confie no fundo do
+              container para isso — ele segue o tema, e o QR não pode. */}
           <QRCodeSVG
             value={ingresso.codigo}
             size={180}
+            marginSize={4}
             level="L"
             bgColor="#e4ebea"
             fgColor="#0b1618"
