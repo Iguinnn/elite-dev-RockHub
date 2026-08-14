@@ -220,10 +220,15 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
         )
 
     # Quinta recusa, decidida no code review da Epic 2. Publicar show que já
-    # aconteceu não é um caso de uso — é erro de digitação na data, e ele é
-    # **permanente**, porque não existe tela de editar nem de apagar evento. Na
-    # Epic 3 esse evento entraria na programação e venderia ingresso para uma
-    # noite que já passou.
+    # aconteceu não é um caso de uso — é erro de digitação na data, e na Epic 3
+    # esse evento entraria na programação e venderia ingresso para uma noite que
+    # já passou.
+    #
+    # ⚠️ **"Permanente porque não existe tela de editar" deixou de ser o motivo,
+    # e o erro continua permanente** (13/08/2026). Existe o `atualizar()` logo
+    # acima — e ele recusa editar evento cuja `data_hora` já passou, pelo mesmo
+    # código. Um evento publicado com data no passado nasce sem conserto pelas
+    # duas pontas, e é essa simetria que mantém esta recusa valendo o que valia.
     #
     # **Por último, e não primeiro.** A ordem das recusas anteriores é o que
     # mantém os testes das Stories 2.4 e 2.5 provando o que se propuseram a

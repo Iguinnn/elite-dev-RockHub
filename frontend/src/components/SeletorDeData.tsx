@@ -47,6 +47,7 @@ export default function SeletorDeData({
   rotulo,
   minimo,
   obrigatorio = false,
+  valorInicial = "",
 }: {
   id: string;
   name: string;
@@ -54,11 +55,21 @@ export default function SeletorDeData({
   /** `AAAA-MM-DD`, o mesmo formato do `min` do `<input type="date">`. */
   minimo: string;
   obrigatorio?: boolean;
+  /**
+   * `AAAA-MM-DD` com que o campo abre — vazio ao publicar, a data do show ao
+   * editar (13/08/2026).
+   *
+   * ⚠️ **É valor inicial, não valor controlado**, e por isso não há
+   * `useEffect` sincronizando os dois: quem manda no campo depois da primeira
+   * renderização é quem está digitando. Um efeito que reescrevesse o estado a
+   * cada render da página apagaria a data escolhida no meio da edição.
+   */
+  valorInicial?: string;
 }) {
   // `AAAA-MM-DD` ou `""` — o valor do `<input>`, e o que o `FormData` vai ler.
   // Controlado desde 13/08/2026: antes o campo era lido só no envio, e agora o
   // calendário também escreve nele.
-  const [valor, setValor] = useState("");
+  const [valor, setValor] = useState(valorInicial);
   const [aberto, setAberto] = useState(false);
   const invólucro = useRef<HTMLDivElement>(null);
 

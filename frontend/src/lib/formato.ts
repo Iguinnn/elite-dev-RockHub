@@ -21,9 +21,15 @@
  * não depende de nenhum dos dois. É o oposto do `servidor.ts`, cujo import de
  * `next/headers` é justamente o que o prende ao servidor.
  *
- * `reaisParaCentavos` **não** veio junto: ela é do formulário, converte o que
- * uma pessoa digitou e não tem consumidor de servidor. Mover tudo "já que
- * estou aqui" seria escopo que ninguém pediu.
+ * ⚠️ **`reaisParaCentavos` e `hojeEmSaoPaulo` chegaram em 13/08/2026**, com a
+ * tela de editar evento. O docstring dizia que a primeira ficaria de fora "por
+ * não ter consumidor de servidor", e isso continua verdade — o que mudou é que
+ * ela passou a ter **dois** consumidores de cliente, e as duas trazem coisa que
+ * não se copia impunemente: a `reaisParaCentavos` carrega a guarda de
+ * `Number.isSafeInteger` que o code review da Epic 2 acrescentou, e a
+ * `hojeEmSaoPaulo` carrega o `FUSO` — que é justamente o que este módulo existe
+ * para manter num lugar só. Uma cópia de qualquer uma das duas é a chance de a
+ * próxima tela repetir um bug que já foi corrigido.
  */
 
 /**
@@ -54,6 +60,56 @@ export function centavosParaReais(centavos: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+/**
+ * Reais digitados → centavos inteiros. `null` quando não dá para ter certeza.
+ *
+ * A inversa da de cima, e a fronteira onde o decimal morre: a API só conhece
+ * `preco_centavos: int` (AD-11), e nenhum número com casa atravessa o contrato.
+ *
+ * ⚠️ **Ela nasceu no `FormularioPublicacao` e veio para cá quando a tela de
+ * editar virou o segundo consumidor** (13/08/2026). Não é faxina: a guarda de
+ * `Number.isSafeInteger` abaixo foi um achado de code review, e uma segunda
+ * cópia dela é uma segunda chance de alguém escrever a versão sem a guarda.
+ */
+export function reaisParaCentavos(valor: string): number | null {
+  const bruto = valor.trim();
+  // Com vírgula, ela é o separador decimal e o ponto é milhar ("1.234,50").
+  // Sem vírgula, o ponto é o decimal ("120.50"). Assim "1.234" não vira
+  // 123.400 por adivinhação — ele falha na regra abaixo e vira erro na tela.
+  const normalizado = bruto.includes(",")
+    ? bruto.replace(/\./g, "").replace(",", ".")
+    : bruto;
+
+  if (!/^\d+(\.\d{1,2})?$/.test(normalizado)) return null;
+
+  const centavos = Math.round(Number(normalizado) * 100);
+  // ⚠️ **`Math.round` mente em silêncio acima de `MAX_SAFE_INTEGER`**, e o
+  // regex acima aceita qualquer quantidade de dígitos. Sem esta guarda,
+  // `999999999999999,99` era enviado **arredondado errado** e gravado sem erro
+  // nenhum — dinheiro corrompido sem ninguém saber, que é exatamente o que o
+  // AD-11 existe para impedir. `null` devolve a mensagem de preço inválido, que
+  // é a resposta certa para um número que o JavaScript não sabe representar.
+  if (!Number.isSafeInteger(centavos)) return null;
+  return centavos;
+}
+
+/**
+ * Hoje no fuso do produto, em `AAAA-MM-DD` — o formato que o `min` do
+ * `<input type="date">` exige.
+ *
+ * **Em São Paulo, e não no fuso do navegador**, pelo mesmo motivo do `FUSO`
+ * acima: quem publica está no Brasil, e um organizador viajando não deve ver o
+ * seletor liberar ontem ou barrar hoje.
+ *
+ * ⚠️ **Veio do `FormularioPublicacao` junto com a de cima**, e aqui o argumento
+ * é ainda mais forte: lá ela repetia a string `"America/Sao_Paulo"` fora do
+ * `FUSO`, que é a **segunda fonte** do fuso que este módulo inteiro existe para
+ * impedir (ver o comentário do `FUSO`). Agora é uma só.
+ */
+export function hojeEmSaoPaulo(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: FUSO }).format(new Date());
 }
 
 /** ISO-8601 → `"15 de agosto de 2026, 21h00"`. */
@@ -208,6 +264,37 @@ export function horaDeEntrada(iso: string): string {
   })
     .format(instante)
     .replace(":", "h");
+}
+
+/**
+ * ISO-8601 → os dois campos do formulário: `{ data: "2026-09-13", hora: "21:00" }`
+ * (13/08/2026, tela de editar evento).
+ *
+ * Os formatos são os que `<input type="date">` e `<input type="time">` exigem —
+ * não são para ler, são para preencher.
+ *
+ * ⚠️ **No `FUSO`, e não no fuso do navegador, e a razão aqui é outra das deste
+ * módulo.** O formulário de edição é uma ilha `"use client"`, e ilha
+ * `"use client"` **também renderiza no servidor** antes de hidratar: com
+ * `instante.getHours()` o valor sairia em UTC no HTML da Vercel e em horário
+ * local no navegador, que é divergência de hidratação — o React reclama e o
+ * campo pode ficar com o valor errado. Com `Intl` e `timeZone` fixo, os dois
+ * lados calculam a mesma coisa.
+ */
+export function partesDoFormulario(iso: string): { data: string; hora: string } {
+  const instante = new Date(iso);
+  return {
+    // `en-CA` é o truque de sempre para `AAAA-MM-DD` sem montar a string à mão.
+    data: new Intl.DateTimeFormat("en-CA", { timeZone: FUSO }).format(instante),
+    // `hourCycle: "h23"` e não o padrão: sem ele, meia-noite sai como `24:00`
+    // em algumas combinações de locale, e o `<input type="time">` rejeita.
+    hora: new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: FUSO,
+    }).format(instante),
+  };
 }
 
 /** ISO-8601 → `"Publicado em 11 de agosto, 17h22"`. Sem o ano: é recente. */

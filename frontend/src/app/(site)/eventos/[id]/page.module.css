@@ -62,12 +62,19 @@
    que a tela existe para mostrar).
 
    Fio embaixo fechando o bloco, como o protótipo desenha — simples, não duplo. */
+/* ⚠️ **Sem fio embaixo desde 13/08/2026** (decisão do Igor). Ele fechava o
+   cabeçalho e caía a poucos pixels do kicker `SETORES`, que abre a seção
+   seguinte — o traço acabava lendo como sublinhado do kicker em vez de fim do
+   bloco de cima. O que separa as duas metades da tela é o intervalo: os 30px de
+   recuo abaixo do cabeçalho continuam aqui, e são eles que faziam o trabalho.
+
+   É o mesmo corte que o formulário de publicação recebeu no mesmo dia, e a régua
+   é a de lá: fio marca fronteira, não decora bloco. */
 .cabecalho {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 34px;
   padding: 10px 12px 30px;
-  border-bottom: 1px solid var(--fio);
 }
 
 .cabecalhoTexto {

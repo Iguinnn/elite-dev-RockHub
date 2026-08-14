@@ -323,9 +323,14 @@
   color: var(--neon);
 }
 
+/* ⚠️ `gap` e `align-items` entraram em 13/08/2026 para o `FormularioEdicao`, que
+   põe `Cancelar` ao lado de `Salvar alterações`. Não mudam nada aqui: a tela de
+   publicar tem um filho só neste rodapé, e gap sem segundo item é zero. */
 .rodape {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 28px;
   margin-top: 30px;
   padding-top: 22px;
   border-top: 1px solid var(--fio);
