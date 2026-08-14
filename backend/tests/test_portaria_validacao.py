@@ -40,6 +40,8 @@ from app.models.ingresso import Ingresso
 from app.models.reserva import EstadoReserva, ItemReserva, Reserva
 from app.models.usuario import PapelUsuario, Usuario
 from app.models.validacao import Validacao
+from app.schemas.evento import EstadoDoTurno
+from app.services import evento as servico_de_evento
 from app.services import ingresso as servico_de_ingresso
 
 # O alfabeto do código, repetido aqui de propósito: `_trocar_um_simbolo` precisa
@@ -66,6 +68,7 @@ def _evento_gravado(
     *,
     nome: str = "Baco Exu do Blues",
     data_hora: datetime | None = None,
+    data_hora_fim: datetime | None = None,
     portarias: list[Usuario] | None = None,
     publicado: bool = True,
     setor_nome: str = "Pista",
@@ -81,10 +84,16 @@ def _evento_gravado(
     `test_portaria_turnos.py`: `publicar` recusa data no passado, e um dos casos
     que mais importam aqui é o show que já começou.
     """
+    # ⚠️ **O término é parâmetro próprio, e é ele que fecha o portão** (techspec
+    # `docs/techspec-fim-do-evento.md`). O padrão deriva do início, para os testes
+    # que só querem a porta aberta; o do `403 EVENTO_ENCERRADO` manda um valor no
+    # passado.
+    inicio = data_hora or _daqui_a(hours=1)
     evento = Evento(
         organizador_id=organizador.id,
         nome=nome,
-        data_hora=data_hora or _daqui_a(hours=1),
+        data_hora=inicio,
+        data_hora_fim=data_hora_fim or (inicio + timedelta(hours=4)),
         local="Espaço Unimed",
         cidade="São Paulo",
         origem_externa_id="G5vYZ9a1kd",
@@ -634,6 +643,143 @@ def test_evento_a_mais_de_duas_horas_recebe_403_e_nao_queima_o_ingresso(
     assert intacto.usado_em is None
 
 
+def test_depois_do_termino_a_rota_recusa_com_403_evento_encerrado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A outra borda da noite — techspec `docs/techspec-fim-do-evento.md`, commit 3.
+
+    ⚠️ **É o defeito que motivou a spec, visto pela porta.** `porta_aberta` não
+    tinha teto: dias depois do show, uma chamada com credencial de portaria ainda
+    queimava ingresso. O comentário do `ABERTURA_DOS_PORTOES` dizia *"não há
+    fechamento, de propósito"* — e a metade da justificativa que sustentava isso
+    (*"este projeto não tem coluna de duração nenhuma"*) deixou de valer.
+
+    ⚠️ **`usado_em` continua nulo, e essa é a asserção que importa** — o mesmo
+    teste barato que a 5.2 usou para provar que a recusa acontece **antes de
+    qualquer consulta ao ingresso**. Ele é o que quebra se alguém "melhorar" a
+    rota carregando o ingresso antes da dependência: o `403` continuaria saindo, e
+    nada mais mudaria de cor.
+
+    ⚠️ **É `403` na dependência, e não um quinto veredito respondido `200`** —
+    mesma família do `EVENTO_NAO_ABERTO` logo acima: a recusa é sobre o **turno**,
+    não sobre o ingresso. Os quatro vereditos continuam quatro.
+    """
+    organizador, comprador, porteiro = _cenario(sessao, fabricar_usuario, "encerrado")
+    evento, setor = _evento_gravado(
+        sessao,
+        organizador,
+        data_hora=_daqui_a(days=-1, hours=-4),
+        data_hora_fim=_daqui_a(days=-1),
+        portarias=[porteiro],
+    )
+    ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, porteiro)
+
+    resposta = cliente.post(
+        f"/portaria/eventos/{evento.id}/validacoes", json={"codigo": ingresso.codigo}
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_ENCERRADO"
+    intacto = sessao.get(Ingresso, ingresso.id)
+    assert intacto is not None
+    assert intacto.usado_em is None
+
+
+def test_evento_encerrado_e_porta_fechada_sao_verdade_ao_mesmo_tempo() -> None:
+    """A ordem das duas recusas do portão, provada nas funções puras.
+
+    ⚠️ **Não dá para provar isto por rota**, e a impossibilidade é a boa notícia:
+    o estado que torna as duas condições simultâneas — um show que começa daqui a
+    três dias e terminou ontem — é recusado pelo `FIM_ANTES_DO_INICIO` nas duas
+    rotas de escrita **e** pelo `CHECK fim_depois_do_inicio` do banco. Um `Evento`
+    em memória, sem `flush`, é o único lugar onde ele existe.
+
+    **O que o teste afirma:** neste estado, `evento_encerrado` é verdadeiro e
+    `porta_aberta` é falso. Ou seja, se a dependência conferisse o portão
+    **antes** do término, a portaria ouviria *"a porta ainda não abriu"* sobre um
+    evento que nunca mais vai abrir, e ficaria esperando. A ordem escrita em
+    `exigir_porta_aberta` — e a mesma do `estado_do_turno` — é o que impede isso.
+
+    Sem `sessao` na assinatura de propósito: as duas funções recebem o `Evento` e
+    o relógio, e não tocam no banco. É o que as torna testáveis assim.
+    """
+    agora = datetime.now(timezone.utc)
+    evento = Evento(
+        organizador_id=uuid4(),
+        nome="Show com o término digitado errado",
+        data_hora=agora + timedelta(days=3),
+        data_hora_fim=agora - timedelta(days=1),
+        local="Espaço Unimed",
+    )
+
+    assert servico_de_evento.evento_encerrado(evento, agora) is True
+    assert servico_de_evento.porta_aberta(evento, agora) is False
+    # O desempate escrito, no mesmo lugar em que a dependência o lê.
+    assert servico_de_evento.estado_do_turno(evento, agora) == EstadoDoTurno.ENCERRADO
+
+
+def test_sem_escala_vem_antes_de_evento_encerrado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A escala continua sendo a primeira das três recusas.
+
+    Quem não trabalha neste evento não descobre pelo código do erro se ele já
+    aconteceu — o `SEM_ESCALA_NO_EVENTO` colapsa "não existe" e "não é seu" de
+    propósito, e a recusa nova não pode abrir um oráculo por baixo dela.
+    """
+    organizador, _, porteiro = _cenario(sessao, fabricar_usuario, "escala-fim")
+    outro = fabricar_usuario(PapelUsuario.PORTARIA, "escala-fim-outro@exemplo.com")
+    evento, _ = _evento_gravado(
+        sessao,
+        organizador,
+        data_hora=_daqui_a(days=-1, hours=-4),
+        data_hora_fim=_daqui_a(days=-1),
+        portarias=[outro],
+    )
+    _entrar(cliente, porteiro)
+
+    resposta = cliente.post(
+        f"/portaria/eventos/{evento.id}/validacoes", json={"codigo": "9K4M7QX2"}
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["erro"]["codigo"] == "SEM_ESCALA_NO_EVENTO"
+
+
+def test_um_minuto_antes_do_termino_a_rota_ainda_atende(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """Sem tolerância dos dois lados: o portão fecha **no** término, não antes.
+
+    O retardatário do último minuto entra. É o par do
+    `test_o_estado_vira_encerrado_no_instante_exato_do_termino` de
+    `test_portaria_turnos.py`, e os dois existem juntos porque a tela e a rota
+    saem da mesma `evento_encerrado` — se uma delas ganhasse folga, o item
+    apareceria clicável e a validação bateria na porta.
+    """
+    organizador, comprador, porteiro = _cenario(sessao, fabricar_usuario, "ultimo-min")
+    evento, setor = _evento_gravado(
+        sessao,
+        organizador,
+        data_hora=_daqui_a(hours=-3),
+        data_hora_fim=_daqui_a(minutes=1),
+        portarias=[porteiro],
+    )
+    ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, porteiro)
+
+    corpo = _validar(cliente, evento, ingresso.codigo)
+
+    assert corpo["resultado"] == "VALIDO"
+
+
 def test_dentro_da_janela_e_depois_do_comeco_a_rota_atende(
     cliente: TestClient,
     sessao: Session,
@@ -804,6 +950,7 @@ def test_duas_conexoes_validando_o_mesmo_ingresso_deixam_entrar_uma_vez(
                 organizador_id=organizador_id,
                 nome="Show da corrida da porta",
                 data_hora=datetime.now(timezone.utc) + timedelta(hours=1),
+                data_hora_fim=datetime.now(timezone.utc) + timedelta(hours=5),
                 local="Espaço Unimed",
                 cidade="São Paulo",
                 origem_externa_id="G5vYZ9a1kd",

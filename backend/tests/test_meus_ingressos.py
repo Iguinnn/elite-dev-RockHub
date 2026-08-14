@@ -40,12 +40,19 @@ def _evento_publicado(
     *,
     nome: str = "Baco Exu do Blues",
     data_hora: datetime | None = None,
+    data_hora_fim: datetime | None = None,
     setor_nome: str = "Pista",
 ) -> tuple[Evento, Setor]:
+    # ⚠️ **O término é parâmetro próprio, e o padrão o deriva do início.** É ele
+    # que decide a `situacao` do ingresso (techspec `docs/techspec-fim-do-evento.md`),
+    # então os testes de `EXPIRADO` precisam mandar um valor no passado — e todos
+    # os outros precisam de um que não interfira, que é o `+ 4h` daqui.
+    inicio = data_hora or (datetime.now(timezone.utc) + timedelta(days=30))
     evento = Evento(
         organizador_id=organizador.id,
         nome=nome,
-        data_hora=data_hora or (datetime.now(timezone.utc) + timedelta(days=30)),
+        data_hora=inicio,
+        data_hora_fim=data_hora_fim or (inicio + timedelta(hours=4)),
         local="Espaço Unimed",
         cidade="São Paulo",
         origem_externa_id="G5vYZ9a1kd",
@@ -236,9 +243,166 @@ def test_o_item_tem_exatamente_as_chaves_do_ingresso_na_lista(
         "evento_local",
         "setor_nome",
         "usado_em",
+        # ⚠️ **`situacao` ao lado de `usado_em`, e não no lugar dele** (techspec
+        # `docs/techspec-fim-do-evento.md`): um é o balde que a tela agrupa, o
+        # outro é a hora que ela imprime em "Entrou às 21h14".
+        "situacao",
     }
+    # `data_hora_fim` **não** entra: a tela não desenha o término, e quem decide a
+    # situação é o backend. Campo sem consumidor não viaja.
+    assert "data_hora_fim" not in resposta.text
     assert "codigo" not in resposta.text
     assert "titular_nome" not in resposta.text
+
+
+# --------------------------------------------------------------------------- #
+# `situacao` — os três baldes da tela (techspec `docs/techspec-fim-do-evento.md`)
+# --------------------------------------------------------------------------- #
+
+
+def test_ingresso_de_show_que_ainda_vem_sai_ativo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-sit1@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-sit1@exemplo.com")
+    evento, setor = _evento_publicado(sessao, organizador)
+    _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, comprador)
+
+    (item,) = cliente.get("/ingressos").json()
+
+    assert item["situacao"] == "ATIVO"
+
+
+def test_ingresso_nao_usado_de_show_que_acabou_sai_expirado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ **O defeito de produção que motivou a techspec, visto de frente.**
+
+    Antes dela este mesmo ingresso saía com `usado_em: null` e a tela o desenhava
+    como *Ativo* — para sempre, dias depois do show. A tela cortava por
+    `usado_em === null`, e essa comparação não sabe quando o evento acabou.
+
+    ⚠️ **Quem decide é `data_hora_fim`, e não `data_hora`.** O show começou há
+    cinco horas e acabou há uma: se a regra olhasse o início, todo ingresso
+    expiraria no meio do próprio show, com a fila ainda andando na porta.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-sit2@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-sit2@exemplo.com")
+    agora = datetime.now(timezone.utc)
+    evento, setor = _evento_publicado(
+        sessao,
+        organizador,
+        data_hora=agora - timedelta(hours=5),
+        data_hora_fim=agora - timedelta(hours=1),
+    )
+    _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, comprador)
+
+    (item,) = cliente.get("/ingressos").json()
+
+    assert item["situacao"] == "EXPIRADO"
+    # `usado_em` continua nulo: ninguém entrou. É `situacao` que mudou, e é por
+    # isso que os dois campos convivem no contrato.
+    assert item["usado_em"] is None
+
+
+def test_ingresso_de_show_em_andamento_continua_ativo(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """A borda que importa: durante o show o ingresso ainda vale.
+
+    Um minuto antes do término, `EXPIRADO` seria a resposta errada — a porta ainda
+    está aberta do outro lado (`estado_do_turno` responde `ABERTO` no mesmo
+    instante), e as duas telas precisam concordar.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-sit3@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-sit3@exemplo.com")
+    agora = datetime.now(timezone.utc)
+    evento, setor = _evento_publicado(
+        sessao,
+        organizador,
+        data_hora=agora - timedelta(hours=1),
+        data_hora_fim=agora + timedelta(minutes=1),
+    )
+    _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, comprador)
+
+    (item,) = cliente.get("/ingressos").json()
+
+    assert item["situacao"] == "ATIVO"
+
+
+def test_ingresso_utilizado_de_show_encerrado_sai_utilizado_e_nao_expirado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """⚠️ **O teste que importa dos três: `usado_em` ganha de tudo.**
+
+    A pessoa entrou. Um mês depois do show, o canhoto dela precisa continuar
+    dizendo *"Entrou às 21h14"* — e não "expirado", que apagaria da tela o único
+    registro de que ela esteve lá. A regra é a ordem dos `if` do
+    `situacao_do_ingresso`, e invertê-la faria **todo** ingresso utilizado virar
+    `EXPIRADO` no dia seguinte ao show, sem nenhum outro teste mudar de cor: os
+    dois casos acima continuariam passando.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-sit4@exemplo.com")
+    porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "porteiro-sit4@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-sit4@exemplo.com")
+    agora = datetime.now(timezone.utc)
+    evento, setor = _evento_publicado(
+        sessao,
+        organizador,
+        data_hora=agora - timedelta(days=30),
+        data_hora_fim=agora - timedelta(days=30) + timedelta(hours=4),
+    )
+    entrada = agora - timedelta(days=30)
+    _ingresso_gravado(
+        sessao, comprador, evento, setor, usado_em=entrada, validado_por=porteiro
+    )
+    _entrar(cliente, comprador)
+
+    (item,) = cliente.get("/ingressos").json()
+
+    assert item["situacao"] == "UTILIZADO"
+    assert item["usado_em"] == entrada.isoformat().replace("+00:00", "Z")
+
+
+def test_o_canhoto_traz_a_mesma_situacao_da_lista(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+) -> None:
+    """As duas leituras saem da mesma função, e é isso que está sendo provado.
+
+    O canhoto é montado pelo `_montar_detalhe`, que serve **as três** rotas do
+    ingresso — inclusive a pública do link compartilhado. Uma situação calculada
+    só na lista faria a tela de detalhe dizer que o ingresso vale enquanto a
+    listagem já o tinha aposentado.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR, "org-sit5@exemplo.com")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador-sit5@exemplo.com")
+    agora = datetime.now(timezone.utc)
+    evento, setor = _evento_publicado(
+        sessao,
+        organizador,
+        data_hora=agora - timedelta(hours=5),
+        data_hora_fim=agora - timedelta(hours=1),
+    )
+    ingresso = _ingresso_gravado(sessao, comprador, evento, setor)
+    _entrar(cliente, comprador)
+
+    (item,) = cliente.get("/ingressos").json()
+    canhoto = cliente.get(f"/ingressos/{ingresso.id}").json()
+
+    assert canhoto["situacao"] == item["situacao"] == "EXPIRADO"
 
 
 # --------------------------------------------------------------------------- #

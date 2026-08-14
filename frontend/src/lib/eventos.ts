@@ -43,6 +43,15 @@ export type MeuEventoDetalhe = {
   id: string;
   nome: string;
   data_hora: string;
+  /**
+   * A hora em que o show acaba (techspec `docs/techspec-fim-do-evento.md`).
+   *
+   * ⚠️ **Está aqui e não no `MeuEventoResumo` acima**, e a assimetria é do
+   * contrato: quem lê o término é o formulário de edição, para abrir preenchido,
+   * e ele entra pelo detalhe. A fila do organizador é escaneável — data, nome,
+   * local e um par de números —, e campo sem consumidor não viaja.
+   */
+  data_hora_fim: string;
   local: string;
   cidade: string | null;
   imagem_url: string | null;

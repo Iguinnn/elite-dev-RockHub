@@ -1,0 +1,134 @@
+/* O `?` ao lado do título e o painel que ele revela (14/08/2026).
+
+   Anatomia emprestada do `.popover` do `SeletorDeData`: mesmo `--breu2` de
+   fundo, mesmo fio `--fio2`, mesmo `z-index` e mesmo raio zero. Não é preguiça
+   — é o mesmo objeto do ponto de vista de quem lê a tela (uma camada que abre
+   ancorada num controle), e dois desenhos para ele leriam como dois sistemas. */
+
+/* Âncora do painel — é o `position: relative` daqui que o `.painel` usa para se
+   posicionar, e por isso ele não pode virar `display: contents` nem sumir.
+
+   ⚠️ **Quem alinha o `?` com o texto ao lado é quem usa este componente**, e não
+   este arquivo: o invólucro não sabe o tamanho do título vizinho. Na tela de
+   publicar isso é o `align-items: center` do `.tituloComDica`. */
+.involucro {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 9px;
+}
+
+/* ⚠️ **22px de círculo, com 44px de alvo por baixo** (UX-DR6). O desenho não
+   pode crescer — um `?` do tamanho do dedo ao lado de um título vira segundo
+   título —, e o alvo não pode encolher. O `::after` invisível resolve os dois:
+   ele estende a área sensível para fora do círculo sem ocupar espaço nenhum no
+   fluxo, que é o que aconteceria com `padding`.
+
+   **E desde que a dica passou a abrir no `hover`, esse `::after` faz um trabalho
+   a mais:** ele é a área que recebe o ponteiro. Sem ele, acertar 22px com o mouse
+   para ler uma nota seria mira, não leitura. */
+.gatilho {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  /* Redondo, e é a **única** curva do produto (UX-DR3 proíbe raio em card, caixa
+     e botão). A exceção se sustenta porque isto não é nenhum dos três: é um
+     glifo, e o `?` num círculo é a convenção que dispensa legenda. Um quadrado
+     de 22px ao lado de um título leria como caixa de seleção. */
+  border: 1px solid var(--fio2);
+  border-radius: 50%;
+  color: var(--fumaca);
+  font: 600 13px/1 var(--mono);
+  /* `help` e não `pointer`: o cursor é a primeira coisa que diz o que vai
+     acontecer, e `pointer` prometeria uma navegação que não existe — este botão
+     não leva a lugar nenhum e não faz nada no clique. */
+  cursor: help;
+}
+
+.gatilho::after {
+  content: "";
+  position: absolute;
+  /* (44 − 22) ÷ 2 = 11px para cada lado. */
+  inset: -11px;
+}
+
+/* ---- o painel ----------------------------------------------------------- */
+
+/* ⚠️ **Escondido por CSS, e nunca desmontado.** O `aria-describedby` do botão
+   aponta para este elemento, e referência que não resolve é ignorada em silêncio
+   — o leitor de tela anunciaria o botão sem descrição nenhuma. O motivo inteiro
+   está no `Dica.tsx`.
+
+   `position: absolute` a partir do invólucro, como o calendário a partir do
+   campo. `left: 0` e não centralizado no gatilho: o `?` fica logo depois de um
+   título alinhado à esquerda, então o texto que ele abre começa na mesma coluna
+   do que já está sendo lido. */
+.painel {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  /* `min-width` além do `width`: sem ele o `width` cede ao contexto flex do
+     título e o painel espreme numa coluna de duas palavras. */
+  width: 420px;
+  min-width: 420px;
+  margin-top: 10px;
+  padding: 18px 20px;
+  background: var(--breu2);
+  border: 1px solid var(--fio2);
+  /* Serifada e não mono: é prosa, e a mono deste projeto é reservada a dado de
+     máquina e rótulo em versalete. */
+  font: 17px/1.6 var(--serif);
+  color: var(--cal);
+  /* `normal` explícito: herdado do título vizinho, o `letter-spacing: -0.02em`
+     apertaria a prosa daqui. */
+  letter-spacing: normal;
+  text-align: left;
+}
+
+/* ⚠️ **Três gatilhos, e os três precisam existir** (decisão do Igor,
+   14/08/2026 — a dica passou a abrir sem clique).
+
+   - `.involucro:hover` e não `.gatilho:hover`: o painel é filho do invólucro, e
+     ancorar no botão faria a dica **sumir no caminho até ela** — o ponteiro sai
+     dos 44px do gatilho e o `display: none` volta antes de chegar ao texto.
+   - `:focus` e não `:focus-visible`: é o que mantém a nota alcançável no
+     celular. `focus-visible` é heurística de navegador e costuma **não** disparar
+     no toque, que é exatamente o caso que o `hover` já não atende. Aqui o efeito
+     colateral de `:focus` — a dica ficar aberta depois de um clique de mouse — é
+     inofensivo: ela fecha no próximo clique fora, que é onde o foco vai.
+   - O `~` exige que o painel seja **irmão posterior** do botão. Ele é, e a ordem
+     no JSX não é estética: invertida, o seletor deixa de casar e só o `hover`
+     continua funcionando — sem erro, sem aviso, e o teclado perde a dica. */
+.involucro:hover .painel,
+.gatilho:focus ~ .painel {
+  display: block;
+}
+
+.gatilho:hover,
+.gatilho:focus {
+  border-color: var(--neon);
+  color: var(--neon);
+}
+
+/* Em tela estreita o painel de 420px passa da borda a partir do meio da linha, e
+   leva a rolagem horizontal junto — que o AC14 da publicação proíbe. Ancorado à
+   direita, como o calendário do `SeletorDeData` faz pelo mesmo motivo.
+
+   ⚠️ **`max-width` em `vw` e não em `%`**: o pai é o invólucro de 22px, e um
+   `100%` aqui daria 22px de painel. */
+@media (max-width: 620px) {
+  .painel {
+    left: auto;
+    right: 0;
+    width: auto;
+    min-width: 0;
+    max-width: min(420px, calc(100vw - 48px));
+  }
+}

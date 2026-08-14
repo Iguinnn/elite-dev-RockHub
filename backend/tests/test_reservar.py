@@ -108,10 +108,12 @@ def _evento_publicado(
     if setores is None:
         setores = [("Pista", 800, 0, 12000)]
 
+    inicio = data_hora or _daqui_a(30)
     evento = Evento(
         organizador_id=organizador.id,
         nome=nome,
-        data_hora=data_hora or _daqui_a(30),
+        data_hora=inicio,
+        data_hora_fim=inicio + timedelta(hours=4),
         local="Espaço Unimed",
         cidade="São Paulo",
         origem_externa_id="G5vYZ9a1kd",
@@ -328,6 +330,7 @@ def test_duas_conexoes_disputando_o_ultimo_ingresso_e_so_uma_vence(
                 organizador_id=organizador_id,
                 nome="Show da corrida",
                 data_hora=_daqui_a(30),
+                data_hora_fim=_daqui_a(30) + timedelta(hours=4),
                 local="Espaço Unimed",
                 cidade="São Paulo",
                 origem_externa_id="G5vYZ9a1kd",

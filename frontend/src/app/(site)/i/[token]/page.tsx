@@ -84,13 +84,30 @@ export default async function IngressoCompartilhado({
           direto pelo endereço. */}
       <p className={`kicker ${estilos.procedencia}`}>Ingresso compartilhado</p>
 
-      {ingresso.usado_em && (
+      {ingresso.situacao === "UTILIZADO" && ingresso.usado_em && (
         // A gêmea da faixa de `/ingressos/[id]`, e pelo mesmo motivo: neutra,
         // não vermelha (EXPERIENCE.md#veredito). Aqui ela pesa mais — quem
         // recebeu o link não tem como saber que o ingresso já foi usado, e
         // descobrir isso na fila é o pior lugar possível.
         <p className={estilos.jaUtilizado}>
           <strong>Já utilizado.</strong> Entrou às {horaDeEntrada(ingresso.usado_em)}.
+        </p>
+      )}
+
+      {/* ⚠️ **A mesma frase da tela do dono, palavra por palavra** (techspec
+          `docs/techspec-fim-do-evento.md`), e a igualdade é o requisito: o canhoto
+          compartilhado é **o mesmo** canhoto, e o `situacao` vem do mesmo
+          `_montar_detalhe` que serve as três rotas. Duas redações do mesmo estado
+          fariam quem recebeu o link e quem o mandou lerem coisas diferentes sobre
+          o mesmo ingresso.
+
+          E aqui ela pesa mais que a de cima, pelo mesmo argumento: quem recebeu o
+          link por WhatsApp não tem nenhuma outra forma de descobrir que o show já
+          passou — a tela é tudo o que ele tem. */}
+      {ingresso.situacao === "EXPIRADO" && (
+        <p className={estilos.jaUtilizado}>
+          <strong>O evento já acabou.</strong> Este ingresso não vale mais para
+          entrada.
         </p>
       )}
 

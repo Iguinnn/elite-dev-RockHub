@@ -112,6 +112,45 @@ export function hojeEmSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: FUSO }).format(new Date());
 }
 
+/**
+ * O instante em que o show acaba, a partir do dia dele e da **hora** de término
+ * (techspec `docs/techspec-fim-do-evento.md`). `null` quando a hora não é válida.
+ *
+ * ⚠️ **A virada de meia-noite é inferida aqui, e é a decisão da feature.** O
+ * formulário ganhou um `<input type="time">` e nada mais: se a hora de fim for
+ * menor ou igual à de início, soma-se um dia — o show das 23h que acaba às 02h
+ * cai no dia seguinte, sozinho. *Descartei* pedir data **e** hora com um segundo
+ * `SeletorDeData`: nada seria inferido, ao custo de um calendário a mais num
+ * formulário que já tem seis campos, para resolver um show de mais de 24 horas
+ * que este produto não vende.
+ *
+ * **O preço da inferência é que ela precisa ser dita em voz alta**, e é por isso
+ * que esta função devolve o `Date` em vez de uma string pronta: as duas telas
+ * imprimem a data resultante quando ela vira, com o `dataPorExtenso` logo abaixo.
+ *
+ * ⚠️ **A junção é a mesma do `aoEnviar` dos dois formulários, e pelo mesmo
+ * motivo**: `new Date("2026-08-14")` — data sozinha — é lida como **UTC** pela
+ * especificação, e `new Date("2026-08-14T02:00")` é lida como **hora local**. O
+ * `toISOString()` de quem chama é o que converte para UTC antes de enviar (AD-11).
+ *
+ * `setDate` com um dia a mais atravessa virada de mês e de ano sem cálculo
+ * nenhum — 31 de dezembro às 23h que acaba às 02h vira 1º de janeiro.
+ */
+export function terminoDoShow(
+  data: string,
+  horaFim: string,
+  inicio: Date,
+): Date | null {
+  const fim = new Date(`${data}T${horaFim}`);
+  if (Number.isNaN(fim.getTime())) return null;
+
+  // `<=` e não `<`: um show que termina no instante em que começa dura zero
+  // minutos, e quem digitou a mesma hora nos dois campos quis dizer "vira o dia".
+  // É a mesma comparação do `FIM_ANTES_DO_INICIO` no `services/evento.py`.
+  if (fim <= inicio) fim.setDate(fim.getDate() + 1);
+  return fim;
+}
+
 /** ISO-8601 → `"15 de agosto de 2026, 21h00"`. */
 export function dataPorExtenso(iso: string): string {
   const instante = new Date(iso);

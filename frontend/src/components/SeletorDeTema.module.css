@@ -10,7 +10,32 @@
 
    Não há conflito de ordem com o `Masthead.module.css`: as duas classes têm a
    mesma especificidade, mas declaram propriedades diferentes. */
+/* ⚠️ **O `padding` sobrescreve o `12px 18px` do `.navLink`**, e a ordem de
+   importação no `SeletorDeTema.tsx` é o que faz isso valer — as duas classes têm
+   a mesma especificidade. Sem ele o botão fica com a largura de um item de
+   texto e o ícone de 18px boiando no meio de uma caixa retangular.
+
+   Quadrado de 44px de lado, contando a borda de 1px: é o piso do UX-DR6, o mesmo
+   do sanduíche que fica ao lado. Os dois controles que sobram na faixa em tela
+   estreita têm o mesmo tamanho de propósito — um é abrir, o outro é trocar, e
+   nenhum manda mais que o outro. */
 .seletor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   background-color: transparent;
   cursor: pointer;
+}
+
+/* `currentColor` no SVG faz o símbolo herdar a cor do botão — inclusive a
+   inversão para `--breu` quando a varredura do `.navLink` fecha os 100% no
+   hover, e inclusive a troca de tinta dos dois temas. Nenhuma cor é declarada
+   aqui, e é isso que mantém o ícone dentro do sistema em vez de ao lado dele. */
+.simbolo {
+  display: block;
+  width: 18px;
+  height: 18px;
 }

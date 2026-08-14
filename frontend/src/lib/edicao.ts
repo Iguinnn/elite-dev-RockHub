@@ -40,7 +40,7 @@ export type SetorParaEditar = {
 /**
  * O corpo inteiro — espelha `app/schemas/evento.py::EventoEdicao`.
  *
- * **Três campos, e os cinco do catálogo não estão aqui** (AD-1): `nome`,
+ * **Quatro campos, e os cinco do catálogo não estão aqui** (AD-1): `nome`,
  * `imagem_url`, `local`, `cidade` e `origem_externa_id` são copiados do catálogo
  * na publicação e o organizador não digita nenhum deles. O schema do backend
  * ignora esses campos se vierem; este tipo é o que impede que venham.
@@ -48,6 +48,17 @@ export type SetorParaEditar = {
 export type EdicaoDeEvento = {
   /** ISO-8601 com offset (AD-11) — o `toISOString()` do instante montado na tela. */
   data_hora: string;
+  /**
+   * O término, também ISO-8601 completo (techspec `docs/techspec-fim-do-evento.md`).
+   *
+   * ⚠️ **Obrigatório, e não opcional.** Um campo que pudesse faltar significaria
+   * "mantenha o que está lá" — e aí adiar a data do show sem tocar no término
+   * gravaria um evento que termina antes de começar, recusado com uma frase que o
+   * organizador não pediu. Os dois andam juntos porque o formulário os manda
+   * juntos: o `<input type="time">` do fim é lido com a data do show, e a virada
+   * de meia-noite é resolvida na tela pelo `terminoDoShow`.
+   */
+  data_hora_fim: string;
   setores: SetorParaEditar[];
   portaria_ids: string[];
 };

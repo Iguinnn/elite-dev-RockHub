@@ -133,11 +133,12 @@ def exigir_porta_aberta(
 ) -> Evento:
     """O evento do caminho, se quem está na sessão pode atendê-lo agora (5.2).
 
-    **As duas recusas da portaria numa dependência só**, e é isso que a torna
+    **As três recusas da portaria numa dependência só**, e é isso que a torna
     diferente do `exigir_papel`: papel diz o que a pessoa faz, esta diz **onde**
-    e **quando**. As duas respondem `403`:
+    e **quando**. As três respondem `403`:
 
     - sem vínculo na `evento_portaria` → `SEM_ESCALA_NO_EVENTO` (AD-7)
+    - com vínculo, mas depois de `data_hora_fim` → `EVENTO_ENCERRADO`
     - com vínculo, mas antes de `data_hora - ABERTURA_DOS_PORTOES`
       → `EVENTO_NAO_ABERTO`
 
@@ -145,8 +146,24 @@ def exigir_porta_aberta(
     escalado não descobre se o evento existe — o `obter_escalado` colapsa os dois
     casos num `None` de propósito, e o docstring dele explica o porquê.
 
-    ⚠️ **A ordem das duas não é estética.** Invertida, alguém sem escala
-    nenhuma descobriria pelo código do erro se o show começa em breve.
+    ⚠️ **A ordem das três não é estética.** A escala vem primeiro: invertida,
+    alguém sem escala nenhuma descobriria pelo código do erro se o show começa em
+    breve. E `EVENTO_ENCERRADO` vem **antes** do `EVENTO_NAO_ABERTO` — na ordem
+    inversa, um evento que já acabou responderia *"a porta ainda não abriu"*,
+    porque as duas condições são simultaneamente verdadeiras para um evento futuro
+    cujo término foi digitado errado.
+
+    ⚠️ **`EVENTO_ENCERRADO` é uma recusa da dependência, e não um quinto veredito
+    do `validar`** (techspec `docs/techspec-fim-do-evento.md`). Ele entra ao lado
+    do `EVENTO_NAO_ABERTO` pelo mesmo motivo daquele: a recusa é sobre **o
+    turno**, não sobre o ingresso — nada foi lido, nada foi julgado. *Descartei*
+    um quinto veredito respondido `200` pelo `validar`: seria mais claro para quem
+    está na fila, e custa o `CHECK` de `validacao.resultado`, o enum `Veredito`, o
+    `RecusasDoTurno` de três campos, o contador do turno e um quinto símbolo SVG —
+    contrariando de uma vez as duas decisões escritas *"sem quinto veredito"* (5.2)
+    e *"duas tintas para quatro vereditos"* (5.4). O comportamento de tela sai
+    pronto: a 5.3 já manda todo `403` do leitor redirecionar para `/portaria`, e
+    lá a portaria lê a tag do turno encerrado.
 
     ⚠️ **É uma dependência, e não as primeiras linhas do handler** (AD-9). É
     isso que faz o `403` acontecer **antes de qualquer consulta ao ingresso** —
@@ -168,7 +185,20 @@ def exigir_porta_aberta(
             status_http=403,
         )
 
-    if not servico_de_evento.porta_aberta(evento, datetime.now(timezone.utc)):
+    # Lido **uma vez** e usado nas duas comparações, no molde do `atualizar` de
+    # `services/evento.py`: duas leituras do relógio na mesma requisição podem
+    # discordar sobre o show que termina agora, e aí as duas recusas responderiam
+    # sobre instantes diferentes.
+    agora = datetime.now(timezone.utc)
+
+    if servico_de_evento.evento_encerrado(evento, agora):
+        raise ErroDeDominio(
+            "EVENTO_ENCERRADO",
+            "Este evento já terminou.",
+            status_http=403,
+        )
+
+    if not servico_de_evento.porta_aberta(evento, agora):
         raise ErroDeDominio(
             "EVENTO_NAO_ABERTO",
             "A porta deste evento ainda não abriu.",

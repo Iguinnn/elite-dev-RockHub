@@ -20,11 +20,45 @@ estes dois o julgam na porta. Moram aqui pelo mesmo critério que fez
 """
 
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.validacao import Veredito
+
+
+class SituacaoDoIngresso(str, Enum):
+    """Em que pé está este ingresso (techspec `docs/techspec-fim-do-evento.md`).
+
+    **`str, Enum`, no molde do `DisponibilidadeDoSetor`**: os três valores entram
+    no OpenAPI, e quem consome o contrato sabe que a lista é fechada. A tela lê a
+    palavra e escolhe o bloco; ela não tem como inventar um quarto estado porque
+    não é ela quem decide qual é o estado.
+
+    ⚠️ **É estado derivado na leitura, nunca coluna.** Ele nasce da comparação
+    entre `evento.data_hora_fim` e o relógio, a cada resposta. *Descartei* uma
+    coluna `expirado_em` colhida preguiçosamente no molde do AD-4: aquela colheita
+    existe porque **estoque precisa voltar para alguém**, e aqui nada é liberado —
+    o ingresso só deixa de valer. Escrever uma coluna para registrar a passagem do
+    tempo é guardar o que o relógio já responde, e ainda obrigaria a tela de
+    ingressos, que é Server Component e leitura pura, a virar escrita a cada
+    visita.
+
+    ⚠️ **`UTILIZADO` ganha de `EXPIRADO`.** Ingresso usado num show que já acabou
+    é `UTILIZADO`, e nunca o contrário: a pessoa entrou, e é isso que o canhoto e
+    a lista precisam dizer. A regra mora numa função só (`situacao_do_ingresso`,
+    em `services/ingresso.py`), e é a ordem dos `if` dela que a garante.
+
+    **Por que um enum de três valores e não `expirado: bool` ao lado do
+    `usado_em`**: dois sinais permitem quatro combinações, e a tela precisaria
+    decidir qual vence — que é exatamente a decisão que este enum tira dela. É o
+    mesmo argumento escrito no `DisponibilidadeDoSetor`.
+    """
+
+    ATIVO = "ATIVO"
+    UTILIZADO = "UTILIZADO"
+    EXPIRADO = "EXPIRADO"
 
 
 class IngressoNaLista(BaseModel):
@@ -53,6 +87,12 @@ class IngressoNaLista(BaseModel):
     evento_local: str
     setor_nome: str
     usado_em: datetime | None
+    # ⚠️ **`usado_em` continua no contrato ao lado dele, e não é redundância.**
+    # `situacao` é o **balde** que a tela agrupa; `usado_em` é a **hora** que ela
+    # imprime em *"Entrou às 21h14"*. O que esta techspec desfaz é a tela derivar
+    # a situação de `usado_em` sozinha — a regra é do backend, num lugar só, e é
+    # ela que sabe do término do evento, que a lista nem devolve.
+    situacao: SituacaoDoIngresso
 
 
 class IngressoDetalhe(BaseModel):
@@ -106,6 +146,12 @@ class IngressoDetalhe(BaseModel):
     titular_nome: str
     codigo: str
     usado_em: datetime | None
+    # O mesmo campo derivado da lista, e aqui ele atravessa também para quem abriu
+    # o link compartilhado — é o que o aviso do fim deste docstring anuncia, e é
+    # de propósito: um canhoto que fingisse que o ingresso ainda vale mandaria
+    # para a fila da porta alguém que já não entra. Quem recebeu o link precisa da
+    # mesma verdade que o dono.
+    situacao: SituacaoDoIngresso
     # `None` é "nunca compartilhado" **ou** "revogado" — os dois são o mesmo
     # estado, e a tela desenha o botão *Compartilhar* nos dois casos.
     share_token: str | None

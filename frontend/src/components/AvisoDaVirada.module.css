@@ -1,0 +1,17 @@
+/* A frase da virada de meia-noite (techspec `docs/techspec-fim-do-evento.md`).
+
+   Mono versalete em `--fumaca`, que é o vocabulário dos rótulos secundários do
+   projeto — o mesmo do `.origem` das filas e do `.rotulo` do `Campo`. **Não é
+   `--brasa`**: nada falhou. É o sistema contando o que inferiu, e um filete
+   vermelho aqui transformaria a conveniência num aviso de erro.
+
+   O `margin-top` negativo encosta a frase no campo que ela explica: o `.campo`
+   do `Campo` já carrega 20px de respiro embaixo, e sem isto a linha flutuaria
+   longe demais para ser lida como legenda dele. */
+
+.aviso {
+  margin-top: -12px;
+  font: 14px/1.4 var(--mono);
+  letter-spacing: 0.06em;
+  color: var(--fumaca);
+}

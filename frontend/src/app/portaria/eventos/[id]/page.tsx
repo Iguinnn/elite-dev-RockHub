@@ -31,9 +31,16 @@ import estilos from "./page.module.css";
  *
  * ⚠️ **A porta aberta é conferida pela API, não por esta tela.** Se `obterTurno`
  * respondeu `ok`, a dependência `exigir_porta_aberta` do backend já deixou
- * passar; conferir `turno.aberto` aqui de novo seria a segunda constante de duas
+ * passar; conferir `turno.estado` aqui de novo seria a segunda constante de duas
  * horas que a Story 5.2 acabou de eliminar. O campo continua no contrato porque
  * a **lista** o desenha.
+ *
+ * **E isso passou a valer para as duas bordas da noite** (techspec
+ * `docs/techspec-fim-do-evento.md`): o show que já acabou responde `403
+ * EVENTO_ENCERRADO`, que cai no mesmo `sem-turno` dos outros dois códigos e
+ * devolve a portaria para `/portaria` — onde ela lê a tag do turno encerrado.
+ * Nenhuma linha desta tela precisou mudar, e é isso que a decisão de recusar na
+ * dependência comprou.
  *
  * ⚠️ `redirect()` levanta `NEXT_REDIRECT` e não pode ficar dentro de
  * `try/catch`. Aqui não fica: o `try` mora no `lib/turnos.ts`, e o que sobra é

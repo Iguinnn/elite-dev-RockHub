@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
+import AvisoDaVirada from "@/components/AvisoDaVirada";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
 import SeletorDeData from "@/components/SeletorDeData";
@@ -18,6 +19,7 @@ import {
   hojeEmSaoPaulo,
   partesDoFormulario,
   reaisParaCentavos,
+  terminoDoShow,
 } from "@/lib/formato";
 import type { ResultadoDasPortarias } from "@/lib/portarias";
 
@@ -75,6 +77,10 @@ const MENSAGEM_GENERICA =
 /** A mesma frase do `FormularioPublicacao`, e a mesma do `services/evento.py`. */
 const DATA_NO_PASSADO = "A data do show já passou. Confira o dia e o horário.";
 
+/** Idem, para a sexta recusa — techspec `docs/techspec-fim-do-evento.md`. */
+const FIM_ANTES_DO_INICIO =
+  "O show precisa terminar depois de começar. Confira o horário de término.";
+
 /** Espelha `_MAXIMO_INT4` do `schemas/evento.py` — o tipo da coluna. */
 const MAXIMO_CAPACIDADE = 2_147_483_647;
 
@@ -112,6 +118,20 @@ export default function FormularioEdicao({ evento, portarias }: Props) {
   const [erro, setErro] = useState<React.ReactNode>(null);
 
   const inicial = partesDoFormulario(evento.data_hora);
+  // ⚠️ **Só a hora do término é reaproveitada, e o dia é reconstruído pela
+  // inferência** (techspec `docs/techspec-fim-do-evento.md`). O evento das 23h
+  // que acaba às 02h tem `data_hora_fim` no dia seguinte; o campo abre com
+  // `02:00`, e o `terminoDoShow` do envio recoloca o dia sozinho, porque a hora é
+  // menor que a de início. A ida e a volta batem — que é o mesmo contrato do par
+  // `centavosParaReais`/`reaisParaCentavos` logo acima.
+  const inicialFim = partesDoFormulario(evento.data_hora_fim);
+
+  // Os três campos de tempo têm estado pelo mesmo motivo da tela de publicar: a
+  // frase da virada precisa deles enquanto a pessoa digita. Aqui eles **nascem
+  // preenchidos** — é o que faz "salvar sem mexer em nada" não mudar nada.
+  const [data, setData] = useState(inicial.data);
+  const [hora, setHora] = useState(inicial.hora);
+  const [horaFim, setHoraFim] = useState(inicialFim.hora);
 
   const contas = portarias.estado === "ok" ? portarias.itens : [];
   const termo = filtro.trim().toLowerCase();
@@ -179,6 +199,9 @@ export default function FormularioEdicao({ evento, portarias }: Props) {
       // segunda é rara e a frase cobre as duas sem mentir em nenhuma.
       return DATA_NO_PASSADO;
     }
+    if (codigo === "FIM_ANTES_DO_INICIO") {
+      return FIM_ANTES_DO_INICIO;
+    }
     if (codigo === "EVENTO_NAO_ENCONTRADO") {
       return "Este evento não existe mais, ou não é seu.";
     }
@@ -233,9 +256,9 @@ export default function FormularioEdicao({ evento, portarias }: Props) {
     if (enviando) return;
     setErro(null);
 
-    const dados = new FormData(formulario.currentTarget);
-    const data = String(dados.get("data") ?? "");
-    const hora = String(dados.get("hora") ?? "");
+    // Sem `FormData`: esta tela não tem campo condicional nenhum, e os três de
+    // tempo saem do estado desde 14/08/2026 — ver o comentário gêmeo no
+    // `FormularioPublicacao`.
 
     // ⚠️ A junção é a mesma do formulário de publicar, copiada de lá e não
     // reinventada (a spec pede isso com todas as letras): `new Date("2026-08-14")`
@@ -249,6 +272,16 @@ export default function FormularioEdicao({ evento, portarias }: Props) {
 
     if (instante <= new Date()) {
       setErro(DATA_NO_PASSADO);
+      return;
+    }
+
+    const fim = terminoDoShow(data, horaFim, instante);
+    if (fim === null) {
+      setErro("Confira o horário de término do show.");
+      return;
+    }
+    if (fim <= instante) {
+      setErro(FIM_ANTES_DO_INICIO);
       return;
     }
 
@@ -300,6 +333,7 @@ export default function FormularioEdicao({ evento, portarias }: Props) {
     try {
       await atualizarMeuEvento(evento.id, {
         data_hora: instante.toISOString(),
+        data_hora_fim: fim.toISOString(),
         setores: setoresConvertidos,
         portaria_ids: [...escalados],
       });
@@ -349,16 +383,33 @@ export default function FormularioEdicao({ evento, portarias }: Props) {
               minimo={hojeEmSaoPaulo()}
               valorInicial={inicial.data}
               obrigatorio
+              aoMudar={setData}
             />
             <Campo
               id="hora"
               name="hora"
               rotulo="Horário"
               type="time"
-              defaultValue={inicial.hora}
+              value={hora}
+              onChange={(e) => setHora(e.target.value)}
               required
             />
           </div>
+
+          {/* O gêmeo do campo da tela de publicar, com o valor atual dentro — ver
+              o comentário longo lá. O `AvisoDaVirada` importa aqui mais do que
+              lá: quem edita um show que já era de madrugada precisa reconhecer o
+              que está vendo, e `02:00` sozinho não diz de que dia é. */}
+          <Campo
+            id="hora-fim"
+            name="hora_fim"
+            rotulo="Termina às"
+            type="time"
+            value={horaFim}
+            onChange={(e) => setHoraFim(e.target.value)}
+            required
+          />
+          <AvisoDaVirada data={data} hora={hora} horaFim={horaFim} />
         </div>
 
         <div>

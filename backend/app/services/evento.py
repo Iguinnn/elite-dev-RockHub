@@ -12,11 +12,11 @@ regra de negócio para um service fazer. Aqui sobra: existem duas invariantes
 que o banco sozinho não sabe recusar de forma legível, e existe uma transação
 que precisa gravar evento e setores juntos ou nada.
 
-**A ordem das cinco recusas é a garantia do "nenhum evento órfão".** Elas
+**A ordem das seis recusas é a garantia do "nenhum evento órfão".** Elas
 acontecem antes de qualquer `add`: se a lista está vazia, tem nomes repetidos,
-não traz portaria nenhuma, traz um id que não resolve ou a data já passou, nada
-chega a existir no banco — nem o evento, nem o primeiro setor antes de o segundo
-estourar.
+não traz portaria nenhuma, traz um id que não resolve, a data já passou ou o
+término não vem depois do início, nada chega a existir no banco — nem o evento,
+nem o primeiro setor antes de o segundo estourar.
 
 ```
 1. setores vazio          → EVENTO_SEM_SETOR
@@ -24,6 +24,7 @@ estourar.
 3. portaria_ids vazio     → EVENTO_SEM_PORTARIA
 4. id que não resolve     → PORTARIA_INVALIDA
 5. data_hora no passado   → EVENTO_NO_PASSADO
+6. fim <= início          → FIM_ANTES_DO_INICIO
    ── só então: monta o Evento e grava ──
 ```
 
@@ -64,6 +65,7 @@ from app.models.usuario import PapelUsuario, Usuario
 from app.models.validacao import Validacao
 from app.schemas.evento import (
     DisponibilidadeDoSetor,
+    EstadoDoTurno,
     EventoEdicao,
     EventoEmDestaque,
     EventoEntrada,
@@ -129,7 +131,7 @@ TETO_DA_PROGRAMACAO = 200
 # **Constante do service, no precedente do `MAXIMO_POR_COMPRA` logo acima**, e
 # num lugar só: com a regra valendo nos dois lados, duas constantes de duas
 # horas em duas camadas discordariam algum dia, e a tela mostraria a porta
-# aberta enquanto a API recusa. A tela lê `TurnoDaPortaria.aberto`, que sai
+# aberta enquanto a API recusa. A tela lê `TurnoDaPortaria.estado`, que sai
 # daqui.
 #
 # **Duas horas, e não o instante exato do show.** Um portão em `data_hora` trava
@@ -140,10 +142,19 @@ TETO_DA_PROGRAMACAO = 200
 # o comportamento certo do mundo real: a portaria chega antes do primeiro
 # acorde, nunca junto com ele.
 #
-# ⚠️ **Não há fechamento**, de propósito. Depois que abre, a porta fica aberta:
-# o show acaba e ainda há gente entrando, e um teto pela duração faria a
-# validação parar de funcionar no meio do turno — sem contar que este projeto
-# não tem coluna de duração nenhuma.
+# ⚠️ **Havia um "não há fechamento, de propósito" escrito aqui, e ele caiu em
+# 14/08/2026** (techspec `docs/techspec-fim-do-evento.md`). A justificativa era
+# em duas partes: *"o show acaba e ainda há gente entrando"* e *"este projeto não
+# tem coluna de duração nenhuma"*. A segunda deixou de valer — `evento.data_hora_
+# fim` existe e é obrigatória —, e sem ela a primeira não sustenta o que
+# sustentava: o que a porta sem teto produzia não era o retardatário atendido, era
+# o turno de um show da semana passada continuando na lista da portaria, clicável
+# e validável. A gente que entra depois do primeiro acorde está coberta pela hora
+# que o organizador declara; quem quiser mais margem marca 03h em vez de 02h.
+#
+# **Esta constante não ganhou irmã.** Não existe `TOLERANCIA_APOS_O_FIM`, e o
+# porquê está no docstring de `evento_encerrado`: uma folga fixa deste lado faria
+# o sistema discordar do número que o organizador acabou de digitar.
 ABERTURA_DOS_PORTOES = timedelta(hours=2)
 
 
@@ -242,6 +253,24 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
             status_http=422,
         )
 
+    # Sexta recusa, e a última — techspec `docs/techspec-fim-do-evento.md`.
+    #
+    # **Depois do `EVENTO_NO_PASSADO`, e não antes**, pelo mesmo motivo que
+    # aquele entrou por último: a ordem das recusas anteriores é o que mantém os
+    # testes das Stories 2.4 e 2.5 provando o que se propuseram a provar, e um
+    # corpo daqueles não tem `data_hora_fim` nenhum a conferir.
+    #
+    # `<=` e não `<`: um show que termina no instante em que começa dura zero
+    # minutos, e é erro de digitação igual ao término anterior ao início. Os dois
+    # recebem a mesma frase de propósito — para quem digitou, é o mesmo engano.
+    if dados.data_hora_fim <= dados.data_hora:
+        raise ErroDeDominio(
+            "FIM_ANTES_DO_INICIO",
+            "O show precisa terminar depois de começar. Confira o horário de "
+            "término.",
+            status_http=422,
+        )
+
     evento = Evento(
         # Da sessão, sempre. É a diferença entre "quem publicou" e "quem o
         # corpo da requisição disse que publicou".
@@ -253,6 +282,7 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
         imagem_url=dados.imagem_url,
         origem_externa_id=dados.origem_externa_id,
         data_hora=dados.data_hora,
+        data_hora_fim=dados.data_hora_fim,
         local=dados.local,
         cidade=dados.cidade,
         # Publicar é o ato desta rota, não um passo posterior: o carimbo nasce
@@ -426,7 +456,7 @@ def atualizar(
         "Este evento já vendeu ingressos e não pode mais ser editado.",
     )
 
-    # ── Passo 5: as cinco recusas do `publicar`, na mesma ordem e com as mesmas
+    # ── Passo 5: as seis recusas do `publicar`, na mesma ordem e com as mesmas
     # frases. **Cópia, e não função comum**, pela convenção escrita no
     # `_limpar_texto` de `schemas/evento.py`: duas ocorrências se copiam, e é a
     # terceira que vira código compartilhado.
@@ -483,6 +513,18 @@ def atualizar(
         raise ErroDeDominio(
             "EVENTO_NO_PASSADO",
             "A data do show já passou. Confira o dia e o horário.",
+            status_http=422,
+        )
+
+    # A sexta, cópia da do `publicar` — **mesma frase**, e ela é a razão de o
+    # aviso do topo deste bloco existir: o organizador não pode receber duas
+    # explicações diferentes para a mesma recusa dependendo de estar publicando
+    # ou editando.
+    if dados.data_hora_fim <= dados.data_hora:
+        raise ErroDeDominio(
+            "FIM_ANTES_DO_INICIO",
+            "O show precisa terminar depois de começar. Confira o horário de "
+            "término.",
             status_http=422,
         )
 
@@ -621,6 +663,7 @@ def atualizar(
         )
 
     evento.data_hora = dados.data_hora
+    evento.data_hora_fim = dados.data_hora_fim
     # A escala inteira, substituída: o `PUT` manda o estado final, e o
     # SQLAlchemy resolve a diferença em `evento_portaria`. `publicado_em` **não**
     # se toca — editar não é republicar, e mexer no carimbo faria o evento pular
@@ -848,32 +891,87 @@ def listar_escalados(sessao: Session, portaria: Usuario) -> list[TurnoDaPortaria
     ]
 
 
-def porta_aberta(evento: Evento, agora: datetime) -> bool:
-    """O portão deste evento já abriu? (Story 5.2)
+def evento_encerrado(evento: Evento, agora: datetime) -> bool:
+    """O show já acabou? (techspec `docs/techspec-fim-do-evento.md`)
 
-    **A única fonte da resposta**, e é isso que ela existe para ser: a lista de
-    turnos preenche `TurnoDaPortaria.aberto` com ela, e a dependência
-    `exigir_porta_aberta` recusa `403 EVENTO_NAO_ABERTO` com ela. Duas
-    implementações da mesma janela — uma na tela, outra na rota — discordariam no
-    primeiro ajuste de uma das duas, e o sintoma seria o pior possível: o item
-    aparece clicável e a validação recusa.
+    **Uma linha, e ela existe para ter dois chamadores.** `porta_aberta` logo
+    abaixo e `estado_do_turno` mais adiante saem daqui, e é essa identidade que
+    impede a dependência de recusar um turno que a tela desenha como aberto —
+    ou, pior, a tela travar um turno que a rota ainda aceita. Escrever
+    `data_hora_fim <= agora` nos dois lugares seria a mesma divergência que a
+    Story 5.2 corrigiu na borda de abrir, reintroduzida na borda de fechar.
+
+    ⚠️ **Sem tolerância depois do fim, e a ausência é a decisão.** *Descartei*
+    uma `TOLERANCIA_APOS_O_FIM` simétrica às duas horas de `ABERTURA_DOS_PORTOES`:
+    ela cobriria o retardatário, e o preço seria o sistema discordando do número
+    que o organizador acabou de digitar — o ingresso valeria por X horas a mais do
+    que a tela do cliente diz. A folga mora na hora declarada: quem quiser margem
+    marca 03h em vez de 02h.
+
+    `<=` e não `<`: no instante exato do término o show acabou. É a mesma
+    convenção do `data_hora <= agora` do `EVENTO_NO_PASSADO`.
+    """
+    return evento.data_hora_fim <= agora
+
+
+def porta_aberta(evento: Evento, agora: datetime) -> bool:
+    """O portão deste evento está aberto **agora**? (Story 5.2)
+
+    **A única fonte da resposta**, e é isso que ela existe para ser: a dependência
+    `exigir_porta_aberta` recusa `403` com ela, e o `estado_do_turno` que a tela
+    lê sai da mesma dupla de comparações. Duas implementações da mesma janela —
+    uma na tela, outra na rota — discordariam no primeiro ajuste de uma das duas,
+    e o sintoma seria o pior possível: o item aparece clicável e a validação
+    recusa.
 
     **`agora` é parâmetro, e não `datetime.now()` aqui dentro.** Quem chama já
     leu o relógio uma vez para a resposta inteira; ler de novo por item faria
     dois turnos na mesma borda saírem com vereditos diferentes. De quebra, é o
     que torna a janela testável sem congelar o relógio do processo.
 
-    **Não há fechamento** — ver o comentário de `ABERTURA_DOS_PORTOES`.
+    ⚠️ **Ela ganhou teto em 14/08/2026**, e o comentário de `ABERTURA_DOS_PORTOES`
+    dizia o contrário: *"não há fechamento, de propósito (…) sem contar que este
+    projeto não tem coluna de duração nenhuma."* A coluna passou a existir
+    (`evento.data_hora_fim`), e o que a ausência de teto custava era visível em
+    produção — o turno de um show da semana passada continuava na lista da
+    portaria, clicável e validável. O argumento de então — *"o show acaba e ainda
+    há gente entrando"* — continua de pé e é atendido pela hora que o organizador
+    declara, não por uma porta que nunca fecha.
     """
-    return evento.data_hora - ABERTURA_DOS_PORTOES <= agora
+    return (
+        evento.data_hora - ABERTURA_DOS_PORTOES <= agora
+        and not evento_encerrado(evento, agora)
+    )
+
+
+def estado_do_turno(evento: Evento, agora: datetime) -> EstadoDoTurno:
+    """Onde este turno está na noite — os três estados que a tela desenha.
+
+    ⚠️ **`ENCERRADO` é conferido primeiro**, e a ordem não é estética: as duas
+    condições são simultaneamente verdadeiras para um evento cujo término foi
+    digitado antes do início e escapou das recusas do service. Na ordem inversa,
+    um show que acabou responderia `NAO_COMECOU` — a tela diria "o evento ainda
+    não começou" sobre um show de ontem. É a **mesma** ordem das duas recusas da
+    dependência `exigir_porta_aberta`, e ela é a mesma nos dois lugares de
+    propósito.
+
+    **Sai da mesma `evento_encerrado` que a `porta_aberta` usa**, e é isso que
+    impede a tela e a rota de divergirem: se uma disser aberto e a outra
+    encerrado, o item aparece clicável e a validação bate na porta.
+    """
+    if evento_encerrado(evento, agora):
+        return EstadoDoTurno.ENCERRADO
+    if porta_aberta(evento, agora):
+        return EstadoDoTurno.ABERTO
+    return EstadoDoTurno.NAO_COMECOU
 
 
 def montar_turno(
     evento: Evento, entradas: int, agora: datetime | None = None
 ) -> TurnoDaPortaria:
-    """Projeta o `Evento` no contrato da portaria, com o `aberto` calculado.
+    """Projeta o `Evento` no contrato da portaria, com o `estado` calculado.
 
-    Campo a campo, e não `model_validate(evento)`: nem `aberto` nem `entradas` são
+    Campo a campo, e não `model_validate(evento)`: nem `estado` nem `entradas` são
     coluna, e o schema deixou de declarar `from_attributes` justamente por isso (o
     docstring dele explica a troca).
 
@@ -898,7 +996,7 @@ def montar_turno(
         data_hora=evento.data_hora,
         local=evento.local,
         cidade=evento.cidade,
-        aberto=porta_aberta(evento, agora or datetime.now(timezone.utc)),
+        estado=estado_do_turno(evento, agora or datetime.now(timezone.utc)),
         entradas=entradas,
     )
 

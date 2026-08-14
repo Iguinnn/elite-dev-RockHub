@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import Dica from "@/components/Dica";
 import FormularioPublicacao from "@/components/FormularioPublicacao";
 import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
 import { buscarNoCatalogo } from "@/lib/catalogo";
@@ -117,7 +118,35 @@ export default async function PublicarEvento({
   return (
     <section className={estilos.pagina}>
       <div className={estilos.secTitulo}>
-        <h1>1 · Escolha no catálogo</h1>
+        {/* ⚠️ **A dica existe porque o filtro do catálogo é híbrido**, e sem ela
+            a tela mente por omissão: a lista que abre sozinha vem com
+            `genreId=Rock`, e a busca por termo **não** — ver
+            `integrations/ticketmaster.py::buscar_eventos`, que descarta prender o
+            gênero na busca porque "rosalia" com os dois filtros devolve zero e
+            com um só devolve um. Quem chega aqui vê quatro shows de rock e supõe
+            que é isso que o catálogo tem; o primeiro sertanejo que aparece numa
+            busca parece defeito. Uma linha explica os dois comportamentos.
+
+            **A dica fica com o `<h1>`, e não com o kicker à direita.** O
+            `.secTitulo` é um flex de duas pontas, e pendurá-la no kicker faria a
+            explicação do catálogo nascer colada à procedência dele — que é outra
+            informação. Ela pertence ao título da etapa: é ele que promete
+            "escolha no catálogo". */}
+        {/* ⚠️ **A `Dica` fica ao lado do `<h1>`, e não dentro dele.** Dentro, o
+            texto do painel entraria no **nome acessível do título**: com a dica
+            aberta, o leitor de tela anunciaria o heading como "1 · Escolha no
+            catálogo A lista que abre sozinha é de rock…". O invólucro é o que
+            mantém os dois lado a lado sem misturá-los, e o `.secTitulo` continua
+            sendo o flex de duas pontas que empurra o kicker para a direita. */}
+        <div className={estilos.tituloComDica}>
+          <h1>1 · Escolha no catálogo</h1>
+          <Dica rotulo="Sobre os shows que aparecem aqui">
+            A lista que abre sozinha é de <strong>rock</strong> — é o recorte do
+            RockHub, e serve de exemplo. A busca não tem esse recorte: procurando
+            pelo nome de um artista, de uma música ou da casa de show, aparece
+            qualquer gênero musical que esteja no catálogo da Ticketmaster.
+          </Dica>
+        </div>
         <span className="kicker">Ticketmaster Discovery</span>
       </div>
 

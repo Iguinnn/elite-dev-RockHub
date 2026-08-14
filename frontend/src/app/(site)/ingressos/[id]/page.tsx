@@ -68,11 +68,27 @@ export default async function CanhotoDoIngresso({
         ← Meus ingressos
       </Link>
 
-      {ingresso.usado_em && (
+      {ingresso.situacao === "UTILIZADO" && ingresso.usado_em && (
         // Neutro, não vermelho (EXPERIENCE.md#veredito): não é fraude nem
         // falha, é um canhoto que já cumpriu o que prometia.
         <p className={estilos.jaUtilizado}>
           <strong>Já utilizado.</strong> Entrou às {horaDeEntrada(ingresso.usado_em)}.
+        </p>
+      )}
+
+      {/* ⚠️ **A faixa do expirado é irmã da de cima, e as duas nunca aparecem
+          juntas** — `situacao` é um valor só, e é ela que decide qual das duas
+          sai. Enquanto a condição era `ingresso.usado_em`, não havia onde encaixar
+          um terceiro caso sem inventar uma precedência na tela; agora a
+          precedência é do backend (`usado_em` ganha de tudo), e aqui só se lê.
+
+          Mesma classe e mesmo tom neutro: um ingresso que perdeu a validade não é
+          um erro de quem está olhando. O que muda é a frase, e ela diz a única
+          coisa acionável — o show acabou, não adianta ir à porta. */}
+      {ingresso.situacao === "EXPIRADO" && (
+        <p className={estilos.jaUtilizado}>
+          <strong>O evento já acabou.</strong> Este ingresso não vale mais para
+          entrada.
         </p>
       )}
 

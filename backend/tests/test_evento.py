@@ -7,7 +7,7 @@ operação para a qual a tabela tem o formato que tem.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -35,6 +35,11 @@ def _evento(sessao: Session, organizador: Usuario, **campos: Any) -> Evento:
         "local": "Casa de Shows",
     }
     valores.update(campos)
+    # **Derivado depois do `update`, e não junto dos outros defaults.** Um teste
+    # que troca `data_hora` precisa que o término acompanhe, senão ele cai no
+    # `CHECK fim_depois_do_inicio` por um motivo que não tem nada a ver com o que
+    # ele está provando. Quem quiser um término próprio passa `data_hora_fim`.
+    valores.setdefault("data_hora_fim", valores["data_hora"] + timedelta(hours=4))
 
     evento = Evento(**valores)
     sessao.add(evento)
@@ -80,6 +85,48 @@ def test_evento_sem_publicado_em_existe_como_rascunho(
     sessao.refresh(evento)
 
     assert evento.publicado_em is None
+
+
+@pytest.mark.parametrize(
+    ("rotulo", "deslocamento"),
+    [
+        ("termina antes de começar", timedelta(hours=-1)),
+        ("termina no mesmo instante", timedelta(0)),
+    ],
+)
+def test_termino_que_nao_vem_depois_do_inicio_levanta_integrity_error(
+    sessao: Session,
+    fabricar_usuario: Any,
+    rotulo: str,
+    deslocamento: timedelta,
+) -> None:
+    """O `CHECK fim_depois_do_inicio` — techspec `docs/techspec-fim-do-evento.md`.
+
+    ⚠️ **Rede de segurança, e não a regra.** Quem recusa isto em português é o
+    `FIM_ANTES_DO_INICIO` do `services/evento.py`, com `422` e uma frase que diz o
+    que conferir; nenhuma rota consegue chegar até esta constraint. Ela é o que
+    sobra de pé se algum caminho da aplicação escapar das duas recusas — mesmo
+    papel do `estoque_valido` do AD-3, e por isso este teste está aqui, entre as
+    invariantes que só o banco garante.
+
+    **Os dois casos**, e o segundo é o que um `>` mal escrito deixaria passar: um
+    show que termina no instante em que começa dura zero minutos, e é erro de
+    digitação igual ao término anterior. O service usa `<=` pelo mesmo motivo.
+    """
+    organizador = fabricar_usuario(PapelUsuario.ORGANIZADOR)
+
+    sessao.add(
+        Evento(
+            organizador_id=organizador.id,
+            nome="Show impossível",
+            data_hora=DATA_DO_SHOW,
+            data_hora_fim=DATA_DO_SHOW + deslocamento,
+            local="Casa de Shows",
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        sessao.flush()
 
 
 def test_vendidos_maior_que_capacidade_levanta_integrity_error(

@@ -69,6 +69,37 @@
   gap: 8px 10px;
 }
 
+/* A faixa de controles à direita do logotipo: a fileira de destinos, o
+   alternador de tema e o sanduíche. Ela existe desde 14/08/2026, quando o
+   alternador saiu do `<nav>` — antes o `.topo` tinha dois filhos e o
+   `space-between` bastava. */
+.controles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ⚠️ **A fileira de destinos some abaixo de 900px, e a gaveta assume.** O ponto
+   de virada é o mesmo da tabela do `EXPERIENCE.md#Responsive & Platform`, e não
+   uma medida nova — é onde os quatro itens do organizador deixam de caber ao lado
+   do logotipo.
+
+   **Era `flex-wrap` fazendo o menu descer para baixo do logotipo** (decisão do
+   Igor, 13/08/2026), e o `.topo` ainda o tem, para o caso de um rótulo longo
+   estourar acima de 900. O que a quebra de linha resolvia era o menu não
+   transbordar; o que ela **não** resolvia é o que sobrou na tela: quatro caixas
+   em três linhas empurrando a busca e a manchete para baixo da dobra, com a
+   última encostando na borda. Empilhar não era o mesmo desenho em outro tamanho.
+
+   `display: none` e não `visibility`/`opacity`: o item precisa sair da árvore de
+   acessibilidade junto, senão o leitor de tela anuncia os destinos duas vezes —
+   uma na fileira invisível, outra na gaveta. */
+@media (max-width: 900px) {
+  .navbar {
+    display: none;
+  }
+}
+
 /* ⚠️ **Cada item virou uma caixa vazada, e o hover virou varredura** (decisão do
    Igor, 13/08/2026). Antes era texto solto com um fio neon de 2px embaixo do
    item ativo, e o movimento era só a cor mudando em 120ms.
