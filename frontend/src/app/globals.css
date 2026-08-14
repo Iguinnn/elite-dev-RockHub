@@ -204,6 +204,20 @@
   --verde2: var(--verde2-escuro);
   --fio: var(--fio-escuro);
   --fio2: var(--fio2-escuro);
+
+  /* ⚠️ **A marca é o único desenho do produto que não se resolve por token de
+     cor**, porque ela é um PNG e não uma superfície pintada por CSS. São dois
+     arquivos, e o que troca é qual deles aparece — daí um par de tokens de
+     `display` no meio da paleta. Eles moram aqui, e não num seletor
+     `[data-tema="claro"] .escura` dentro do `Logotipo.module.css`, pelo mesmo
+     motivo de todos os outros: **nenhum `.module.css` sabe que existe um
+     segundo modo**. E há um caso em que a diferença é funcional, não estética —
+     a portaria abre uma ilha escura dentro de uma página clara, e por seletor
+     descendente a marca de lá herdaria a versão clara do `<html>`, ficando com
+     o "Rock" piche sobre o breu. Token resolve pelo ancestral mais próximo,
+     como toda cor deste arquivo já resolve.                                 */
+  --marca-escura: block;
+  --marca-clara: none;
 }
 
 [data-tema="claro"] {
@@ -219,6 +233,9 @@
   --verde2: var(--verde2-claro);
   --fio: var(--fio-claro);
   --fio2: var(--fio2-claro);
+
+  --marca-escura: none;
+  --marca-clara: block;
 }
 
 /* ---- reset -------------------------------------------------------------- */

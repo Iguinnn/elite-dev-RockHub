@@ -2,7 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ComponentProps } from "react";
 
-import marca from "../../public/logotipo-rockhub.png";
+import marcaClara from "../../public/logotipo-rockhub-claro.png";
+import marcaEscura from "../../public/logotipo-rockhub.png";
 
 import estilos from "./Logotipo.module.css";
 
@@ -61,7 +62,29 @@ import estilos from "./Logotipo.module.css";
  *
  * O `alt` fica **vazio de propósito**: o `aria-label` do link já anuncia a marca
  * e o destino, e um `alt="RockHub"` faria o leitor de tela dizer o nome duas
- * vezes — a mesma disciplina da arte da chamada principal.
+ * vezes — a mesma disciplina da arte da chamada principal. Com as duas versões
+ * na árvore isso deixa de ser só disciplina e vira necessidade: dois `alt`
+ * preenchidos fariam o leitor anunciar a marca três vezes na mesma linha.
+ *
+ * **A segunda versão da marca** (14/08/2026, commit 2 do modo claro). O modo
+ * claro pinta o fundo de branco gelo, e o "Rock" da marca é branco — ela
+ * simplesmente sumiria. São dois `<Image>` na árvore, e o CSS esconde um; o
+ * `display` vem de token, então este componente não sabe qual tema está ligado.
+ * Três notas sobre essa escolha:
+ *
+ * - **Os dois com `priority`, e os dois baixados em toda tela.** É o preço de
+ *   não piscar: `display: none` esconde, mas o Next já precifica o preload das
+ *   duas no `<head>`. São dois PNG de ~20 KB acima da dobra, e a alternativa —
+ *   decidir no cliente qual baixar — devolve exatamente o pisca-pisca que o
+ *   cookie lido no servidor existe para evitar.
+ * - **Não é `<picture media=...>`**, que é a solução idiomática e aqui está
+ *   errada: `media` responde a `prefers-color-scheme`, a preferência do sistema
+ *   operacional, e o tema deste produto é escolha explícita de quem navega.
+ *   Seguir o sistema mostraria a metade em Windows claro uma identidade que ela
+ *   nunca pediu.
+ * - **O arquivo claro é o escuro recolorido**, não um desenho novo: mesmo alfa,
+ *   mesmas 388×160, só o RGB do "Rock" trocado por `#0b1618`. É isso que
+ *   garante que a marca não muda de largura na troca de tema.
  */
 type Props = {
   href?: ComponentProps<typeof Link>["href"];
@@ -74,7 +97,18 @@ export default function Logotipo({
 }: Props = {}) {
   return (
     <Link href={href} className={estilos.logo} aria-label={rotulo}>
-      <Image src={marca} alt="" className={estilos.marca} priority />
+      <Image
+        src={marcaEscura}
+        alt=""
+        className={`${estilos.marca} ${estilos.escura}`}
+        priority
+      />
+      <Image
+        src={marcaClara}
+        alt=""
+        className={`${estilos.marca} ${estilos.clara}`}
+        priority
+      />
     </Link>
   );
 }
