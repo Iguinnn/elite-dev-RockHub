@@ -109,8 +109,9 @@ export default function FormularioCadastro({ voltar = "/" }: Props) {
 
       <AvisoDeErro mensagem={erro} />
 
+      {/* O rótulo muda durante o envio — a régua está no `FormularioLogin`. */}
       <Botao type="submit" disabled={enviando}>
-        Criar conta
+        {enviando ? "Criando…" : "Criar conta"}
       </Botao>
     </form>
   );

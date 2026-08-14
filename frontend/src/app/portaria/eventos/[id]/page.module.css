@@ -48,8 +48,12 @@
 /* Indisponibilidade (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração e sem
    botão grande — não há nada que esta pessoa possa fazer daqui além de esperar,
    e o caminho de volta é o cabeçalho da casca. */
+/* Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
+   `.aviso` do `(site)/page.module.css`. */
 .aviso {
   max-width: 52ch;
   margin-top: 28px;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
   font: 21px/1.5 var(--serif);
 }

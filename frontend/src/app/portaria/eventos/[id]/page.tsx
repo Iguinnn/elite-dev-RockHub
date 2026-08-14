@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import PainelDoTurno from "@/components/PainelDoTurno";
 import { partesDaFilaPublica } from "@/lib/formato";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 import { obterTurno } from "@/lib/turnos";
 
@@ -48,7 +49,7 @@ export default async function LeitorDoTurno({
     redirect(`/login?voltar=${encodeURIComponent(`/portaria/eventos/${id}`)}`);
   }
   if (usuario.papel !== "PORTARIA") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   const resultado = await obterTurno(id);

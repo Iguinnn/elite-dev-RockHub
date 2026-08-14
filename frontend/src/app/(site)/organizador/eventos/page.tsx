@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { listarMeusEventos, type MeuEventoResumo } from "@/lib/eventos";
 import { partesDaData } from "@/lib/formato";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
@@ -53,7 +54,7 @@ export default async function MeusEventos() {
     redirect("/login?voltar=%2Forganizador%2Feventos");
   }
   if (usuario.papel !== "ORGANIZADOR") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   // `listarMeusEventos` nunca levanta: o projeto não tem `error.tsx`, e a
@@ -96,7 +97,7 @@ export default async function MeusEventos() {
         // ilustração e sem botão grande — o caminho para publicar já está no
         // masthead, e repeti-lo aqui em tamanho grande seria a chamada de ação
         // que o UX-DR8 recusa.
-        <p className={estilos.aviso}>
+        <p className={estilos.vazio}>
           Você ainda não publicou nenhum evento. Quando publicar, ele aparece aqui
           com o inventário de cada setor.
         </p>

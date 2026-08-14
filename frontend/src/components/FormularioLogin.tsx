@@ -9,6 +9,7 @@ import Campo from "@/components/Campo";
 import CampoDeSenha from "@/components/CampoDeSenha";
 import ContasDeAvaliacao from "@/components/ContasDeAvaliacao";
 import { ErroDaApi, chamarApi } from "@/lib/api";
+import { casaDoPapel } from "@/lib/papel";
 
 import type { UsuarioDaSessao } from "@/lib/sessao";
 
@@ -45,14 +46,11 @@ type RespostaDoLogin = { papel: UsuarioDaSessao["papel"] };
  * portaria. Cliente e organizador continuam caindo na raiz, que é a programação
  * e é onde os dois querem estar.
  *
- * Uma função e não um `Record`: o mapa completo teria duas entradas iguais a
- * `"/"` só para não parecer que faltou papel, e uma consulta a um mapa
- * incompleto devolve `undefined` — que o `router.push` não sabe navegar. Aqui o
- * caso não previsto cai no `"/"` por construção.
+ * ⚠️ **A função saiu daqui em 13/08/2026** e mora em `lib/papel.ts`. Ela servia
+ * a este arquivo só, e a conferência mostrou que as **guardas de papel** das
+ * páginas precisavam do mesmo mapa: elas faziam `redirect("/")`, e `/` não é a
+ * casa da portaria. O motivo inteiro está lá.
  */
-function casaDoPapel(papel: string): string {
-  return papel === "PORTARIA" ? "/portaria" : "/";
-}
 
 /**
  * O `voltar` chega **já validado** por `caminhoInternoSeguro`, do Server
@@ -143,8 +141,14 @@ export default function FormularioLogin({ voltar, children }: Props) {
 
         <AvisoDeErro mensagem={erro} />
 
+        {/* ⚠️ **O rótulo muda desde 13/08/2026** (decisão do Igor, depois da
+            varredura de superfícies de erro). Quatro botões do produto já
+            trocavam de palavra durante o envio e quatro não — sem regra, só pela
+            ordem em que foram escritos. O `disabled` sozinho **não anuncia
+            progresso**: quem usa leitor de tela ouve "botão indisponível" e não
+            fica sabendo que algo está acontecendo. A palavra é o anúncio. */}
         <Botao type="submit" disabled={enviando}>
-          Entrar
+          {enviando ? "Entrando…" : "Entrar"}
         </Botao>
       </form>
 

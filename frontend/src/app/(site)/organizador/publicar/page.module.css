@@ -57,7 +57,23 @@
 /* Estado vazio (EXPERIENCE.md#Vazio): kicker (o da seção, acima), frase, fim.
    Sem ilustração e sem botão grande — vale para os três estados: sem busca
    ainda, busca sem resultado, catálogo indisponível. */
+/* ⚠️ **Esta tela tinha cinco mensagens na mesma classe** — três de falha
+   (catálogo fora do ar, sessão expirada, busca longa demais) e duas de ausência
+   (nenhum show para a busca, catálogo sem shows). Desde 13/08/2026 são duas
+   classes: filete `--brasa` = falha; sem filete = ausência. A régua inteira está
+   no `.aviso` do `(site)/page.module.css`. */
 .aviso {
+  max-width: 46ch;
+  margin-top: 28px;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* Ausência e regra do produto: "nenhum show para essa busca", "não há conta de
+   portaria cadastrada", "são até 20 setores por evento". Nada falhou em nenhuma
+   das três — a última nem é sobre dado, é o teto dito em voz alta. */
+.vazio {
   max-width: 46ch;
   margin-top: 28px;
   font: 21px/1.5 var(--serif);

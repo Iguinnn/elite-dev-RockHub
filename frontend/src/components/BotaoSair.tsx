@@ -47,8 +47,9 @@ export default function BotaoSair() {
   }
 
   return (
+    // O rótulo muda durante o envio — a régua está no `FormularioLogin`.
     <Botao type="button" onClick={aoSair} disabled={saindo}>
-      Sair
+      {saindo ? "Saindo…" : "Sair"}
     </Botao>
   );
 }

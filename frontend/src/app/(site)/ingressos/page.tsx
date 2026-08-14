@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { horaDeEntrada, partesDaData } from "@/lib/formato";
 import { listarIngressos, type IngressoResumo } from "@/lib/ingressos";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
@@ -30,7 +31,7 @@ export default async function MeusIngressos() {
     redirect("/login?voltar=%2Fingressos");
   }
   if (usuario.papel !== "CLIENTE") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   const resultado = await listarIngressos();
@@ -62,7 +63,7 @@ export default async function MeusIngressos() {
 
       {resultado.estado === "ok" && itens.length === 0 && (
         // A frase exata do EXPERIENCE.md (UX-DR8): sem ilustração, sem botão.
-        <p className={estilos.aviso}>
+        <p className={estilos.vazio}>
           Você ainda não comprou nenhum ingresso. Quando comprar, ele aparece
           aqui com o código de entrada.
         </p>

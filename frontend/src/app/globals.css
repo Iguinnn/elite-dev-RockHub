@@ -120,7 +120,16 @@ body {
    ponto a outro da mesma página sem corte seco, para quem clicou entender que
    continua onde estava. Não é animação de entrada nem transição de tela —
    quem pediu menos movimento recebe o salto instantâneo, pelo bloco de
-   `prefers-reduced-motion` mais abaixo. */
+   `prefers-reduced-motion` mais abaixo.
+
+   ⚠️ **Estas duas linhas só se comportam por causa de um atributo no
+   `layout.tsx`.** Até o Next 15 o roteador anulava esta regra durante a
+   navegação; o Next 16 não anula mais, e a rolagem para o topo da tela nova
+   virava uma animação que corria contra a renderização dela — a pessoa entrava
+   pelo login e caía no meio da programação, com o masthead fora da vista. O
+   `data-scroll-behavior="smooth"` do `<html>` é o que devolve o salto
+   instantâneo na navegação; o motivo inteiro está lá. **Se ele sumir, o defeito
+   volta — e volta intermitente**, que é a pior forma de ele voltar. */
 html {
   scroll-behavior: smooth;
 }

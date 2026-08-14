@@ -6,6 +6,7 @@ import { useRef, useState, type FormEvent } from "react";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
 import SeletorDeData from "@/components/SeletorDeData";
+import SessaoExpirada from "@/components/SessaoExpirada";
 import Toast from "@/components/Toast";
 import estilos from "@/app/(site)/organizador/publicar/page.module.css";
 import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
@@ -129,7 +130,7 @@ function hojeEmSaoPaulo(): string {
 }
 
 /** Mesma convenção do login e do cadastro: o texto vem do `codigo`. */
-function mensagemParaCodigo(codigo: string): string {
+function mensagemParaCodigo(codigo: string): React.ReactNode {
   if (codigo === "EVENTO_SEM_SETOR") {
     return "Um evento precisa de ao menos um setor à venda.";
   }
@@ -155,27 +156,26 @@ function mensagemParaCodigo(codigo: string): string {
     return "Confira os dados do formulário.";
   }
   // ⚠️ Estes dois faltavam, e o buraco era grande: a sessão dura 8 horas
-  // (AD-15), esta tela é longa (catálogo → data e local → N setores → escala),
-  // e expirando o cookie no meio o `POST` voltava `401`. Sem entrada na tabela,
+  // (AD-15), esta tela é longa (catálogo → data → N setores → escala), e
+  // expirando o cookie no meio o `POST` voltava `401`. Sem entrada na tabela,
   // ele caía na mensagem genérica "tente de novo em instantes" — e tentar de
   // novo dava `401` outra vez, para sempre, com tudo digitado na tela e nenhum
   // caminho para o login. As guardas da `page.tsx` rodam na renderização, não
-  // no envio. O link do aviso é quem fecha a saída (ver `AvisoDeSessao`).
+  // no envio.
+  //
+  // ⚠️ **Era um sentinela local até 13/08/2026** — a string `"__sessao_expirada__"`,
+  // comparada no render para trocar o texto por JSX com `<Link>`. O truque existia
+  // porque esta função devolvia `string`; devolvendo `ReactNode`, o componente
+  // entra direto e o sentinela some. A varredura de superfícies de erro mostrou
+  // que outros **quatro** componentes tinham o mesmo `401` sem link nenhum, e
+  // era esse remendo local que impedia a correção de valer para todos.
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return SESSAO_EXPIRADA;
+    return (
+      <SessaoExpirada voltar="/organizador/publicar" acao="publicar o evento" />
+    );
   }
   return MENSAGEM_GENERICA;
 }
-
-/**
- * Marcador de "a sessão morreu", não um texto de tela.
- *
- * O aviso precisa de um `<Link>` dentro dele, e `mensagemParaCodigo` devolve
- * `string`. Comparar contra esta constante é o que deixa o componente decidir
- * entre renderizar texto puro e texto com link, sem transformar a tabela de
- * códigos numa fábrica de JSX.
- */
-const SESSAO_EXPIRADA = "__sessao_expirada__";
 
 /**
  * Reais digitados → centavos inteiros. `null` quando não dá para ter certeza.
@@ -214,7 +214,10 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
     { chave: 0, nome: "", capacidade: "", preco: "" },
   ]);
   const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  // `ReactNode` e não `string` desde 13/08/2026: a mensagem de sessão expirada
+  // leva um `<Link>` dentro (ver `SessaoExpirada`). Foi a troca deste tipo que
+  // tornou o sentinela `__sessao_expirada__` desnecessário.
+  const [erro, setErro] = useState<React.ReactNode>(null);
   const [publicado, setPublicado] = useState<MeuEventoDetalhe | null>(null);
 
   // ⚠️ **A escala é um conjunto de ids, e a lista filtrada é só a vista.** Se a
@@ -454,7 +457,26 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
   }
 
   return (
-    <form onSubmit={aoEnviar} className={estilos.formulario}>
+    /* ⚠️ **`noValidate`, e é ele que fecha a padronização** (decisão do Igor,
+       13/08/2026). Sem ele, esta tela recusava por **dois lugares diferentes**:
+       capacidade `0` estourava o balão do navegador grudado no campo, e data no
+       passado subia um toast no canto oposto da janela — mesma classe de
+       problema, "um campo está preenchido errado", em dois cantos da tela. Qual
+       dos dois aparecia dependia de a regra caber ou não num atributo HTML, que
+       é um detalhe de implementação e não algo que quem publica possa prever.
+
+       Com `noValidate`, o navegador para de validar e **tudo** passa pelas
+       checagens de `aoEnviar`, que já cobriam o mesmo terreno: campo vazio,
+       capacidade fora da faixa, preço fora de formato, data inválida e data no
+       passado. Um lugar só, e é o toast.
+
+       ⚠️ **O que `noValidate` NÃO desliga, e por isso os atributos ficam:**
+       `maxLength` continua impedindo a digitação além do limite (é restrição de
+       entrada, não validação de envio), `min`/`max`/`step` continuam controlando
+       as setinhas do campo numérico, `type="date"` continua com a máscara e o
+       calendário, e o `min` do seletor continua apagando os dias passados. O que
+       sai de cena é só o balão de recusa no envio. */
+    <form onSubmit={aoEnviar} className={estilos.formulario} noValidate>
       {/* Travado, e **não** é `<input readOnly>`: campo que ninguém pode
           editar é campo que não deveria ser campo. É texto. */}
       <div className={estilos.atracao}>
@@ -629,7 +651,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
               + Adicionar setor
             </button>
           ) : (
-            <p className={estilos.aviso}>
+            <p className={estilos.vazio}>
               São até {MAXIMO_SETORES} setores por evento.
             </p>
           )}
@@ -653,11 +675,21 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         </p>
 
         {contas.length === 0 ? (
-          // Estado vazio (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração e
-          // sem botão grande. Vale para os dois casos — não há conta de
-          // portaria nenhuma, ou a lista não pôde ser carregada —, e o
-          // formulário continua de pé nos dois.
-          <p className={estilos.aviso}>
+          // Frase, fim (EXPERIENCE.md#Vazio): sem ilustração e sem botão grande.
+          // O formulário continua de pé nos três casos.
+          //
+          // ⚠️ **A classe é escolhida pelo estado desde 13/08/2026.** Os três
+          // textos moravam no mesmo `.aviso`, e o comentário aqui dizia "vale
+          // para os dois casos" como se fossem equivalentes: não são. Sessão
+          // expirada e lista fora do ar são **falhas** — algo quebrou e há o que
+          // fazer. "Não há nenhuma conta de portaria cadastrada" é **ausência**:
+          // nada falhou, o banco está assim. Só as duas primeiras levam o filete
+          // `--brasa`.
+          <p
+            className={
+              portarias.estado === "ok" ? estilos.vazio : estilos.aviso
+            }
+          >
             {portarias.estado === "sem-sessao" ? (
               <>
                 Sua sessão expirou, e por isso a lista de portarias não carregou.{" "}
@@ -695,7 +727,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             </div>
 
             {contasVisiveis.length === 0 ? (
-              <p className={estilos.aviso}>
+              <p className={estilos.vazio}>
                 Nenhuma conta de portaria com esse nome.
               </p>
             ) : (
@@ -744,32 +776,19 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           `posicao` fica no padrão (`"base"`): aqui não há rodapé `sticky`, ao
           contrário da página do evento.
 
-          O único aviso com link continua sendo este: sem ele, sessão expirada no
-          meio do preenchimento não tinha saída nenhuma. `target="_blank"` porque
-          sair desta página descartaria o formulário inteiro — a pessoa entra na
-          outra aba e volta para clicar em Publicar com tudo ainda preenchido. */}
-      <Toast
-        aoFechar={() => setErro(null)}
-        mensagem={
-          erro === SESSAO_EXPIRADA ? (
-            <>
-              Sua sessão expirou.{" "}
-              <Link href="/login?voltar=%2Forganizador%2Fpublicar" target="_blank">
-                Entre de novo
-              </Link>{" "}
-              e clique em Publicar outra vez — o que você preencheu continua aqui.
-            </>
-          ) : (
-            erro
-          )
-        }
-      />
+          ⚠️ **O `mensagem` voltou a ser só `{erro}`** (13/08/2026). Havia um
+          ternário aqui comparando o estado contra o sentinela `SESSAO_EXPIRADA`
+          para injetar o JSX com `<Link>`; com o `SessaoExpirada` extraído, quem
+          monta o aviso é a tabela de códigos, e este ponto volta a não saber de
+          caso nenhum — que é o que ele deve saber. */}
+      <Toast mensagem={erro} aoFechar={() => setErro(null)} />
 
       <div className={estilos.rodape}>
-        {/* Nada gira e nada pulsa enquanto envia: o botão fica `disabled`, e é
-            só isso (EXPERIENCE.md#Carregando). */}
+        {/* Nada gira e nada pulsa enquanto envia (EXPERIENCE.md#Carregando) — o
+            que muda é a palavra, e palavra não é animação. A régua está no
+            `FormularioLogin`. */}
         <Botao type="submit" disabled={enviando}>
-          Publicar evento
+          {enviando ? "Publicando…" : "Publicar evento"}
         </Botao>
       </div>
     </form>

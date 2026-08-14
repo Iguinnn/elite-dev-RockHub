@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import DadosDaConta from "@/components/DadosDaConta";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 /**
@@ -27,7 +28,7 @@ export default async function ContaDaPortaria() {
     redirect("/login?voltar=%2Fportaria%2Fconta");
   }
   if (usuario.papel !== "PORTARIA") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   return <DadosDaConta usuario={usuario} />;

@@ -1,10 +1,23 @@
 /* A navegação da porta (Story 5.1).
 
-   RockHub                        ← a marca, do `Logotipo`, levando a /portaria
-   ANA SAMPAIO · PORTARIA         ← quem está validando, em mono versalete
-   ─────────────────────────────  ← fio
-   TURNOS   MINHA CONTA           ← dois itens, alvos de 44px
-   ─────────────────────────────  ← fio, fecha o bloco
+   RockHub                  [ TURNOS ] [ MINHA CONTA ]  ← marca e menu na MESMA
+   ANA SAMPAIO · PORTARIA                                  linha, alvos de 44px
+   ────────────────────────────────────────────────────  ← fio, fecha o bloco
+
+   ⚠️ **Era em três faixas empilhadas, com um fio no meio** (decisão do Igor,
+   13/08/2026): marca, fio, menu, fio. Agora é a **anatomia do `Masthead`, linha
+   por linha** — mesmos 26px em cima, mesmos 18px embaixo, mesmo
+   `justify-content: space-between`, mesmo intervalo de 10px entre as caixas do
+   menu. Quem está na porta é a mesma pessoa que entra pelas outras telas, e duas
+   cascas diferentes para o mesmo produto leem como duas aplicações.
+
+   O ganho colateral é o fio: o cabeçalho tinha dois e passou a ter um. O jornal
+   noturno vive de filete, e é exatamente por isso que ele não pode ter um em
+   volta de cada bloco — quando tudo tem fio, nenhum separa nada.
+
+   **O que continua diferente do masthead, e de propósito:** a linha com o nome de
+   quem está validando (o celular da porta é compartilhado) e o alvo de 44px dos
+   itens. São as duas coisas que a porta precisa e a sala de casa não.
 
    **A largura é a do resto da aplicação** (decisão do Igor, 2026-08-12). A
    primeira versão fechava a coluna em 560px, argumentando com o
@@ -19,15 +32,25 @@
 
    Nenhum hex: só `var(--token)`. Raio zero, sombra zero (UX-DR3). */
 
+/* Os quatro valores são os do `.masthead` + `.topo` do `Masthead.module.css`,
+   copiados de propósito. `flex-wrap` porque em tela estreita o menu não cabe ao
+   lado — e ali ele volta a descer para baixo da marca, sem fio no meio. */
 .topo {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px 32px;
   padding-top: 26px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--fio);
 }
 
 /* Marca e identificação empilhadas, coladas: as duas dizem "onde você está" e
-   "quem você é", e um fio entre elas separaria o que é uma coisa só. */
+   "quem você é", e um fio entre elas separaria o que é uma coisa só. Elas são o
+   lado esquerdo da faixa; o menu é o direito. */
 .marca {
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--fio);
+  min-width: 0;
 }
 
 /* Mono versalete porque é etiqueta de máquina, não nome próprio em destaque —
@@ -43,28 +66,43 @@
 }
 
 /* ⚠️ **Os 44px do UX-DR6 valem aqui mais do que em qualquer outra tela.** O
-   `.navLink` do `Masthead.module.css` — que o `NavLink` traz consigo — tem
-   `padding-bottom: 3px` e uns 14px de altura total: alvo de mouse, não de
-   polegar no escuro. O `padding` vertical daqui o leva aos 44px sem tocar no
-   componente e sem duplicar a tipografia do item, que continua sendo a do
-   masthead: mesma linguagem, alvo de outro tamanho.
+   `.navLink` do `Masthead.module.css` — que o `NavLink` traz consigo — fecha em
+   ~41px de altura, e no escuro, com pressa, a diferença para o alvo de polegar
+   importa. O `min-height` daqui o leva aos 44px sem tocar no componente e sem
+   duplicar a tipografia do item, que continua sendo a do masthead: mesma
+   linguagem, alvo de outro tamanho.
+
+   ⚠️ **Este bloco sobrescrevia a anatomia que o item de menu tinha antes de
+   virar caixa** (corrigido em 13/08/2026): ele zerava o `padding-bottom` e
+   engordava a borda de baixo para 3px, porque naquele desenho o item era texto
+   solto com um sublinhado grosso marcando o ativo. Sobre a caixa nova, as duas
+   linhas viravam defeito visível — 12px de folga em cima e nenhuma embaixo, e
+   uma moldura com um lado três vezes mais grosso que os outros três. Sobrescrita
+   que sobrevive ao componente que ela ajustava é assim que se descobre que
+   existia: quando o de baixo muda.
+
+   Sobra **uma** declaração de tamanho, e é a única que esta tela precisa dizer.
 
    O seletor casa o `<a>` por elemento, e não por classe: CSS Module gera nomes
    próprios por arquivo, e não há como nomear a classe do outro módulo daqui. Um
    descendente de `.nav` é preciso o bastante — não existe outro link nesta
    navegação. */
+/* O intervalo é o mesmo 10px do masthead. Sem `padding` e sem fio próprio: os
+   dois existiam quando o menu era uma faixa separada, e agora quem cerca o
+   conjunto é o `.topo`. */
 .nav {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0 26px;
-  border-bottom: 1px solid var(--fio);
+  gap: 8px 10px;
 }
 
+/* `display: flex` no próprio item, e não só o `min-height`: com `box-sizing:
+   border-box` valendo para o projeto inteiro, os 44px são medidos da borda, e o
+   texto de 15px sobraria colado no topo de uma caixa de 44. O item vira
+   contêiner e centra o próprio versalete — o alvo cresce, a letra fica no meio. */
 .nav a {
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding-bottom: 0;
-  border-bottom-width: 3px;
 }

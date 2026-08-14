@@ -34,7 +34,19 @@
 
 /* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. Sem
    ilustração e sem botão grande. */
+/* Filete `--brasa` = falha; sem filete = ausência (13/08/2026). Esta classe
+   servia às duas coisas. A régua inteira está no `.aviso` do
+   `(site)/page.module.css`. */
 .aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* Estado vazio: frase, fim — e sem a marca de falha, porque nada falhou. */
+.vazio {
   max-width: 52ch;
   margin-top: 28px;
   font: 21px/1.5 var(--serif);

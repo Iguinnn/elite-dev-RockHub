@@ -4,9 +4,10 @@ import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
 import Campo from "@/components/Campo";
+import SessaoExpirada from "@/components/SessaoExpirada";
+import Toast from "@/components/Toast";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import type { ReservaSaida } from "@/lib/reservas";
 
@@ -92,7 +93,9 @@ export default function FormularioDePagamento({
   const [meio, setMeio] = useState<Meio | null>(null);
   const [codigoPix, setCodigoPix] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  // `ReactNode` e não `string` desde 13/08/2026: a mensagem de sessão expirada
+  // leva um `<Link>` dentro (ver `SessaoExpirada`).
+  const [erro, setErro] = useState<React.ReactNode>(null);
 
   // ⚠️ **A espera é um estado próprio, e não o `enviando` do botão.** Ela começa
   // no clique e **não** termina quando a resposta chega: termina quando o
@@ -217,7 +220,7 @@ export default function FormularioDePagamento({
           router.refresh();
           return;
         }
-        setErro(mensagemParaCodigo(erroCapturado.codigo));
+        setErro(mensagemParaCodigo(erroCapturado.codigo, reservaId));
       } else {
         setErro(MENSAGEM_GENERICA);
       }
@@ -463,7 +466,17 @@ export default function FormularioDePagamento({
           </div>
         )}
 
-        <AvisoDeErro mensagem={erro} />
+        {/* ⚠️ **Toast, e não mais a faixa `AvisoDeErro`** (13/08/2026, decisão do
+            Igor depois da varredura de superfícies de erro). A régua que passou a
+            valer: **a tela rola → toast; a tela cabe na dobra → faixa**. Esta
+            rola — meio de pagamento, quatro campos de cartão, resumo e botão —,
+            e a faixa nascia acima do botão, que é justamente onde a pessoa **não
+            está** quando o erro chega depois de rolar de volta para conferir um
+            campo. O toast não depende de onde a página parou.
+
+            `posicao` no padrão (`"base"`): aqui não há rodapé `sticky`, ao
+            contrário da página do evento. */}
+        <Toast mensagem={erro} aoFechar={() => setErro(null)} />
 
         <div className={estilos.acao}>
           {/* ⚠️ **O texto do botão muda com o meio**, e é o que o Igor pediu: no
@@ -507,7 +520,10 @@ const MENSAGEM_GENERICA =
  * como remendo — foi o buraco que o code review da Epic 2 achou no formulário de
  * publicação. A sessão dura 8 horas (AD-15) e pode cair com a tela aberta.
  */
-function mensagemParaCodigo(codigo: string): string {
+function mensagemParaCodigo(
+  codigo: string,
+  reservaId: string,
+): React.ReactNode {
   if (codigo === "DADOS_INVALIDOS") {
     return "Confira os dados preenchidos: algum campo está incompleto ou fora do formato.";
   }
@@ -515,7 +531,11 @@ function mensagemParaCodigo(codigo: string): string {
     return "Esta reserva não existe mais.";
   }
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return "Sua sessão expirou. Entre de novo para pagar.";
+    // ⚠️ **Com o caminho de volta desde 13/08/2026** — e aqui ele vale mais que
+    // nas outras telas: o que se perde ao sair da página é o número do cartão
+    // digitado. `target="_blank"` (ver `SessaoExpirada`) é o que devolve a
+    // pessoa a esta aba com tudo preenchido.
+    return <SessaoExpirada voltar={`/reservas/${reservaId}`} acao="pagar" />;
   }
   return MENSAGEM_GENERICA;
 }

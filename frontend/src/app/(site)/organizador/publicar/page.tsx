@@ -7,6 +7,7 @@ import FormularioPublicacao from "@/components/FormularioPublicacao";
 import { ARTE_DE_RESERVA_QUADRADA } from "@/lib/arte";
 import { buscarNoCatalogo } from "@/lib/catalogo";
 import { listarPortarias, type ResultadoDasPortarias } from "@/lib/portarias";
+import { casaDoPapel } from "@/lib/papel";
 import { obterUsuarioDaSessao } from "@/lib/sessao";
 
 import estilos from "./page.module.css";
@@ -55,7 +56,7 @@ export default async function PublicarEvento({
     redirect("/login?voltar=%2Forganizador%2Fpublicar");
   }
   if (usuario.papel !== "ORGANIZADOR") {
-    redirect("/");
+    redirect(casaDoPapel(usuario.papel));
   }
 
   // Os dois podem chegar como `string[]` (`?q=a&q=b`) — o primeiro valor
@@ -163,7 +164,7 @@ export default async function PublicarEvento({
       )}
 
       {resultado.estado === "ok" && resultado.itens.length === 0 && (
-        <p className={estilos.aviso}>
+        <p className={estilos.vazio}>
           {termoLimpo
             ? "Nenhum show encontrado para essa busca."
             : "Não há shows no catálogo agora."}

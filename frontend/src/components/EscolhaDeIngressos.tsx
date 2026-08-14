@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import estilos from "@/app/(site)/eventos/[id]/page.module.css";
 import Botao from "@/components/Botao";
+import SessaoExpirada from "@/components/SessaoExpirada";
 import Toast from "@/components/Toast";
 import { ErroDaApi, chamarApi } from "@/lib/api";
 import { centavosParaReais } from "@/lib/formato";
@@ -264,7 +265,7 @@ export default function EscolhaDeIngressos({
           }
           return;
         }
-        setErro(mensagemParaCodigo(erroCapturado.codigo, tetoDaCompra));
+        setErro(mensagemParaCodigo(erroCapturado.codigo, tetoDaCompra, eventoId));
         return;
       }
       setErro(MENSAGEM_GENERICA);
@@ -477,7 +478,11 @@ const MENSAGEM_GENERICA =
  * aberta — sem estas duas entradas, o `401` cairia na frase genérica "tente de
  * novo em instantes", e tentar de novo daria `401` outra vez, para sempre.
  */
-function mensagemParaCodigo(codigo: string, tetoDaCompra: number): string {
+function mensagemParaCodigo(
+  codigo: string,
+  tetoDaCompra: number,
+  eventoId: string,
+): React.ReactNode {
   if (codigo === "ACIMA_DO_MAXIMO_POR_COMPRA") {
     // ⚠️ **O número vem do contrato, e não escrito à mão aqui** (code review da
     // Epic 3). O stepper já lia `maximo_por_compra` da rota; só esta frase tinha
@@ -501,7 +506,11 @@ function mensagemParaCodigo(codigo: string, tetoDaCompra: number): string {
     return "Escolha ao menos um ingresso para reservar.";
   }
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return "Sua sessão expirou. Entre de novo para reservar.";
+    // ⚠️ **Com o caminho de volta desde 13/08/2026.** A frase seca que ficava
+    // aqui era um beco sem saída: `401`, "sua sessão expirou", tenta de novo,
+    // `401` outra vez — e nenhum link para o login em lugar nenhum da tela. O
+    // motivo inteiro e o porquê do `target="_blank"` estão no `SessaoExpirada`.
+    return <SessaoExpirada voltar={`/eventos/${eventoId}`} acao="reservar" />;
   }
   return MENSAGEM_GENERICA;
 }

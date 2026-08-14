@@ -28,10 +28,14 @@
   color: var(--neon);
 }
 
+/* Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
+   `.aviso` do `(site)/page.module.css` — e o filete daqui é o mesmo da `.recusa`
+   logo abaixo, que foi de onde a régua saiu. */
 .aviso {
   max-width: 52ch;
-  margin-top: 28px;
-  padding: 0 12px;
+  margin: 28px 12px 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
   font: 21px/1.5 var(--serif);
 }
 

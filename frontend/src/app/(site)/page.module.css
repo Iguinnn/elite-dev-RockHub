@@ -438,7 +438,24 @@
 }
 
 /* A frase de indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+/* ⚠️ **O filete `--brasa` entrou em 13/08/2026, e é o que separa falha de
+   ausência** (decisão do Igor, depois da varredura de superfícies de erro).
+   Até aqui `.aviso` e `.vazio` eram tipograficamente idênticos — serifada 21px
+   na cor do corpo —, e a distinção existia só no nome da classe. Em quatro telas
+   (`/ingressos`, `/organizador/eventos`, `/portaria`, `/organizador/publicar`) a
+   mesma classe servia às duas coisas, e "não foi possível carregar" ficava
+   indistinguível de "você ainda não comprou nada". Uma pede esperar; a outra não
+   pede nada.
+
+   **A tinta não é nova**: é o mesmo filete de 2px em `--brasa` das faixas de
+   `/reservas/{id}` (`.recusa`). O produto passa a ter uma marca só para "algo
+   falhou", e a ausência de marca passa a significar "nada quebrou".
+
+   Este comentário é a fonte; os outros nove `page.module.css` apontam para
+   ele. */
 .aviso {
+  border-left: 2px solid var(--brasa);
+  padding-left: 14px;
   max-width: 52ch;
   margin-top: 28px;
   padding: 0 12px;

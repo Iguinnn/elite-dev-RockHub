@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
-import AvisoDeErro from "@/components/AvisoDeErro";
 import Botao from "@/components/Botao";
+import SessaoExpirada from "@/components/SessaoExpirada";
+import Toast from "@/components/Toast";
 import Veredito from "@/components/Veredito";
 import { ErroDaApi } from "@/lib/api";
 import {
@@ -155,7 +156,7 @@ export default function Leitor({
       // `instanceof` antes de ler `.codigo`: erro de rede não tem código.
       setErro(
         erroCapturado instanceof ErroDaApi
-          ? mensagemParaCodigo(erroCapturado.codigo)
+          ? mensagemParaCodigo(erroCapturado.codigo, eventoId)
           : MENSAGEM_GENERICA,
       );
     } finally {
@@ -469,7 +470,18 @@ export default function Leitor({
         </Botao>
       </form>
 
-      <AvisoDeErro mensagem={erro} />
+      {/* ⚠️ **Toast, e não mais a faixa `AvisoDeErro`** (13/08/2026, decisão do
+          Igor depois da varredura de superfícies de erro). Pela régua nova — a
+          tela rola → toast —, esta é a que mais rola: quadro da câmera, campo,
+          botão, veredito e o contador do turno, num celular em pé. A faixa
+          ficava no fim de tudo isso, e a recusa de atendimento (`401`, porta
+          ainda fechada, sem escala) podia nascer fora da vista de quem está de
+          pé na porta com a fila esperando.
+
+          ⚠️ **Isto não mexe no `Veredito`**, que continua onde estava: ele não é
+          erro, é o resultado da leitura — os quatro desfechos chegam em HTTP
+          200. O que virou toast é só o que impede a validação de acontecer. */}
+      <Toast mensagem={erro} aoFechar={() => setErro(null)} />
     </div>
   );
 }
@@ -544,7 +556,7 @@ const MENSAGEM_GENERICA =
  * tarde tem um leitor que a API não atende mais — "tente de novo em instantes"
  * seria verdade só daqui a horas.
  */
-function mensagemParaCodigo(codigo: string): string {
+function mensagemParaCodigo(codigo: string, eventoId: string): React.ReactNode {
   if (codigo === "SEM_ESCALA_NO_EVENTO") {
     return "Você não está escalado para este evento. Volte aos seus turnos.";
   }
@@ -552,7 +564,13 @@ function mensagemParaCodigo(codigo: string): string {
     return "A porta deste evento ainda não abriu. Recarregue a página quando estiver na hora.";
   }
   if (codigo === "NAO_AUTENTICADO" || codigo === "SEM_PERMISSAO") {
-    return "Sua sessão expirou. Entre de novo para continuar.";
+    // ⚠️ **Com o caminho de volta desde 13/08/2026**, e este é o pior lugar do
+    // produto para não ter um: quem lê a mensagem está de pé na porta, com uma
+    // fila na frente, e a alternativa era achar o login sozinho. O
+    // `target="_blank"` mantém o turno aberto nesta aba.
+    return (
+      <SessaoExpirada voltar={`/portaria/eventos/${eventoId}`} acao="continuar" />
+    );
   }
   return MENSAGEM_GENERICA;
 }

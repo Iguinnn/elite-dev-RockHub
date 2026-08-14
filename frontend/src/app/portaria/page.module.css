@@ -1,8 +1,9 @@
 /* A lista de turnos (Story 5.1).
 
    ┌──────────────────────────────────────────┐
-   │ Turnos                          PORTARIA │  ← título e kicker, com fio
-   │ ─────────────────────────────────────────│
+   │ Turnos                          PORTARIA │  ← título e kicker, sem fio
+   │                                          │
+   │ ─────────────────────────────────────────│  ← o fio é o da lista
    │ SEX                                      │
    │  15   Sepultura                    21h00 │  ← o bloco inteiro é o alvo
    │ AGO   ESPAÇO UNIMED · SÃO PAULO          │
@@ -26,16 +27,26 @@
   padding: 40px 0 96px;
 }
 
-/* Mesma anatomia do título de "Meus eventos" e "Meus ingressos": serifada
-   grande, kicker do outro lado, fio embaixo. Repetido em vez de importado
-   porque CSS Module não compartilha classe entre arquivos. */
+/* Anatomia do título de "Meus eventos" e "Meus ingressos": serifada grande,
+   kicker do outro lado. Repetido em vez de importado porque CSS Module não
+   compartilha classe entre arquivos.
+
+   ⚠️ **Sem fio embaixo, e aqui ele diverge das outras duas telas** (decisão do
+   Igor, 13/08/2026). O fio estava lá — é o que a anatomia pedia —, e o que a tela
+   montada mostrou é que ele nunca esteve sozinho: a `.lista` logo abaixo abre com
+   `border-top`, então eram **dois filetes paralelos a 22px um do outro**, sem
+   nada entre eles. Dois fios assim não separam duas coisas; leem como sobra de
+   grade. O que fecha o título passa a ser o intervalo, e quem abre a lista é o
+   fio dela — que é o mesmo fio que separa um turno do seguinte.
+
+   É a mesma correção que a capa do `(site)` já tinha feito, pelo mesmo motivo
+   escrito lá: "dois fios quase paralelos, sem nada entre eles, leem como sobra
+   de grade e não como separação". */
 .secTitulo {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 11px;
-  border-bottom: 1px solid var(--fio);
 }
 
 .secTitulo h1 {
@@ -44,14 +55,30 @@
 }
 
 /* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+/* Filete `--brasa` = falha; sem filete = ausência (13/08/2026). Esta classe
+   servia às duas coisas. A régua inteira está no `.aviso` do
+   `(site)/page.module.css`. */
 .aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* "Você não foi escalado para nenhum evento" não é falha: é o turno de quem não
+   tem turno. Frase, fim, sem marca. */
+.vazio {
   max-width: 52ch;
   margin-top: 28px;
   font: 21px/1.5 var(--serif);
 }
 
+/* 30px e não os 22px de antes: o intervalo virou o único separador entre o
+   título e a lista, e ele herdou os 11px que o `padding` do fio removido
+   ocupava. Intervalo que substitui fio precisa ser do tamanho do que substituiu. */
 .lista {
-  margin-top: 22px;
+  margin-top: 30px;
   border-top: 1px solid var(--fio);
 }
 

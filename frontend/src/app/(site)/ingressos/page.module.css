@@ -23,8 +23,24 @@
   letter-spacing: -0.02em;
 }
 
-/* Estado vazio e estado indisponível (EXPERIENCE.md#Vazio): frase, fim. */
+/* ⚠️ **Eram a mesma classe até 13/08/2026** — o comentário aqui dizia, com todas
+   as letras, "estado vazio e estado indisponível". As duas frases saíam iguais, e
+   "não foi possível carregar seus ingressos" ficava indistinguível de "você ainda
+   não comprou nenhum ingresso": uma pede esperar, a outra não pede nada.
+
+   Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
+   `.aviso` do `(site)/page.module.css`. */
 .aviso {
+  max-width: 52ch;
+  margin-top: 28px;
+  padding-left: 14px;
+  border-left: 2px solid var(--brasa);
+  font: 21px/1.5 var(--serif);
+}
+
+/* Estado vazio (EXPERIENCE.md#Vazio): frase, fim. Sem ilustração, sem botão
+   grande e — desde 13/08/2026 — sem a marca de falha. */
+.vazio {
   max-width: 52ch;
   margin-top: 28px;
   font: 21px/1.5 var(--serif);
