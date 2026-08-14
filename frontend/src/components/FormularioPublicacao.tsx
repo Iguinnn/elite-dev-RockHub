@@ -554,9 +554,15 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         </div>
 
         <div>
-          <div className={`kicker ${estilos.tituloSetores}`}>Setores</div>
+          {/* ⚠️ **O kicker `SETORES` saiu em 13/08/2026** (decisão do Igor). Ele
+              era um título de grupo em cima de uma faixa que já começa com a
+              palavra `SETOR` — dois rótulos dizendo a mesma coisa, um sobre o
+              outro. E era ele que empurrava a coluna inteira uma linha para
+              baixo: sem ele, a faixa de kickers nasce na mesma altura dos
+              rótulos `DATA` e `HORÁRIO` da coluna ao lado, e as duas metades do
+              passo 2 passam a começar juntas.
 
-          {/* Faixa de kickers: decoração que ajuda quem enxerga. Quem serve a
+              Faixa de kickers: decoração que ajuda quem enxerga. Quem serve a
               quem não enxerga é o `<label>` de cada entrada, logo abaixo —
               visualmente oculto, nunca `display:none`. UX-DR9 pede rótulo
               associado, não rótulo visível, e `placeholder` não conta. */}
@@ -663,9 +669,19 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           `page.tsx`, porque precisa sumir junto com o formulário quando a
           confirmação toma o lugar dele. */}
       <div className={estilos.passo3}>
+        {/* ⚠️ **O kicker `OBRIGATÓRIO` saiu em 13/08/2026** (decisão do Igor). A
+            frase logo abaixo — "só quem for escalado aqui poderá validar
+            ingressos deste evento" — já diz por que o passo existe, e a recusa
+            do envio diz o resto quando ninguém é escalado. Uma etiqueta na ponta
+            do título repetia isso numa palavra e cobrava antes de a pessoa ter
+            feito nada.
+
+            O `.secTituloPasso3` continua sendo um flex de duas pontas, e não
+            virou um `<h3>` solto: ele é a mesma anatomia dos títulos dos passos 1
+            e 2 da página, e a diferença entre eles passaria a ser estrutural em
+            vez de só o conteúdo. */}
         <div className={estilos.secTituloPasso3}>
           <h3>3 · Escale a portaria</h3>
-          <span className="kicker">Obrigatório</span>
         </div>
 
         {/* Texto do protótipo, palavra por palavra: é ele que explica o que a

@@ -42,7 +42,14 @@ from enum import Enum
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 
 # ⚠️ **Um schema importando do outro, e a seta aponta só para este lado.**
 # `schemas/ingresso.py` não conhece este módulo, e não pode passar a conhecer:
@@ -74,8 +81,30 @@ def _limpar_opcional(valor: object) -> object:
     return valor
 
 
+def _exigir_fuso(valor: datetime) -> datetime:
+    """AD-11: um horário sem fuso é um horário sem significado.
+
+    **Virou função de módulo quando a edição de evento entrou** (13/08/2026).
+    Antes ela era um `field_validator` dentro do `EventoEntrada`, e só ele
+    recebia `data_hora` do organizador. Agora são dois schemas com a **mesma**
+    recusa, e duas cópias da mesma frase divergem no dia em que uma delas
+    melhorar — a de publicar ganharia o exemplo novo e a de editar continuaria
+    com o antigo, sem ninguém notar.
+    """
+    if valor.tzinfo is None:
+        raise ValueError(
+            "informe a data com fuso horário (ISO-8601 com offset, ex.: "
+            "2026-08-15T00:00:00Z)"
+        )
+    return valor
+
+
 TextoLimpo = Annotated[str, BeforeValidator(_limpar_texto)]
 TextoLimpoOpcional = Annotated[str | None, BeforeValidator(_limpar_opcional)]
+# `AfterValidator` e não `BeforeValidator` como os dois acima: aqui o valor só
+# faz sentido depois de o Pydantic já ter transformado a string ISO-8601 num
+# `datetime` — é o `tzinfo` do objeto pronto que se confere, não o texto cru.
+DataComFuso = Annotated[datetime, AfterValidator(_exigir_fuso)]
 
 # Maior valor que cabe num `Integer` do Postgres (int4), que é o tipo da coluna
 # `setor.capacidade`. O schema recusa antes de o banco estourar — ver o comentário
@@ -119,7 +148,7 @@ class EventoEntrada(BaseModel):
     # schema recusa antes de o Postgres truncar ou estourar.
     nome: TextoLimpo = Field(min_length=1, max_length=200)
     imagem_url: TextoLimpoOpcional = Field(default=None, max_length=500)
-    data_hora: datetime
+    data_hora: DataComFuso
     # Preenchidos pelo organizador, sugeridos pelo catálogo: a mesma atração
     # vira várias datas em casas diferentes, e quem sabe onde o show dele
     # acontece é ele, não a Ticketmaster.
@@ -145,16 +174,6 @@ class EventoEntrada(BaseModel):
     # para uma conta de portaria.
     portaria_ids: list[UUID] = Field(default_factory=list, max_length=20)
 
-    @field_validator("data_hora")
-    @classmethod
-    def _exigir_fuso(cls, valor: datetime) -> datetime:
-        if valor.tzinfo is None:
-            raise ValueError(
-                "informe a data com fuso horário (ISO-8601 com offset, ex.: "
-                "2026-08-15T00:00:00Z)"
-            )
-        return valor
-
     @field_validator("imagem_url")
     @classmethod
     def _exigir_esquema_http(cls, valor: str | None) -> str | None:
@@ -170,6 +189,57 @@ class EventoEntrada(BaseModel):
         if valor is not None and not valor.startswith(("http://", "https://")):
             raise ValueError("a imagem precisa ser uma URL http:// ou https://")
         return valor
+
+
+class SetorEdicao(BaseModel):
+    """Um setor no corpo do `PUT` — o mesmo do `SetorEntrada`, mais um `id`.
+
+    **`id` ausente é setor novo; `id` presente é alteração daquele setor; setor
+    que não aparece na lista é remoção.** As três operações cabem num campo só
+    porque o `PUT` manda a lista inteira: é o estado final que chega, e a
+    diferença contra o que está no banco é o que o service executa.
+
+    ⚠️ **Casar por `id`, e não por nome.** O `uq_setor_evento_id_nome` permitiria
+    o nome como chave, e seria mais curto de escrever — mas renomear "Pista" para
+    "Pista Premium" viraria *remover um setor e criar outro*, que é justamente a
+    operação que o `SETOR_COM_HISTORICO` recusa. O organizador levaria um erro por
+    ter corrigido uma palavra.
+    """
+
+    id: UUID | None = None
+    nome: TextoLimpo = Field(min_length=1, max_length=80)
+    capacidade: int = Field(ge=1, le=_MAXIMO_INT4)
+    preco_centavos: int = Field(ge=0, le=_MAXIMO_PRECO_CENTAVOS)
+
+
+class EventoEdicao(BaseModel):
+    """O corpo do `PUT /organizador/eventos/{id}` — o que dá para editar.
+
+    **Três campos, e os cinco do catálogo ficam de fora de propósito.** Desde
+    13/08/2026 o formulário de publicar manda `origem_externa_id`, `nome`,
+    `imagem_url`, `local` e `cidade` escondidos, copiados do catálogo (AD-1) — o
+    organizador não digita nenhum deles. Aceitá-los aqui faria a tela de editar
+    ficar **mais poderosa que a de publicar**, e o evento poderia virar outro show
+    sem trocar de `origem_externa_id`.
+
+    **Schema próprio, e não `EventoEntrada` com campos opcionais.** O mesmo schema
+    significando duas coisas diferentes é como uma rota passa a aceitar corpo que
+    ela não deveria aceitar — e aqui o corpo que ela não deveria aceitar é
+    exatamente o que troca o nome do show. Sem `extra="forbid"` pelo mesmo motivo
+    de sempre (ver o topo deste módulo): campo desconhecido **ignorado** é
+    garantia mais forte que campo desconhecido recusado. Mandar `"nome"` no corpo
+    do `PUT` não é `422` — é como se ele não existisse, que é a verdade.
+
+    `setores` e `portaria_ids` chegam com `default_factory=list` e sem
+    `min_length`, como no `EventoEntrada` e pelos mesmos dois motivos: ausência e
+    lista vazia são a mesma intenção, e quem recusa é o service, com
+    `EVENTO_SEM_SETOR` e `EVENTO_SEM_PORTARIA` em vez de um `DADOS_INVALIDOS` que
+    não diz o que faltou.
+    """
+
+    data_hora: DataComFuso
+    setores: list[SetorEdicao] = Field(default_factory=list, max_length=20)
+    portaria_ids: list[UUID] = Field(default_factory=list, max_length=20)
 
 
 class SetorSaida(BaseModel):

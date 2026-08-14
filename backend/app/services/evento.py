@@ -58,9 +58,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor, evento_portaria
+from app.models.ingresso import Ingresso
+from app.models.reserva import ItemReserva
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.evento import (
     DisponibilidadeDoSetor,
+    EventoEdicao,
     EventoEmDestaque,
     EventoEntrada,
     EventoNaProgramacao,
@@ -279,6 +282,327 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
     sessao.commit()
     sessao.refresh(evento)
     return evento
+
+
+def atualizar(
+    sessao: Session,
+    organizador: Usuario,
+    evento_id: UUID,
+    dados: EventoEdicao,
+) -> Evento:
+    """Reescreve data, setores e escala de um evento que **ainda não vendeu**.
+
+    A segunda rota de escrita do organizador, e a primeira que altera linha
+    existente. Ela reabre um corte que o README declarava como consciente
+    (13/08/2026); a spec inteira é `docs/techspec-editar-evento.md`.
+
+    **A trava é `vendidos == 0` em todos os setores, depois de colher as
+    vencidas.** *Descartei* travar só com reserva `PAGA`: o preço já vai
+    congelado na reserva, então não haveria prejuízo contábil — mas alguém
+    digitando o cartão veria o preço mudar na tela no meio da compra. E
+    *descartei* checar sem colher antes: como a expiração é preguiçosa (AD-4),
+    um checkout abandonado seguraria a edição por até dez minutos, e a tela
+    diria "esse evento já vendeu" sobre um evento que não vendeu nada — mentira
+    temporária que o organizador não tem como distinguir da verdadeira.
+
+    ⚠️ **`vendidos` é lido para dentro do Python aqui, e o AD-3 proíbe isso.** A
+    exceção é o `FOR UPDATE` do passo 2: as linhas estão **travadas** até o
+    `commit`, e é isso — e só isso — que torna a leitura confiável. Fora de um
+    bloqueio explícito, este `SELECT` seria exatamente o antipadrão que o
+    `services/reserva.py` recusa no docstring dele.
+    """
+    # Lido **uma vez**, e usado nas duas comparações de tempo — a do show que já
+    # aconteceu e a da data nova. Mesma disciplina do `criar()` da reserva: duas
+    # leituras do relógio na mesma requisição podem discordar sobre o evento que
+    # começa agora.
+    agora = datetime.now(timezone.utc)
+
+    # Passo 1 — o mesmo `404` da leitura, **pela mesma função**. Byte a byte o
+    # mesmo corpo para "não existe" e "não é seu": escrever aqui um segundo
+    # `select` com as duas condições criaria um segundo lugar para a regra do
+    # oráculo morar, e o segundo é o que alguém esquece na próxima rota.
+    evento = obter_do_organizador(sessao, organizador, evento_id)
+
+    # Show que já aconteceu não se edita, e a recusa vem **antes do bloqueio**:
+    # nenhum corpo conserta essa chamada, então travar as linhas de `setor` para
+    # descobrir isso seria segurar o estoque do evento à toa. O código é o mesmo
+    # `EVENTO_NO_PASSADO` da data nova — para quem edita, "a data que está lá
+    # passou" e "a data que você mandou passou" são o mesmo impedimento.
+    if evento.data_hora <= agora:
+        raise ErroDeDominio(
+            "EVENTO_NO_PASSADO",
+            "Esse show já aconteceu e não pode mais ser editado.",
+            status_http=422,
+        )
+
+    # Passo 2 — **isto não é otimização, é a correção.** Sem o bloqueio, entre
+    # ler `vendidos == 0` e gravar cabe uma reserva inteira: o `UPDATE`
+    # condicional do AD-3 é um statement só, e ele passa no vão. O resultado
+    # seria uma reserva paga apontando para um setor que acabou de mudar de
+    # preço — ou, pior, que acabou de ser apagado.
+    #
+    # `ORDER BY setor.id` segue a disciplina de ordem já escrita no `criar()` e
+    # no `_devolver_estoque`: travar em ordens cruzadas é como se ganha um
+    # `40P01 deadlock detected`, que não é `ErroDeDominio` e vira `500`.
+    #
+    # ⚠️ `populate_existing` não é enfeite: os mesmos objetos já vieram no
+    # `selectinload` do passo 1, e sem ele o SQLAlchemy devolveria as instâncias
+    # do identity map **com os valores de antes do bloqueio**. Travar a linha e
+    # continuar lendo o passado é ter o custo do `FOR UPDATE` sem a garantia.
+    setores_atuais = list(
+        sessao.scalars(
+            select(Setor)
+            .where(Setor.evento_id == evento.id)
+            .order_by(Setor.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    ids_atuais = [setor.id for setor in setores_atuais]
+
+    # Passo 3 — a colheita do AD-4, **na mesma transação**, entre o bloqueio e a
+    # leitura do estoque.
+    #
+    # ⚠️ **Import dentro da função, e não no topo do módulo.** `services/reserva`
+    # importa `MAXIMO_POR_COMPRA` daqui (linha 91 de lá, decisão registrada na
+    # Story 3.4), então um import de módulo na direção contrária é ciclo na hora
+    # de carregar o app. O que se move não é a direção da seta: é o momento do
+    # import.
+    from app.services.reserva import expirar_vencidas
+
+    expirar_vencidas(sessao, ids_atuais)
+
+    # Passo 4 — relê **do banco**, e não dos objetos. A colheita acima escreve
+    # `vendidos` por `UPDATE ... synchronize_session=False`, que de propósito
+    # deixa o atributo em Python desatualizado (AD-3). Decidir a trava pelo
+    # atributo seria decidir pelo valor de antes da colheita — o setor cuja
+    # reserva acabou de expirar continuaria "vendido" e a edição seria recusada.
+    #
+    # Um `select` de colunas, e não de entidades: ele não passa pelo identity
+    # map, então não há como um objeto carregado responder no lugar do banco.
+    vendidos_por_setor = sessao.execute(
+        select(Setor.id, Setor.vendidos).where(Setor.id.in_(ids_atuais))
+    ).all()
+
+    if any(vendidos > 0 for _, vendidos in vendidos_por_setor):
+        raise ErroDeDominio(
+            "EVENTO_COM_VENDA",
+            "Este evento já vendeu ingressos e não pode mais ser editado.",
+            status_http=409,
+        )
+
+    # ── Passo 5: as cinco recusas do `publicar`, na mesma ordem e com as mesmas
+    # frases. **Cópia, e não função comum**, pela convenção escrita no
+    # `_limpar_texto` de `schemas/evento.py`: duas ocorrências se copiam, e é a
+    # terceira que vira código compartilhado.
+    #
+    # ⚠️ Frase que mudar aqui muda lá também. O organizador não pode receber duas
+    # explicações diferentes para a mesma recusa dependendo de estar publicando
+    # ou editando — é o mesmo formulário, com um botão diferente.
+    if not dados.setores:
+        raise ErroDeDominio(
+            "EVENTO_SEM_SETOR",
+            "Um evento precisa de ao menos um setor à venda.",
+            status_http=422,
+        )
+
+    vistos: set[str] = set()
+    for setor_pedido in dados.setores:
+        chave = setor_pedido.nome.casefold()
+        if chave in vistos:
+            raise ErroDeDominio(
+                "SETOR_DUPLICADO",
+                f'Há mais de um setor chamado "{setor_pedido.nome}". '
+                "Cada setor precisa de um nome diferente.",
+                status_http=422,
+            )
+        vistos.add(chave)
+
+    if not dados.portaria_ids:
+        raise ErroDeDominio(
+            "EVENTO_SEM_PORTARIA",
+            "Escale ao menos um usuário de portaria para validar os ingressos "
+            "deste evento.",
+            status_http=422,
+        )
+
+    ids_pedidos = list(dict.fromkeys(dados.portaria_ids))
+
+    escalados = list(
+        sessao.scalars(
+            select(Usuario).where(
+                Usuario.id.in_(ids_pedidos),
+                Usuario.papel == PapelUsuario.PORTARIA.value,
+            )
+        )
+    )
+
+    if len(escalados) != len(ids_pedidos):
+        raise ErroDeDominio(
+            "PORTARIA_INVALIDA",
+            "Alguma das contas escaladas não existe ou não é de portaria.",
+            status_http=422,
+        )
+
+    if dados.data_hora <= agora:
+        raise ErroDeDominio(
+            "EVENTO_NO_PASSADO",
+            "A data do show já passou. Confira o dia e o horário.",
+            status_http=422,
+        )
+
+    # ── Passo 6: `id` que não é deste evento.
+    atuais_por_id = {setor.id: setor for setor in setores_atuais}
+    editados: set[UUID] = set()
+
+    for setor_pedido in dados.setores:
+        if setor_pedido.id is None:
+            continue
+        if setor_pedido.id not in atuais_por_id:
+            # Um código e uma mensagem para os dois casos — id que não é setor
+            # nenhum, e setor que é de outro evento. Mesma disciplina do
+            # `SETOR_INVALIDO` da reserva: distinguir transformaria a rota num
+            # oráculo sobre os setores alheios.
+            raise ErroDeDominio(
+                "SETOR_DESCONHECIDO",
+                "Algum dos setores enviados não é deste evento.",
+                status_http=422,
+            )
+        # ⚠️ **O mesmo `id` duas vezes não é recusado por nada acima**, e o
+        # estrago é silencioso: dois nomes diferentes para o mesmo setor passam
+        # pelo `SETOR_DUPLICADO`, a segunda entrada sobrescreve a primeira e o
+        # setor que ficou de fora da lista é **removido**. O organizador mandou
+        # dois setores e recebeu um, sem erro nenhum. Reusa o `SETOR_DUPLICADO`
+        # porque é a mesma frase de tela — "tem coisa repetida no formulário".
+        if setor_pedido.id in editados:
+            raise ErroDeDominio(
+                "SETOR_DUPLICADO",
+                "O mesmo setor foi enviado mais de uma vez.",
+                status_http=422,
+            )
+        editados.add(setor_pedido.id)
+
+    # ── Passo 7: o que sumiu da lista, e a armadilha central desta feature.
+    removidos = [setor for setor in setores_atuais if setor.id not in editados]
+
+    if removidos:
+        ids_removidos = [setor.id for setor in removidos]
+        # ⚠️ **`item_reserva.setor_id` e `ingresso.setor_id` são FK sem
+        # `ondelete`**, e a linha de uma reserva `EXPIRADA` ou `RECUSADA` fica lá
+        # para sempre. Essa reserva **passa** na trava do passo 4, porque não é
+        # venda — e o `DELETE` do setor estouraria `IntegrityError` no `commit`,
+        # que sobe ao handler genérico e vira `500 ERRO_INTERNO`. É a mesma "pior
+        # resposta possível" que o `SETOR_DUPLICADO` existe para evitar.
+        #
+        # *Descartei* apagar as reservas mortas junto: destruir histórico que
+        # ninguém pediu para destruir, só para poupar uma mensagem. E *descartei*
+        # proibir remoção de qualquer setor: mataria o caso legítimo mais comum,
+        # que é ter criado "Camarote" por engano e ninguém ter encostado nele.
+        com_historico = set(
+            sessao.scalars(
+                select(ItemReserva.setor_id).where(
+                    ItemReserva.setor_id.in_(ids_removidos)
+                )
+            )
+        ) | set(
+            sessao.scalars(
+                select(Ingresso.setor_id).where(Ingresso.setor_id.in_(ids_removidos))
+            )
+        )
+
+        # Por nome, e não na ordem de `id`: com dois setores impedidos, a
+        # mensagem precisa ser a mesma em toda tentativa — ordem de UUID é
+        # aleatória fingindo de determinística.
+        for setor in sorted(removidos, key=lambda setor: setor.nome):
+            if setor.id in com_historico:
+                raise ErroDeDominio(
+                    "SETOR_COM_HISTORICO",
+                    f'O setor "{setor.nome}" já teve reservas e não pode ser '
+                    "removido. Dá para alterar o nome, a capacidade e o preço "
+                    "dele.",
+                    status_http=422,
+                )
+
+    # ── Passo 8: aplica, em quatro fases.
+    #
+    # ⚠️ **As fases existem por causa do `uq_setor_evento_id_nome`**, e a spec não
+    # previa isto. A restrição é conferida a cada statement, não no fim da
+    # transação: trocar "Pista" e "Camarote" de nome, ou remover "Pista" e criar
+    # outro setor chamado "Pista", são dois corpos perfeitamente válidos que o
+    # SQLAlchemy executaria numa ordem que viola o índice no meio do caminho —
+    # `IntegrityError` → `500`, na mesma família do que o passo 7 evita. A ordem
+    # padrão do unit of work piora o segundo caso: ele emite os `INSERT` **antes**
+    # dos `DELETE`.
+    #
+    # Fase A — todo setor que muda de nome passa por um nome temporário. Depois
+    # dela, nenhum nome final colide com nenhum nome que ainda esteja no banco.
+    # `~` mais o UUID do próprio setor é único por construção e cabe nos 80
+    # caracteres da coluna; ele não sobrevive à transação.
+    for setor_pedido in dados.setores:
+        if setor_pedido.id is None:
+            continue
+        atual = atuais_por_id[setor_pedido.id]
+        if atual.nome != setor_pedido.nome:
+            atual.nome = f"~{atual.id}"
+    sessao.flush()
+
+    # Fase B — as remoções, pelo `cascade="all, delete-orphan"` do
+    # `relationship`. O que libera o nome de um setor removido para um setor
+    # novo não é a ordem das fases no código: é **o `flush` no fim desta**, que
+    # emite o `DELETE` antes de a fase D sequer criar o objeto. Sem ele os dois
+    # ficam pendentes até o `commit`, e aí quem escolhe a ordem é o unit of work
+    # — que emite `INSERT` primeiro. Conferido desligando o `flush`: o teste
+    # `..._criar_outro_com_o_mesmo_nome_nao_e_500` volta a dar `UniqueViolation`.
+    for setor in removidos:
+        evento.setores.remove(setor)
+    sessao.flush()
+
+    # Fase C — as alterações, já com os nomes definitivos.
+    for setor_pedido in dados.setores:
+        if setor_pedido.id is None:
+            continue
+        atual = atuais_por_id[setor_pedido.id]
+        atual.nome = setor_pedido.nome
+        atual.capacidade = setor_pedido.capacidade
+        atual.preco_centavos = setor_pedido.preco_centavos
+    sessao.flush()
+
+    # Fase D — os setores novos, pelo `relationship`, como o `publicar()` grava.
+    #
+    # ⚠️ `vendidos` **não** é passado, e não pode passar a ser: o
+    # `server_default=text("0")` da Story 2.3 é quem responde por ele. Escrever
+    # `vendidos=0` aqui funcionaria hoje e criaria uma segunda fonte para o mesmo
+    # valor — e, ao contrário do `publicar()`, esta rota roda sobre um evento em
+    # que o número já significa alguma coisa.
+    for setor_pedido in dados.setores:
+        if setor_pedido.id is not None:
+            continue
+        evento.setores.append(
+            Setor(
+                nome=setor_pedido.nome,
+                capacidade=setor_pedido.capacidade,
+                preco_centavos=setor_pedido.preco_centavos,
+            )
+        )
+
+    evento.data_hora = dados.data_hora
+    # A escala inteira, substituída: o `PUT` manda o estado final, e o
+    # SQLAlchemy resolve a diferença em `evento_portaria`. `publicado_em` **não**
+    # se toca — editar não é republicar, e mexer no carimbo faria o evento pular
+    # de lugar em qualquer coisa que um dia ordene por ele.
+    evento.portarias = escalados
+
+    sessao.commit()
+
+    # ⚠️ **Relê do banco, e não devolve os objetos da transação.** Esta é a forma
+    # exata do bug do code review da Epic 3: a colheita do passo 3 escreveu
+    # `vendidos` com `synchronize_session=False`, e com `expire_on_commit=False`
+    # no `SessaoLocal` o `commit` não expira nada — o corpo da resposta sairia com
+    # o `vendidos` de antes da expiração, enquanto o banco tem o certo. O
+    # `expire_all` é o que faz esta resposta e o `GET` seguinte dizerem a mesma
+    # coisa.
+    sessao.expire_all()
+    return obter_do_organizador(sessao, organizador, evento_id)
 
 
 def listar_portarias(sessao: Session) -> list[Usuario]:

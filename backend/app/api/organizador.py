@@ -46,6 +46,7 @@ from app.models.evento import Evento
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.catalogo import ItemDoCatalogo
 from app.schemas.evento import (
+    EventoEdicao,
     EventoEntrada,
     EventoResumo,
     EventoSaida,
@@ -167,3 +168,36 @@ def obter_meu_evento(
     **resolve** para um evento seu.
     """
     return servico_de_evento.obter_do_organizador(sessao, organizador, evento_id)
+
+
+@router.put("/eventos/{evento_id}", response_model=EventoSaida)
+def editar_meu_evento(
+    evento_id: UUID,
+    dados: EventoEdicao,
+    organizador: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR)),
+    sessao: Session = Depends(obter_sessao),
+) -> Evento:
+    """Edita data, setores e escala de um evento que ainda não vendeu.
+
+    **`PUT` com o corpo inteiro, e não `PATCH`.** Com uma lista de filhos,
+    "não mandei" e "removi" viram a mesma coisa no corpo — e a ambiguidade cai
+    justo na operação que pode apagar linha. O `PUT` manda o estado final: o que
+    tem `id` é alteração, o que não tem é setor novo, e o que sumiu da lista é
+    remoção.
+
+    **O corpo é o `EventoEdicao`, e não o `EventoEntrada` da publicação.** Os
+    cinco campos copiados do catálogo (AD-1) não entram: o organizador não digita
+    nenhum deles nem ao publicar, e aceitá-los aqui faria esta tela ficar **mais
+    poderosa que a de publicar** — o evento poderia virar outro show sem trocar
+    de `origem_externa_id`.
+
+    **`EventoSaida` de volta, o mesmo das outras três rotas de evento.** É o
+    mesmo significado — "o evento inteiro, como o organizador o vê" —, e é o que
+    faz o recibo da edição e a tela de detalhe nunca divergirem.
+
+    Sexta rota do arquivo e a segunda de escrita, com service pelo critério do
+    docstring do módulo — aqui existem transação e invariantes, e são as mais
+    pesadas do projeto: um `SELECT ... FOR UPDATE`, a colheita do AD-4 e a trava
+    de `vendidos == 0` acontecem todas antes de a primeira linha mudar.
+    """
+    return servico_de_evento.atualizar(sessao, organizador, evento_id, dados)
