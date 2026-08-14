@@ -1077,8 +1077,25 @@ def test_com_busca_ativa_o_corpo_continua_com_as_sete_chaves(
     Um `WHERE` novo é exatamente o tipo de mudança em que um `setores` aparece
     "só para a próxima story usar" — e o `response_model` é a garantia, não a
     tela.
+
+    ⚠️ **`data_hora` explícita, e é ela que conserta uma flake real** (14/08/2026).
+    O default do `_evento_gravado` é `agora + 30 dias`, e `?periodo=mes` filtra
+    `data_hora < agora + 30 dias` — com o relógio lido de novo, milissegundos
+    depois. **A margem é zero**: este é o único teste do arquivo que combina o
+    default com a janela de 30 dias, e ele passava só porque o relógio costuma
+    andar entre as duas leituras. Com a suíte mais longa ele passou a falhar ~2
+    vezes em 3, e o sintoma não parece tempo nenhum: a lista volta vazia, e a
+    mesma consulta com `?q=` sozinho ou `?periodo=` sozinho devolve o evento.
+
+    Vinte dias mantêm as duas propriedades que o teste precisa — dentro do mês,
+    fora da semana — com dez dias de folga em vez de zero.
     """
-    _evento_gravado(sessao, _organizador(fabricar_usuario), nome="Marina Sena")
+    _evento_gravado(
+        sessao,
+        _organizador(fabricar_usuario),
+        nome="Marina Sena",
+        data_hora=_daqui_a(20),
+    )
     cliente.cookies.clear()
 
     (evento,) = cliente.get(

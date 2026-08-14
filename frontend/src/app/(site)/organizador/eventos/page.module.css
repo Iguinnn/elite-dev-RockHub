@@ -175,24 +175,79 @@
   letter-spacing: -0.02em;
 }
 
+/* As ações do cabeçalho — `Editar` e `Excluir`, ou a frase que toma o lugar de
+   um deles (commit 3 da techspec). Um invólucro só porque agora são dois: sem
+   ele, o `justify-content: space-between` do pai espalharia os dois botões pelas
+   pontas com o título no meio. */
+.acoesDoEvento {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 /* Mesma caixa do `.acrescentar` da tela de publicar: contorno de 1px, mono
    versalete, sem preenchimento. **Não é o `Botao`** — a identidade reserva o
    botão cheio para a ação principal da tela, e a principal aqui é ler o
    inventário, não editar. `padding` vertical suficiente para alvo de toque. */
-.editar {
+.editar,
+.excluir,
+.confirmarExclusao,
+.cancelarExclusao {
   flex-shrink: 0;
   padding: 11px 20px;
+  background: none;
   border: 1px solid var(--fio2);
   color: var(--cal);
   font: 600 12px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.editar:hover {
+.editar:hover,
+.cancelarExclusao:hover {
   border-color: var(--neon);
   color: var(--neon);
+}
+
+/* ⚠️ **Em repouso, o `Excluir` é idêntico ao `Editar` — mesma `--cal`, mesmo
+   `--fio2`** (decisão do Igor, 14/08/2026, com a tela montada). Eu tinha
+   apagado ele em `--fumaca` para não puxar o olho para a operação destrutiva
+   numa tela que se abre para ler inventário; na tela, o resultado foi um botão
+   que parecia **desabilitado** ao lado do irmão aceso — e um botão que parece
+   desligado é pior que um botão que chama atenção, porque quem precisa dele
+   acha que não dá.
+
+   O que separa os dois continua existindo, e mora onde a decisão acontece: o
+   hover em `--brasa` (contra o `--neon` do `Editar`) e, sobretudo, o segundo
+   estágio preenchido de vermelho logo abaixo. */
+.excluir:hover {
+  border-color: var(--brasa);
+  color: var(--brasa);
+}
+
+/* O segundo estágio: os dois botões juntos, para o `Cancelar` nascer onde a mão
+   já está. */
+.confirmacaoDeExclusao {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Aqui, sim, a cor de alerta — e preenchida, não só contornada: é o único
+   elemento desta tela que apaga alguma coisa, e ele precisa não se parecer com
+   os vizinhos. */
+.confirmarExclusao {
+  background: var(--brasa);
+  border-color: var(--brasa);
+  color: var(--breu);
+}
+
+.confirmarExclusao:disabled,
+.cancelarExclusao:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 /* A frase que toma o lugar do botão. Sem filete `--brasa`: nada falhou — é uma
@@ -310,7 +365,11 @@
     text-align: left;
   }
 
-  .editar {
+  /* As ações empilhadas viram uma linha própria, alinhada à esquerda, e as duas
+     quebram para a linha seguinte quando não couberem lado a lado. */
+  .acoesDoEvento {
+    flex-wrap: wrap;
+    align-items: flex-start;
     align-self: flex-start;
   }
 

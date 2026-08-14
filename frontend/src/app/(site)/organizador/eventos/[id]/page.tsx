@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import BotaoDeExclusao from "@/components/BotaoDeExclusao";
 import { obterMeuEvento } from "@/lib/eventos";
 import { centavosParaReais, dataPorExtenso, momentoDaPublicacao } from "@/lib/formato";
 import { casaDoPapel } from "@/lib/papel";
@@ -97,17 +98,44 @@ export default async function DetalheDoEvento({
           sem o fio: aqui o que vem embaixo é a linha do show, não uma fila. */}
       <div className={estilos.cabecalhoDoEvento}>
         <h1 className={estilos.nomeDoEvento}>{evento.nome}</h1>
-        {jaAconteceu || vendeu ? (
-          <p className={estilos.semEdicao}>
-            {jaAconteceu
-              ? "Esse show já aconteceu e não pode mais ser editado."
-              : "Este evento já vendeu ingressos e não pode mais ser editado."}
-          </p>
-        ) : (
-          <Link href={`/organizador/eventos/${evento.id}/editar`} className={estilos.editar}>
-            Editar
-          </Link>
-        )}
+        {/* Três estados, e não há um quarto:
+            · nem vendeu nem aconteceu → `Editar` e `Excluir` lado a lado;
+            · já aconteceu e não vendeu → a frase do editar **e o `Excluir`**;
+            · vendeu → só a frase, agora falando dos dois verbos. */}
+        <div className={estilos.acoesDoEvento}>
+          {vendeu ? (
+            // ⚠️ **Esta frase mudou de texto no commit 3**, e precisava mudar: ela
+            // dizia só "não pode mais ser editado", e agora excluir também está
+            // barrado. Frase de tela que sobrevive ao fato que a justificava
+            // ensina a pessoa a procurar o que não existe — é a mesma armadilha
+            // que o commit 2 já corrigiu uma vez na frase da portaria.
+            <p className={estilos.semEdicao}>
+              Este evento já vendeu ingressos e não pode mais ser editado nem
+              excluído.
+            </p>
+          ) : (
+            <>
+              {jaAconteceu ? (
+                <p className={estilos.semEdicao}>
+                  Esse show já aconteceu e não pode mais ser editado.
+                </p>
+              ) : (
+                <Link
+                  href={`/organizador/eventos/${evento.id}/editar`}
+                  className={estilos.editar}
+                >
+                  Editar
+                </Link>
+              )}
+              {/* **Excluir sobrevive ao show que já aconteceu, e editar não** —
+                  é a assimetria decidida na spec, vista da tela. Editar a data
+                  de um show passado o faria reaparecer na programação pública;
+                  excluí-lo não faz nada reaparecer, e é justamente o caso em que
+                  a exclusão é faxina. */}
+              <BotaoDeExclusao eventoId={evento.id} nome={evento.nome} />
+            </>
+          )}
+        </div>
       </div>
       <p className={estilos.linhaDoShow}>
         {dataPorExtenso(evento.data_hora)} · {origem}

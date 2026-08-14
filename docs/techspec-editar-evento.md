@@ -1,17 +1,19 @@
-# Techspec — editar evento que ainda não vendeu
+# Techspec — editar e excluir evento que ainda não vendeu
 
-**Data:** 2026-08-13 · **Cobre:** dois commits `feat` **fora da numeração das stories**
-**Formato:** ver `CLAUDE.md`, seção *Techspec no lugar de story*.
+**Data:** 2026-08-13, com o commit 3 acrescentado em 2026-08-14 · **Cobre:** três commits `feat`
+**fora da numeração das stories** · **Formato:** ver `CLAUDE.md`, seção *Techspec no lugar de story*.
 
 As Epics 1 a 5 estão fechadas e só a 6 (documentação) sobra, então isto não é story de epic
 nenhuma — é o mesmo precedente do filtro de classificação do catálogo, que entrou como `feat`
 avulso com spec própria. O `sprint-status.yaml` ganha duas linhas de comentário na Epic 2, que é
 onde o assunto mora, e nenhuma linha de status nova.
 
-Os dois commits viram um documento só porque a invariante é **a mesma dos dois lados**: o backend
-recusa editar evento que vendeu, e o frontend decide se mostra o botão pela mesma leitura de
+Os commits viram um documento só porque a invariante é **a mesma dos três lados**: o backend recusa
+editar e excluir evento que vendeu, e o frontend decide se mostra cada botão pela mesma leitura de
 estoque. Especificar separado deixaria a fronteira — quem responde "não dá", e com que palavra —
-caindo no vão entre os dois arquivos.
+caindo no vão entre os arquivos. **O commit 3 (excluir) entrou depois**, em 14/08/2026, e veio para
+cá em vez de virar spec nova exatamente por isso: ele reusa a trava, o bloqueio e a colheita da rota
+de editar, e a decisão dele mais pesada é uma **reversão** de uma decisão escrita na seção 3.
 
 ⚠️ **Isto reabre um corte que o README declara como consciente** (`README.md#o-que-não-está-pronto`,
 linha do *Editar evento ou trocar a escala depois de publicar*). A troca é escolha minha, tomada em
@@ -22,11 +24,11 @@ continuar declarado como tal.
 
 ## 1 · Escopo e commits
 
-Dois commits, na ordem numerada. Cada um passa na suíte sozinho.
+Três commits, na ordem numerada. Cada um passa na suíte sozinho.
 
 🛑 **Um commit por vez, e pare.** Terminado um commit, rode a suíte inteira, mostre o resultado e
 **avise que está pronto para eu commitar** — sem escrever README, sem tocar no seguinte. Só emende o
-próximo depois de eu mandar. Esta spec cobrir dois commits **não** autoriza implementá-los de uma
+próximo depois de eu mandar. Esta spec cobrir três commits **não** autoriza implementá-los de uma
 vez: o histórico do git é parte da avaliação, e o commit por story é a única coisa que a spec
 agrupada não pode custar.
 
@@ -34,6 +36,12 @@ agrupada não pode custar.
 |---|---|
 | 1 | `PUT /organizador/eventos/{id}`, o schema `EventoEdicao`, `atualizar()` em `services/evento.py` e os testes em `test_organizador_eventos.py` |
 | 2 | A tela `/organizador/eventos/{id}/editar`, o botão no detalhe, `atualizarMeuEvento` em `lib/eventos.ts` e a linha removida do README |
+| 3 | `DELETE /organizador/eventos/{id}`, `excluir()` em `services/evento.py`, o `BotaoDeExclusao` no detalhe e os testes das duas pontas — **backend e frontend no mesmo commit** |
+
+**O commit 3 junta as duas metades de propósito**, e é a única exceção ao formato dos dois de cima.
+Ele é uma rota sem schema de entrada, uma função de service e um botão: partir isso em dois deixaria
+o commit do backend entregando uma rota que nenhuma tela chama, e o da tela entregando trinta linhas.
+Os critérios de pronto dele cobrem `pytest`, `npm run build` e `tsc --noEmit` juntos.
 
 ## 2 · O que existe hoje
 
@@ -60,6 +68,22 @@ No frontend: `obterMeuEvento`, a tela de detalhe (128 linhas, Server Component),
 
 O que **não** existe: nenhuma rota de escrita além do `POST`, nenhuma tela que edite coisa alguma, e
 nenhum `ondelete` nas FKs `item_reserva.setor_id` e `ingresso.setor_id`.
+
+**Para o commit 3, o que os commits 1 e 2 já deixaram pronto:** `atualizar()`
+(`services/evento.py:292`) com o `SELECT ... FOR UPDATE` ordenado por `setor.id`, a chamada de
+`expirar_vencidas` na mesma transação e a releitura de `vendidos` **por colunas**, fora do identity
+map. A rota de excluir reusa esses quatro passos inteiros — mesma ordem, mesmos motivos. No
+frontend, o `cabecalhoDoEvento` do detalhe já tem a anatomia "título de um lado, ação do outro" e a
+frase que substitui o botão quando não dá, e o `chamarApi` (`lib/api.ts:40`) **já trata `204`**,
+devolvendo `undefined` em vez de tentar ler um corpo que não existe.
+
+**E o mapa de chaves estrangeiras que apontam para `evento`**, que é o que decide a rota inteira:
+`setor.evento_id` (`models/evento.py:185`) e `evento_portaria.evento_id` (`models/evento.py:74`) têm
+`ondelete="CASCADE"` e somem sozinhas. `reserva.evento_id` (`models/reserva.py:110`),
+`ingresso.evento_id` (`models/ingresso.py:62`) e `validacao.evento_id` (`models/validacao.py:81`)
+**não têm `ondelete` nenhum**: qualquer linha dessas em pé transforma o `DELETE` em `IntegrityError`
+no `commit`, que vira `500 ERRO_INTERNO`. `item_reserva` é o caso feliz — o `reserva_id` dele tem
+`ondelete="CASCADE"` (`models/reserva.py:197`), então ele cai junto com a reserva.
 
 ## 3 · Decisões, e o que descartei
 
@@ -114,6 +138,46 @@ só para dizer não, que é um clique desperdiçado.
 `EVENTO_NO_PASSADO` do `publicar` vale nas duas pontas. *Descartei* deixar editar o passado: seria
 consertar a data de um show que já foi, e o único efeito seria ele reaparecer na programação pública.
 
+### As decisões do commit 3 — excluir
+
+**Excluir apaga o rastro morto junto com o evento, e isto reverte o que está escrito três parágrafos
+acima.** Lá eu descartei "apagar as reservas mortas junto" para não destruir histórico que ninguém
+pediu para destruir — e mantenho aquilo para a edição, porque lá o evento continua existindo e o
+histórico continua tendo dono. Aqui o dono vai embora inteiro: uma reserva `EXPIRADA` de um evento
+que não existe mais não é histórico, é linha órfã apontando para um nome que ninguém consegue ler.
+*Descartei* recusar com um `EVENTO_COM_HISTORICO` simétrico ao do setor: seria beco sem saída — um
+checkout abandonado uma vez travaria a exclusão para sempre, e ao contrário do setor, que dava para
+renomear em vez de remover, o organizador não teria saída nenhuma. *Descartei também* o soft delete
+com uma coluna `removido_em`: preserva tudo e é reversível, mas custa migração mais um filtro em
+**toda** leitura do sistema — as quatro públicas, as três do organizador, reserva, ingresso, portaria
+e o link compartilhado. Cada leitura esquecida é um evento fantasma vazando numa tela, e a três dias
+do prazo eu prefiro a operação que apaga à que vaza em silêncio.
+
+**A trava é a mesma da edição — `vendidos == 0` depois da colheita — e é a única.** *Descartei*
+recusar também o show que já aconteceu, que é o que a edição faz: o motivo lá é específico e não
+sobrevive à mudança de verbo. Editar a data de um show passado o faria reaparecer na programação
+pública; excluí-lo não faz nada reaparecer, e é justamente o caso em que a exclusão é faxina. Recusar
+prenderia todo evento antigo no `Meus eventos` para sempre, sem nenhum ganho.
+
+**O `DELETE` das reservas filtra `estado != 'PAGA'` de propósito, mesmo sendo impossível encontrar
+uma.** Ingresso só nasce de reserva paga, e `vendidos` **nunca** volta de uma paga — só a expiração
+devolve estoque, e ela só toca `PENDENTE`. Então venda paga implica `vendidos > 0`, e a trava já
+recusou. O filtro existe para o dia em que essa cadeia quebrar: sem ele, o bug vira "a exclusão
+apagou uma venda"; com ele, a FK sem `ondelete` segura, a transação inteira volta e nada é destruído.
+Trocar um `500` por um apagamento silencioso de venda seria o pior negócio desta feature — pelo mesmo
+motivo, `ingresso` não é apagado em lugar nenhum desta rota.
+
+**Confirmação em dois estágios no próprio botão**, sem modal: `Excluir` vira `Confirmar exclusão`,
+com `Cancelar` ao lado. *Descartei* o `<dialog>` — não existe modal nenhum no projeto, e a primeira
+sobreposição de tela do produto não vai nascer para uma operação de organizador. *Descartei* exigir
+digitar o nome do evento: é a proteção certa para apagar conta ou banco, e desproporcional para um
+evento sem venda nenhuma, que o organizador republica em dois minutos.
+
+**O botão fica ao lado do `Editar`, e a frase de impedimento passa a falar dos dois verbos.**
+*Descartei* pôr o `Excluir` também na lista de `Meus eventos`: lá as linhas são próximas e o clique
+errado é fácil, e a lista não mostra `vendidos` para justificar a ausência do botão numa linha e a
+presença em outra. Uma frase só no lugar dos dois botões, e não duas quase iguais empilhadas.
+
 ## 4 · Contrato
 
 ### `PUT /organizador/eventos/{evento_id}` → `200` com `EventoSaida`
@@ -163,6 +227,43 @@ class EventoEdicao(BaseModel):
 | `SETOR_DESCONHECIDO` | 422 | `id` de setor que não pertence a este evento |
 | `EVENTO_SEM_SETOR` · `SETOR_DUPLICADO` · `EVENTO_SEM_PORTARIA` · `PORTARIA_INVALIDA` · `EVENTO_NO_PASSADO` | 422 | Idênticos aos do `publicar` |
 
+### `DELETE /organizador/eventos/{evento_id}` → `204` sem corpo
+
+Mesma dependência de papel das irmãs. Sem corpo de entrada, sem migração, sem schema novo.
+`204` e não `200` com o evento apagado: não há consumidor para o corpo, e o `chamarApi` já devolve
+`undefined` nesse status desde a Story 3.8.
+
+**A ordem dentro da transação — os passos 1 a 4 são os mesmos do `PUT`, e é essa igualdade que faz as
+duas rotas nunca discordarem sobre "vendeu":**
+
+1. `obter_do_organizador` — o mesmo `404`, pela mesma função.
+2. `SELECT … FROM setor WHERE evento_id = :id ORDER BY setor.id FOR UPDATE`, com
+   `populate_existing=True`. Mesmo motivo: entre ler `vendidos == 0` e apagar cabe uma reserva
+   inteira, e aqui o estrago é maior — a reserva ficaria apontando para um evento que sumiu.
+3. `expirar_vencidas(sessao, ids)`, na mesma transação.
+4. Relê `vendidos` **por colunas**. Qualquer um `> 0` → `409 EVENTO_COM_VENDA`.
+5. `DELETE FROM validacao WHERE evento_id = :id` — a tentativa frustrada na porta é gravada mesmo
+   sem resolver para ingresso (`services/ingresso.py:442`), então ela existe em evento sem venda.
+6. `DELETE FROM reserva WHERE evento_id = :id AND estado != 'PAGA'`. `item_reserva` cai junto pelo
+   `ondelete="CASCADE"` do `reserva_id`, no banco.
+7. `sessao.flush()` — **e ele não é opcional**. É o que garante que as linhas de `item_reserva` já
+   sumiram quando o passo 8 mandar apagar os setores; sem ele, quem escolhe a ordem é o unit of work.
+   Mesma lição da fase B do `atualizar`.
+8. `sessao.delete(evento)` e `commit`. `setor` e `evento_portaria` caem pelo `ondelete="CASCADE"`.
+
+**Não há passo que apague `ingresso`**, por decisão — ver a seção 3.
+
+| Código | HTTP | Quando |
+|---|---|---|
+| `EVENTO_NAO_ENCONTRADO` | 404 | Não existe, ou não é do organizador da sessão |
+| `EVENTO_COM_VENDA` | 409 | Algum setor com `vendidos > 0` depois da colheita |
+
+**Nenhum código novo nasce aqui.** `EVENTO_COM_VENDA` é reusado com a frase trocada para o verbo —
+"Este evento já vendeu ingressos e não pode mais ser excluído." O código é a parte estável do
+contrato (`core/erros.py`) e é por ele que a tela decide; a frase é da resposta, e uma frase que diz
+"editado" numa recusa de exclusão seria a tela mentindo sobre o que o organizador acabou de tentar.
+`EVENTO_NO_PASSADO` **não aparece nesta rota** — é a decisão da seção 3.
+
 ### Frontend
 
 `atualizarMeuEvento(id, corpo)` em `lib/eventos.ts`, no molde de `obterMeuEvento`. A tela
@@ -173,6 +274,30 @@ caminho de volta.
 No detalhe, o botão `Editar` ao lado do `<h1>`; quando `setores.some(s => s.vendidos > 0)`, a frase
 `Este evento já vendeu ingressos e não pode mais ser editado.` ocupa o lugar dele. Mensagens novas
 entram no `mensagemParaCodigo`, uma por código da tabela acima.
+
+**Excluir (commit 3):** `BotaoDeExclusao`, Client Component novo ao lado do `Editar` no
+`cabecalhoDoEvento` — a tela de detalhe é Server Component e continua sendo. Ele chama o
+`chamarApi` no caminho `/organizador/eventos/{id}` com `{ method: "DELETE" }` direto, como o
+`FormularioEdicao` chama o `PUT`, e no sucesso faz `router.replace("/organizador/eventos")` seguido de
+`router.refresh()`. **`replace` e não `push`**, pelo mesmo motivo do commit 2 elevado ao quadrado: o
+botão voltar levaria ao detalhe de um evento que não existe mais, e o `refresh` é o que impede a
+lista de vir do Router Cache ainda com a linha apagada dentro.
+
+Os três estados do cabeçalho, e não há um quarto:
+
+| Estado | O que aparece |
+|---|---|
+| Nem vendeu nem aconteceu | `Editar` e `Excluir`, lado a lado |
+| Já aconteceu, não vendeu | A frase `Esse show já aconteceu e não pode mais ser editado.` **e o `Excluir`** — é a decisão da seção 3 vista da tela |
+| Vendeu | Só a frase, agora `Este evento já vendeu ingressos e não pode mais ser editado nem excluído.` |
+
+⚠️ **A frase do caso "vendeu" muda de texto no commit 3**, e é a mesma armadilha que o commit 2 já
+corrigiu uma vez na frase da portaria: frase de tela que sobrevive ao fato que a justificava ensina a
+pessoa a não procurar o que existe — ou, aqui, a procurar o que não existe.
+
+No `BotaoDeExclusao`, `EVENTO_COM_VENDA` e `EVENTO_NAO_ENCONTRADO` têm frase própria; qualquer outro
+código cai na genérica do projeto. Os dois acontecem de verdade sem ninguém trapacear — basta a aba
+estar aberta desde antes de alguém reservar, ou desde antes de outra aba excluir o mesmo evento.
 
 ## 5 · Critérios de pronto, por commit
 
@@ -198,6 +323,29 @@ entram no `mensagemParaCodigo`, uma por código da tabela acima.
 - `npm run build` e `tsc --noEmit` limpos, e `/organizador/eventos/[id]/editar` sai como `ƒ`.
 - A linha do *Editar evento* sai de `README.md#o-que-não-está-pronto`.
 
+**Commit 3** — a exclusão apaga o que tem de apagar e nada além disso:
+
+- Excluir evento sem venda devolve `204`, e o `GET` seguinte devolve `404`.
+- O evento sai de `Meus eventos` e das rotas públicas, e os setores e a escala somem com ele — nada
+  de linha órfã em `setor` nem em `evento_portaria`.
+- **Evento com reserva `EXPIRADA` é excluído normalmente, e a reserva e os `item_reserva` dela somem
+  junto — `204`, não `500`.** Este é o teste que justifica o commit inteiro; é a armadilha do
+  `SETOR_COM_HISTORICO` um nível acima, e a única forma de errar aqui é testar só com evento limpo.
+- Evento com `validacao` de tentativa frustrada (`ingresso_id` NULL) é excluído normalmente.
+- Evento com reserva `PENDENTE` viva → `409 EVENTO_COM_VENDA`; evento com reserva `PAGA` → o mesmo,
+  e um teste prova que **a reserva paga continua no banco** depois da recusa.
+- **Evento com reserva `PENDENTE` vencida e não colhida → exclui normalmente**, pela colheita do
+  passo 3.
+- **Evento que já aconteceu e não vendeu → exclui normalmente**, e o teste diz no nome que isso é
+  intencional e diferente do `PUT`.
+- Evento de outro organizador → `404`, corpo idêntico ao de evento inexistente. Excluir duas vezes →
+  `404` na segunda.
+- Na tela: `Excluir` pede confirmação antes de chamar a API, o `Cancelar` volta ao estado inicial, e
+  o sucesso cai em `Meus eventos` já sem a linha. Evento vendido não mostra botão nenhum; evento
+  passado sem venda mostra o `Excluir` e não o `Editar`.
+- `pytest` inteiro verde, `npm run build` e `tsc --noEmit` limpos — os três no mesmo commit.
+- 🚩 **README: não escreva nada.** A pendência está registrada no fim desta spec e entra na Epic 6.
+
 ## 6 · Armadilhas
 
 ⚠️ **A FK sem `ondelete` é o `500` mais fácil desta feature.** Quem implementar vai testar com evento
@@ -222,3 +370,39 @@ escrita no docstring dela desde o code review da Epic 3, e esta rota devolve obj
 
 ⚠️ **`data_hora` chega em UTC** (AD-11). O formulário monta a partir de data e hora locais, como o de
 publicar já faz — copie o `instante.toISOString()` de lá, não reinvente a conversão.
+
+### Do commit 3
+
+⚠️ **Três FKs apontam para `evento` sem `ondelete`, e só duas delas são óbvias.** `reserva` e
+`ingresso` qualquer um lembra; `validacao` é a que passa batido, porque ela nasce na porta e ninguém
+associa "portaria" a "excluir evento". Ela é gravada **mesmo quando o código não resolve para
+ingresso nenhum**, então existe em evento que nunca vendeu nada — que é exatamente o único evento que
+esta rota consegue apagar. Esquecer o passo 5 dá um `500` que só aparece depois de alguém ter
+apontado a câmera para um QR errado.
+
+⚠️ **O `flush` do passo 7 é a mesma pegadinha da fase B do `atualizar`, e já custou um teste lá.**
+Sem ele, o `DELETE` das reservas e o dos setores ficam os dois pendentes até o `commit`, e o unit of
+work escolhe a ordem — se ele apagar o setor primeiro, o `item_reserva` ainda vivo segura a FK e a
+transação inteira morre.
+
+⚠️ **Nada de `passive_deletes` ou de mexer no `cascade` dos `relationship` para "ajudar".** O
+`cascade="all, delete-orphan"` de `evento.setores` é o mesmo que a fase B do `atualizar` usa para
+remover um setor, e afrouxá-lo aqui reabriria lá o caminho de um setor virar órfão em vez de
+apagado.
+
+⚠️ **A tela de detalhe é Server Component e continua sendo.** O botão é que é cliente. Marcar a
+página inteira com `"use client"` para acomodar um `useState` de confirmação jogaria fora as duas
+guardas de sessão que rodam no servidor — é o oposto do que o `FormularioEdicao` fez.
+
+---
+
+## 🚩 Pendência da Epic 6 — a linha do README
+
+Não escrita de propósito (decisão do Igor em 14/08/2026: a Epic 6 passa nos três READMEs de uma vez).
+A linha para a tabela `README.md#o-que-não-está-pronto`, pronta para colar:
+
+> | **Excluir evento depois de ele ter vendido** | Excluir existe desde 14/08/2026, com a mesma trava da edição: só enquanto `vendidos == 0` em **todos** os setores. Vendeu uma vez, o evento fica para sempre — e é o que eu quero, porque a alternativa seria apagar reserva paga e ingresso emitido para limpar a tela de um organizador. Show que já aconteceu, esse **pode** ser excluído: ao contrário da edição, apagar um evento antigo não faz nada reaparecer na programação. O que a exclusão apaga junto são as reservas **não pagas** do evento, seus itens e as validações — histórico de um evento que deixou de existir é linha órfã, não histórico |
+
+E o que **muda numa linha que já está lá**: a do *Cancelamento pelo cliente* segue verdadeira, mas a
+do *Editar evento depois de ele ter vendido* agora tem uma irmã — vale citar uma na outra para quem
+lê a tabela não achar que são a mesma regra escrita duas vezes.

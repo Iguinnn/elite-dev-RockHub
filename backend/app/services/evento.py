@@ -53,14 +53,15 @@ apagar usuário; quem escrever essa rota precisa voltar aqui.
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.erros import ErroDeDominio
 from app.models.evento import Evento, Setor, evento_portaria
 from app.models.ingresso import Ingresso
-from app.models.reserva import ItemReserva
+from app.models.reserva import EstadoReserva, ItemReserva, Reserva
 from app.models.usuario import PapelUsuario, Usuario
+from app.models.validacao import Validacao
 from app.schemas.evento import (
     DisponibilidadeDoSetor,
     EventoEdicao,
@@ -289,6 +290,83 @@ def publicar(sessao: Session, organizador: Usuario, dados: EventoEntrada) -> Eve
     return evento
 
 
+def _travar_setores_e_exigir_sem_venda(
+    sessao: Session, evento: Evento, mensagem: str
+) -> list[Setor]:
+    """Trava os setores do evento, colhe as vencidas e recusa se sobrou venda.
+
+    **Os passos 2, 3 e 4 do contrato das duas rotas de escrita** — `atualizar` e
+    `excluir` —, numa função só. É **função compartilhada, e não cópia**, ao
+    contrário das cinco recusas do `publicar` logo abaixo: lá o que se repete são
+    frases, e a convenção do projeto manda copiar duas e extrair na terceira;
+    aqui o que se repete é a **garantia**, e a spec a enuncia como igualdade —
+    "é essa igualdade que faz as duas rotas nunca discordarem sobre vendeu".
+    Igualdade por disciplina de quem escreveu dura até a primeira das duas ser
+    ajustada sozinha.
+
+    A `mensagem` é o único parâmetro que varia, e varia porque o verbo muda: uma
+    recusa de exclusão que diz "não pode mais ser editado" é a tela mentindo
+    sobre o que o organizador acabou de tentar. O **código** é o mesmo
+    `EVENTO_COM_VENDA` nas duas, que é a parte estável do contrato.
+
+    Devolve os setores travados, em ordem de `id`.
+    """
+    # ⚠️ **Isto não é otimização, é a correção.** Sem o bloqueio, entre ler
+    # `vendidos == 0` e escrever cabe uma reserva inteira: o `UPDATE` condicional
+    # do AD-3 é um statement só, e ele passa no vão. Na edição o resultado seria
+    # uma reserva paga apontando para um setor que acabou de mudar de preço; na
+    # exclusão, para um evento que acabou de sumir.
+    #
+    # `ORDER BY setor.id` segue a disciplina de ordem já escrita no `criar()` e
+    # no `_devolver_estoque`: travar em ordens cruzadas é como se ganha um
+    # `40P01 deadlock detected`, que não é `ErroDeDominio` e vira `500`.
+    #
+    # ⚠️ `populate_existing` não é enfeite: os mesmos objetos já vieram no
+    # `selectinload` do `obter_do_organizador`, e sem ele o SQLAlchemy devolveria
+    # as instâncias do identity map **com os valores de antes do bloqueio**.
+    # Travar a linha e continuar lendo o passado é ter o custo do `FOR UPDATE`
+    # sem a garantia.
+    setores = list(
+        sessao.scalars(
+            select(Setor)
+            .where(Setor.evento_id == evento.id)
+            .order_by(Setor.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
+    ids = [setor.id for setor in setores]
+
+    # A colheita do AD-4, **na mesma transação**, entre o bloqueio e a leitura do
+    # estoque.
+    #
+    # ⚠️ **Import dentro da função, e não no topo do módulo.** `services/reserva`
+    # importa `MAXIMO_POR_COMPRA` daqui (linha 91 de lá, decisão registrada na
+    # Story 3.4), então um import de módulo na direção contrária é ciclo na hora
+    # de carregar o app. O que se move não é a direção da seta: é o momento do
+    # import.
+    from app.services.reserva import expirar_vencidas
+
+    expirar_vencidas(sessao, ids)
+
+    # Relê **do banco**, e não dos objetos. A colheita acima escreve `vendidos`
+    # por `UPDATE ... synchronize_session=False`, que de propósito deixa o
+    # atributo em Python desatualizado (AD-3). Decidir a trava pelo atributo seria
+    # decidir pelo valor de antes da colheita — o setor cuja reserva acabou de
+    # expirar continuaria "vendido" e a operação seria recusada.
+    #
+    # Um `select` de colunas, e não de entidades: ele não passa pelo identity
+    # map, então não há como um objeto carregado responder no lugar do banco.
+    vendidos_por_setor = sessao.execute(
+        select(Setor.id, Setor.vendidos).where(Setor.id.in_(ids))
+    ).all()
+
+    if any(vendidos > 0 for _, vendidos in vendidos_por_setor):
+        raise ErroDeDominio("EVENTO_COM_VENDA", mensagem, status_http=409)
+
+    return setores
+
+
 def atualizar(
     sessao: Session,
     organizador: Usuario,
@@ -340,61 +418,13 @@ def atualizar(
             status_http=422,
         )
 
-    # Passo 2 — **isto não é otimização, é a correção.** Sem o bloqueio, entre
-    # ler `vendidos == 0` e gravar cabe uma reserva inteira: o `UPDATE`
-    # condicional do AD-3 é um statement só, e ele passa no vão. O resultado
-    # seria uma reserva paga apontando para um setor que acabou de mudar de
-    # preço — ou, pior, que acabou de ser apagado.
-    #
-    # `ORDER BY setor.id` segue a disciplina de ordem já escrita no `criar()` e
-    # no `_devolver_estoque`: travar em ordens cruzadas é como se ganha um
-    # `40P01 deadlock detected`, que não é `ErroDeDominio` e vira `500`.
-    #
-    # ⚠️ `populate_existing` não é enfeite: os mesmos objetos já vieram no
-    # `selectinload` do passo 1, e sem ele o SQLAlchemy devolveria as instâncias
-    # do identity map **com os valores de antes do bloqueio**. Travar a linha e
-    # continuar lendo o passado é ter o custo do `FOR UPDATE` sem a garantia.
-    setores_atuais = list(
-        sessao.scalars(
-            select(Setor)
-            .where(Setor.evento_id == evento.id)
-            .order_by(Setor.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
+    # Passos 2, 3 e 4 — travar, colher e conferir. Os três moram na função
+    # compartilhada com o `excluir`, e é lá que está o motivo de cada um.
+    setores_atuais = _travar_setores_e_exigir_sem_venda(
+        sessao,
+        evento,
+        "Este evento já vendeu ingressos e não pode mais ser editado.",
     )
-    ids_atuais = [setor.id for setor in setores_atuais]
-
-    # Passo 3 — a colheita do AD-4, **na mesma transação**, entre o bloqueio e a
-    # leitura do estoque.
-    #
-    # ⚠️ **Import dentro da função, e não no topo do módulo.** `services/reserva`
-    # importa `MAXIMO_POR_COMPRA` daqui (linha 91 de lá, decisão registrada na
-    # Story 3.4), então um import de módulo na direção contrária é ciclo na hora
-    # de carregar o app. O que se move não é a direção da seta: é o momento do
-    # import.
-    from app.services.reserva import expirar_vencidas
-
-    expirar_vencidas(sessao, ids_atuais)
-
-    # Passo 4 — relê **do banco**, e não dos objetos. A colheita acima escreve
-    # `vendidos` por `UPDATE ... synchronize_session=False`, que de propósito
-    # deixa o atributo em Python desatualizado (AD-3). Decidir a trava pelo
-    # atributo seria decidir pelo valor de antes da colheita — o setor cuja
-    # reserva acabou de expirar continuaria "vendido" e a edição seria recusada.
-    #
-    # Um `select` de colunas, e não de entidades: ele não passa pelo identity
-    # map, então não há como um objeto carregado responder no lugar do banco.
-    vendidos_por_setor = sessao.execute(
-        select(Setor.id, Setor.vendidos).where(Setor.id.in_(ids_atuais))
-    ).all()
-
-    if any(vendidos > 0 for _, vendidos in vendidos_por_setor):
-        raise ErroDeDominio(
-            "EVENTO_COM_VENDA",
-            "Este evento já vendeu ingressos e não pode mais ser editado.",
-            status_http=409,
-        )
 
     # ── Passo 5: as cinco recusas do `publicar`, na mesma ordem e com as mesmas
     # frases. **Cópia, e não função comum**, pela convenção escrita no
@@ -608,6 +638,118 @@ def atualizar(
     # coisa.
     sessao.expire_all()
     return obter_do_organizador(sessao, organizador, evento_id)
+
+
+def excluir(sessao: Session, organizador: Usuario, evento_id: UUID) -> None:
+    """Apaga um evento que **ainda não vendeu**, com o rastro morto dele junto.
+
+    A terceira e última rota de escrita do organizador
+    (`docs/techspec-editar-evento.md`, commit 3).
+
+    **Excluir apaga o rastro morto, e isso reverte o que o `atualizar` decide
+    três funções acima.** Lá, remover um setor com histórico é recusado
+    (`SETOR_COM_HISTORICO`) para não destruir registro que ninguém pediu para
+    destruir — e aquilo continua valendo, porque lá o evento permanece e o
+    histórico continua tendo dono. Aqui o dono vai embora inteiro: uma reserva
+    `EXPIRADA` de um evento que não existe mais não é histórico, é linha órfã
+    apontando para um nome que ninguém consegue ler.
+
+    *Descartei* um `EVENTO_COM_HISTORICO` simétrico ao do setor: seria beco sem
+    saída — um checkout abandonado uma vez travaria a exclusão para sempre, e ao
+    contrário do setor, que dava para renomear em vez de remover, não sobraria
+    saída nenhuma. *Descartei também* o soft delete com `removido_em`: preserva
+    tudo e é reversível, mas custa migração mais um filtro em **toda** leitura do
+    sistema — as quatro públicas, as três do organizador, reserva, ingresso,
+    portaria e o link compartilhado. Cada leitura esquecida seria um evento
+    fantasma vazando numa tela.
+
+    ⚠️ **A trava é a mesma da edição, e é a única: `vendidos == 0`.** Show que já
+    aconteceu **pode** ser excluído, ao contrário do que o `atualizar` faz — e a
+    assimetria é deliberada. O motivo de lá é específico do verbo: editar a data
+    de um show passado o faria reaparecer na programação pública; excluí-lo não
+    faz nada reaparecer, e é justamente o caso em que a exclusão é faxina.
+    Recusar prenderia todo evento antigo em `Meus eventos` para sempre.
+
+    Devolve `None`: a rota responde `204`, e não há estado novo para a tela
+    aprender além de "não existe mais".
+    """
+    # Passo 1 — o mesmo `404` da leitura, pela mesma função, byte a byte igual
+    # para "não existe" e "não é seu". Excluir duas vezes cai aqui na segunda.
+    evento = obter_do_organizador(sessao, organizador, evento_id)
+
+    # Passos 2, 3 e 4 — os mesmos três do `atualizar`, pela mesma função. É essa
+    # igualdade que impede as duas rotas de discordarem sobre o que é "vendeu".
+    # Só a frase muda, porque o verbo mudou.
+    _travar_setores_e_exigir_sem_venda(
+        sessao,
+        evento,
+        "Este evento já vendeu ingressos e não pode mais ser excluído.",
+    )
+
+    # ⚠️ **Passo 5 — a `validacao` é a que passa batido**, e é a única das três FKs
+    # sem `ondelete` que ninguém associa a "excluir evento": ela nasce na porta.
+    # A tentativa frustrada é gravada **mesmo quando o código não resolve para
+    # ingresso nenhum** (`services/ingresso.py`), então ela existe em evento que
+    # nunca vendeu nada — que é exatamente o único evento que esta rota consegue
+    # apagar. Sem esta linha, o `500` só aparece depois de alguém ter apontado a
+    # câmera para um QR errado.
+    sessao.execute(
+        delete(Validacao)
+        .where(Validacao.evento_id == evento.id)
+        .execution_options(synchronize_session=False)
+    )
+
+    # ⚠️ **Passo 6 — o filtro `estado != 'PAGA'` é de propósito, mesmo sendo
+    # impossível encontrar uma reserva paga aqui.** Ingresso só nasce de reserva
+    # paga, e `vendidos` **nunca** volta de uma paga — só a expiração devolve
+    # estoque, e ela só toca `PENDENTE`. Logo venda paga implica `vendidos > 0`, e
+    # a trava do passo 4 já recusou.
+    #
+    # Ele existe para o dia em que essa cadeia quebrar: sem o filtro, o bug vira
+    # "a exclusão apagou uma venda"; com ele, a FK sem `ondelete` de
+    # `ingresso.evento_id` segura, a transação inteira volta e nada é destruído.
+    # Trocar um `500` por um apagamento silencioso de venda seria o pior negócio
+    # desta feature — e é pelo mesmo motivo que **`ingresso` não é apagado em
+    # lugar nenhum daqui**.
+    #
+    # `item_reserva` cai junto pelo `ondelete="CASCADE"` do `reserva_id`, no
+    # banco: é o caso feliz do mapa de chaves estrangeiras.
+    sessao.execute(
+        delete(Reserva)
+        .where(
+            Reserva.evento_id == evento.id,
+            Reserva.estado != EstadoReserva.PAGA.value,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+    # Passo 7 — a fronteira explícita entre "o rastro morto já foi" e "agora o
+    # evento vai".
+    #
+    # ⚠️ **A spec o descreve como "não opcional", e medindo eu não confirmei
+    # isso** (14/08/2026): desliguei este `flush` e os 85 testes continuaram
+    # verdes. O motivo é que os dois `sessao.execute(delete(...))` acima são Core,
+    # e Core **executa na hora** — não entra na fila do unit of work, ao contrário
+    # do `evento.setores.remove()` da fase B do `atualizar`, que é ORM e onde o
+    # flush **é** comprovadamente indispensável (desligá-lo lá derruba um teste).
+    # As duas situações se parecem no texto e não são a mesma.
+    #
+    # **Fica assim mesmo**, e não por superstição: ele custa nada, escreve a
+    # ordem em vez de deixá-la depender de "Core executa na hora" — que é
+    # verdade sobre a biblioteca, não sobre esta função —, e o dia em que um
+    # destes dois `DELETE` virar ORM é o dia em que a ausência dele passaria a
+    # ser um `500` sem teste que o pegue.
+    sessao.flush()
+
+    # Passo 8 — `setor` e `evento_portaria` caem pelo `ondelete="CASCADE"` que os
+    # dois declaram desde a Story 2.3.
+    #
+    # ⚠️ **Nada de mexer no `cascade` dos `relationship` para "ajudar" aqui.** O
+    # `cascade="all, delete-orphan"` de `evento.setores` é o mesmo que a fase B do
+    # `atualizar` usa para remover um setor, e afrouxá-lo reabriria lá o caminho
+    # de um setor virar órfão em vez de apagado.
+    sessao.delete(evento)
+    sessao.commit()
 
 
 def listar_portarias(sessao: Session) -> list[Usuario]:

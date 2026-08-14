@@ -36,7 +36,7 @@ a coerência.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
@@ -201,3 +201,40 @@ def editar_meu_evento(
     de `vendidos == 0` acontecem todas antes de a primeira linha mudar.
     """
     return servico_de_evento.atualizar(sessao, organizador, evento_id, dados)
+
+
+@router.delete("/eventos/{evento_id}", status_code=204, response_class=Response)
+def excluir_meu_evento(
+    evento_id: UUID,
+    organizador: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR)),
+    sessao: Session = Depends(obter_sessao),
+) -> Response:
+    """Apaga um evento que ainda não vendeu, com o rastro morto dele junto.
+
+    **`204` sem corpo, e não `200` com o evento apagado.** Não há consumidor para
+    esse corpo — a tela já sabe o que pediu, e o que ela faz em seguida é sair
+    para `Meus eventos`. O precedente é o `DELETE` do compartilhamento de
+    ingresso (Story 4.4), o primeiro da API, e o `chamarApi` do frontend já corta
+    antes do `.json()` neste status.
+
+    ⚠️ **Não é idempotente como aquele, e a diferença é real.** Revogar um link
+    duas vezes responde `204` nas duas, porque "o link não vale mais" continua
+    verdade. Excluir duas vezes responde `404` na segunda: o recurso do caminho
+    deixou de existir, e dizer `204` fingiria que esta chamada apagou alguma
+    coisa. O `404` é o mesmo de sempre — byte a byte igual para "não existe" e
+    "não é seu".
+
+    **A trava é `vendidos == 0`, e é a única.** Show que já aconteceu **pode** ser
+    excluído, ao contrário da edição — o motivo inteiro da assimetria está no
+    service. Erro possível além do `404`: `409 EVENTO_COM_VENDA`, com a frase no
+    verbo certo.
+
+    Sétima rota do arquivo, terceira de escrita, e a única sem schema de entrada:
+    o caminho é o pedido inteiro.
+    """
+    servico_de_evento.excluir(sessao, organizador, evento_id)
+    # `Response` explícito, e não `return None`: com `status_code=204` o
+    # FastAPI ainda tentaria serializar o retorno e emitir `content-length`,
+    # que é o que quebra um `204` de verdade. Mesma linha do `DELETE` da
+    # Story 4.4, em `api/cliente.py`.
+    return Response(status_code=204)
