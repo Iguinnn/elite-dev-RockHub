@@ -39,8 +39,10 @@
   border: 1px solid var(--fio);
 }
 
+/* `--neon` e não `--neon2`, como no `Campo`: campo focado é rosa vivo nos dois
+   modos, e o porquê está escrito lá. */
 .linha:focus-within {
-  border-color: var(--neon2);
+  border-color: var(--neon);
 }
 
 /* Sem altura própria: quem a define é o `.linha` acima, e o `align-items:

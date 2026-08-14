@@ -331,12 +331,23 @@ a {
    daqui em diante (UX-DR9). Ninguém desliga esse contorno: quem navega por
    teclado precisa enxergar onde está.
 
-   `--neon2` e não `--neon`: o anel é **traço**, e traço rosa sobre o gelo do
-   modo claro dá 2,85:1 — um foco que existe e não se vê é o mesmo que foco
-   desligado. No escuro os dois tokens valem a mesma coisa.                */
+   ⚠️ **`--neon`, e não `--neon2`** (14/08/2026, decisão do Igor com as telas na
+   frente). A regra do sistema manda traço usar a versão escurecida, e ela está
+   suspensa aqui pelo mesmo motivo do item ativo do masthead: o anel aparece
+   **ao lado** do rosa vivo — o campo de busca focado fica encostado no `Buscar`,
+   e o item de menu focado, no item ativo. Dois rosas a dois pixels um do outro
+   leem como defeito de renderização, não como sistema.
+
+   ⚠️ **O custo é real e está no anel de foco, que é a peça mais sensível do
+   arquivo**: `#ff4f9a` sobre o gelo dá 2,85:1, e o piso de indicador de foco é
+   3:1 (WCAG 1.4.11). No modo escuro nada muda — lá os dois tokens valem a mesma
+   coisa e o anel continua em 5,99:1. Se um dia a régua de acessibilidade
+   apertar, **é esta linha que volta para `--neon2`**, e ela sozinha: o
+   `outline-offset` de 2px já separa o anel do controle, então a troca não pede
+   mais nada. O que continua proibido, e não mudou, é **desligar** o contorno.  */
 
 :focus-visible {
-  outline: 2px solid var(--neon2);
+  outline: 2px solid var(--neon);
   outline-offset: 2px;
 }
 

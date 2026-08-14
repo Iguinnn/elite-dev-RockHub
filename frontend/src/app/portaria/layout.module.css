@@ -1,0 +1,22 @@
+/* O invólucro que trava a portaria no jornal noturno. O porquê da trava está no
+   docstring do `layout.tsx`; o que mora aqui é a mecânica dela.
+
+   ⚠️ **O invólucro precisa pintar o fundo, e essa é a linha que se esquece.**
+   `data-tema="escuro"` redeclara os tokens para dentro da árvore, mas quem pinta
+   o chão da aplicação é o `body`, que está **fora** dela e continua obedecendo
+   ao tema do `<html>`. Sem o `background` aqui, com o modo claro ligado, a
+   portaria fica com texto claro sobre página clara — os tokens estariam certos e
+   a tela, ilegível.
+
+   ⚠️ **`min-height: 100dvh` pelo mesmo motivo.** Pintado só até onde o conteúdo
+   chega, o breu terminaria no meio da tela e o gelo do `body` apareceria embaixo
+   — uma faixa clara sob a fila de ingressos. `dvh` e não `vh` porque a barra do
+   navegador no celular entra e sai, e é o celular que fica na porta.
+
+   A barra de rolagem do documento acompanha esta ilha, e isso é resolvido no
+   `globals.css` — o `:has()` que devolve `color-scheme: dark` ao `<html>` quando
+   existe uma ilha escura dentro dele. */
+.casca {
+  background: var(--breu);
+  min-height: 100dvh;
+}

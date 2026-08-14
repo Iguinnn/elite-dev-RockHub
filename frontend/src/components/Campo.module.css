@@ -33,7 +33,15 @@
 }
 
 /* ALÉM do :focus-visible global neon, nunca em vez dele: o contorno de foco
-   não é desligado em lugar nenhum do projeto. */
+   não é desligado em lugar nenhum do projeto.
+
+   ⚠️ **`--neon`, e não `--neon2`, mesmo no modo claro** (14/08/2026, decisão do
+   Igor). Mesma suspensão da regra que o item ativo do masthead: a borda do campo
+   focado e o rosa dos controles ao lado — o `Buscar`, o item de menu — estão na
+   mesma tela e ao mesmo tempo, e dois rosas ali leem como descuido, não como
+   sistema. Contraste não é o que se perde aqui: quem carrega o foco é o anel do
+   `:focus-visible` do `globals.css`, que continua em `--neon2` e continua acima
+   do piso. Esta borda é sinal secundário. */
 .entrada:focus {
-  border-color: var(--neon2);
+  border-color: var(--neon);
 }

@@ -1,0 +1,16 @@
+/* O que `<button>` precisa e `<a>` não — a caixa em si vem do `.navLink` do
+   `Masthead.module.css`, e o porquê está no docstring do componente.
+
+   ⚠️ **`background-color` não é redundância.** O `.navLink` declara
+   `background-image`, `background-repeat` e `background-size` para a varredura
+   do hover, e nenhuma dessas três encosta na **cor** de fundo: o padrão de
+   `<button>` no navegador é `ButtonFace`, um cinza claro do sistema. Sem esta
+   linha o alternador aparece como um retângulo cinza no meio de quatro caixas
+   vazadas — o mesmo buraco que o `Botao` tinha com `border` até a Story 1.4.
+
+   Não há conflito de ordem com o `Masthead.module.css`: as duas classes têm a
+   mesma especificidade, mas declaram propriedades diferentes. */
+.seletor {
+  background-color: transparent;
+  cursor: pointer;
+}

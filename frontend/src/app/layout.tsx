@@ -1,4 +1,7 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+
+import { COOKIE_DO_TEMA, normalizarTema } from "@/lib/tema";
 
 import "./globals.css";
 
@@ -41,10 +44,23 @@ export const metadata: Metadata = {
  * Sintoma clássico: entrar pelo login com a tela anterior rolada para baixo e
  * chegar em `/` no meio da programação. O atributo devolve o salto instantâneo
  * na navegação **sem** custar o `smooth` das âncoras, que continua valendo.
+ *
+ * ⚠️ **`data-tema` é o único estado que este layout carrega, e é ele que faz o
+ * modo claro existir** (14/08/2026). O atributo é lido do cookie **no
+ * servidor**, e é isso que garante que a primeira pintura já venha no tema
+ * escolhido — o motivo inteiro está em `lib/tema.ts`.
+ *
+ * ⚠️ **Isto torna dinâmica toda rota da aplicação**, inclusive `(entrada)` e
+ * `/portaria`, que antes poderiam ser pré-renderizadas. É o preço declarado da
+ * decisão do cookie: se o build reclamar de rota dinâmica, é isto e não um
+ * defeito. Na prática o custo é pequeno, porque o grupo `(site)` já era dinâmico
+ * desde a Story 2.x — o masthead lê sessão em toda requisição.
  */
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const tema = normalizarTema((await cookies()).get(COOKIE_DO_TEMA)?.value);
+
   return (
-    <html lang="pt-BR" data-scroll-behavior="smooth">
+    <html lang="pt-BR" data-scroll-behavior="smooth" data-tema={tema}>
       <body>{children}</body>
     </html>
   );

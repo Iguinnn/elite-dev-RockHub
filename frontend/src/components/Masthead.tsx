@@ -1,8 +1,12 @@
+import { cookies } from "next/headers";
+
 import { obterUsuarioDaSessao } from "@/lib/sessao";
+import { COOKIE_DO_TEMA, normalizarTema } from "@/lib/tema";
 
 import Logotipo from "./Logotipo";
 import estilos from "./Masthead.module.css";
 import NavLink from "./NavLink";
+import SeletorDeTema from "./SeletorDeTema";
 
 /**
  * Cabeçalho de jornal: logotipo, fio, navegação, fio fechando o bloco. Os fios
@@ -27,11 +31,18 @@ import NavLink from "./NavLink";
  * `(site)`, e é correto — cabeçalho que depende de quem pediu não pode ser
  * pré-renderizado.
  *
- * A única ilha de cliente continua sendo o `NavLink`, que precisa do caminho
- * atual para marcar o item ativo.
+ * As ilhas de cliente são duas: o `NavLink`, que precisa do caminho atual para
+ * marcar o item ativo, e o `SeletorDeTema`, que precisa do clique.
+ *
+ * ⚠️ **O alternador de tema fecha o `<nav>`, e é o último item de propósito**
+ * (14/08/2026). Antes dele vêm os destinos — Início, Meus eventos, Meus
+ * ingressos, Minha conta —, que são para onde se vai; ele não leva a lugar
+ * nenhum, muda como o lugar se parece. Item de navegação que não navega, no meio
+ * dos que navegam, é a promessa errada.
  */
 export default async function Masthead() {
   const usuario = await obterUsuarioDaSessao();
+  const tema = normalizarTema((await cookies()).get(COOKIE_DO_TEMA)?.value);
 
   return (
     <header className={estilos.masthead}>
@@ -60,6 +71,7 @@ export default async function Masthead() {
           ) : (
             <NavLink href="/login">Entrar</NavLink>
           )}
+          <SeletorDeTema tema={tema} />
         </nav>
       </div>
     </header>

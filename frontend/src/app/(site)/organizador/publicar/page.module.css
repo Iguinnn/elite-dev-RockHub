@@ -301,8 +301,10 @@
   font: var(--campo-corpo)/1 var(--mono);
 }
 
+/* `--neon` e não `--neon2`, como no `Campo`: campo focado é rosa vivo nos dois
+   modos, e o porquê está escrito lá. */
 .entrada:focus {
-  border-color: var(--neon2);
+  border-color: var(--neon);
 }
 
 /* "Visually hidden" clássico. Nunca `display: none`, que tira o rótulo da

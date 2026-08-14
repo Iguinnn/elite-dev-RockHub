@@ -130,14 +130,31 @@
    — não por caixa cheia: preenchido, ele competiria com o `Buscar` logo abaixo,
    que é a ação primária da tela inicial. A varredura dele também é neon, então
    passar o mouse sobre a página em que já se está devolve a mesma resposta dos
-   outros itens, na tinta que já era dele. */
+   outros itens, na tinta que já era dele.
+
+   ⚠️ **`--neon`, e não `--neon2`, mesmo no modo claro** (14/08/2026, decisão do
+   Igor com a tela na frente). A regra do sistema é que letra e filete usam a
+   versão escurecida da tinta; aqui ela está suspensa de propósito, e o motivo é
+   que **o item ativo tem três estados e a regra os pintava com dois rosas
+   diferentes**: magenta escuro em repouso, rosa vivo quando a varredura fecha.
+   No modo escuro isso nunca apareceu, porque lá os dois tokens valem a mesma
+   coisa. Um controle que troca de matiz conforme o cursor não lê como um
+   controle só.
+
+   ⚠️ **O custo é contraste, e ele foi aceito explicitamente**: `#ff4f9a` sobre o
+   gelo dá 2,85:1, abaixo do piso de 4,5:1 do texto e do de 3:1 do filete. O que
+   segura a informação não é a cor — o `aria-current="page"` do `NavLink` diz
+   "esta é a página" para quem não distingue as duas, e a caixa do item ativo
+   continua tendo a mesma forma dos vizinhos. Vale para esta fileira e **só para
+   ela**: em qualquer outro lugar do produto, letra rosa continua sendo
+   `--neon2`. */
 .ativo {
-  border-color: var(--neon2);
-  color: var(--neon2);
+  border-color: var(--neon);
+  color: var(--neon);
   background-image: linear-gradient(var(--neon), var(--neon));
 }
 
 .ativo:hover {
-  border-color: var(--neon2);
+  border-color: var(--neon);
   color: var(--vazado);
 }
