@@ -170,7 +170,7 @@
 /* ALÉM do `:focus-visible` global, nunca em vez dele — mesma regra do `Campo`.
    O contorno de foco não é desligado em lugar nenhum do projeto. */
 .entrada:focus {
-  border-color: var(--neon);
+  border-color: var(--neon2);
 }
 
 .entrada:disabled {

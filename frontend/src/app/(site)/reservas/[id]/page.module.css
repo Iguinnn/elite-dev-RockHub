@@ -25,7 +25,7 @@
 }
 
 .voltar:hover {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
@@ -35,7 +35,7 @@
   max-width: 52ch;
   margin: 28px 12px 0;
   padding-left: 14px;
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   font: 21px/1.5 var(--serif);
 }
 
@@ -139,7 +139,7 @@
 }
 
 .nota a {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* ---- o desfecho: as três frases de estado (Story 3.8) ------------------- */
@@ -162,11 +162,11 @@
 }
 
 .confirmacao {
-  border-left: 2px solid var(--verde);
+  border-left: 2px solid var(--verde2);
 }
 
 .recusa {
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
 }
 
 .confirmacao strong,
@@ -179,7 +179,7 @@
 /* O link para `/ingressos` — o único lugar do desfecho `PAGA` que leva a
    outra tela desde a Story 4.2, quando o canhoto saiu daqui. */
 .confirmacao a {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* ---- abaixo de 700px ----------------------------------------------------- */

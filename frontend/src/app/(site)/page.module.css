@@ -130,7 +130,7 @@
 }
 
 .seletorCidade:hover {
-  border-color: var(--neon);
+  border-color: var(--neon2);
 }
 
 /* ⚠️ **O filtro ativo fica marcado em neon** — o AC da Story 3.2, que este
@@ -141,8 +141,8 @@
    `--neon`, o mesmo peso de sinal, sem inventar tratamento visual novo. */
 .seletorCidadeAtivo,
 .seletorCidadeAtivo:hover {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* ⚠️ O `Botao` é `width: 100%` (Story 1.4). Sem esta largura fixa e sem o
@@ -210,7 +210,7 @@
 }
 
 .chip:hover {
-  border-color: var(--neon);
+  border-color: var(--neon2);
   color: var(--cal);
 }
 
@@ -219,9 +219,9 @@
    coisa a quem não vê nenhuma das duas. */
 .chipAtivo,
 .chipAtivo:hover {
-  border-color: var(--neon);
+  border-color: var(--neon2);
   background: var(--neon);
-  color: var(--breu);
+  color: var(--vazado);
 }
 
 /* ---- a chamada principal (Story 3.3) ------------------------------------ */
@@ -262,7 +262,7 @@
    nenhum — a ausência de resposta é a informação (EXPERIENCE.md#fila-listagem),
    e ela vem de graça por o elemento não ser um link. */
 .chamada:hover .manchete {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* 16/10 como o DESIGN.md pede. `position: relative` para o selo e o degradê se
@@ -464,7 +464,7 @@
    Este comentário é a fonte; os outros nove `page.module.css` apontam para
    ele. */
 .aviso {
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   padding-left: 14px;
   max-width: 52ch;
   margin-top: 28px;
@@ -493,8 +493,8 @@
 }
 
 .linkDeTexto:hover {
-  border-bottom-color: var(--neon);
-  color: var(--neon);
+  border-bottom-color: var(--neon2);
+  color: var(--neon2);
 }
 
 /* ---- a fila de quatro colunas ------------------------------------------- */
@@ -646,7 +646,7 @@
   display: inline-block;
   padding: 8px 14px;
   background: var(--brasa);
-  color: var(--breu);
+  color: var(--vazado);
   font: 700 14px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;

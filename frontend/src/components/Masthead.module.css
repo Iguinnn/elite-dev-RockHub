@@ -113,7 +113,13 @@
 
 /* A faixa fecha os 100% e o texto inverte para o breu da página — é a leitura de
    "selecionado", a mesma inversão do `.chipAtivo` da capa. O fio acompanha em
-   `--fumaca` para a caixa não ficar mais escura que o próprio preenchimento. */
+   `--fumaca` para a caixa não ficar mais escura que o próprio preenchimento.
+
+   ⚠️ **`--breu` aqui, e não `--vazado`** (14/08/2026, com a paleta em dois
+   modos). O `--vazado` existe para a letra sobre um preenchimento que **não**
+   vira — o rosa do botão, a brasa do selo. Este preenchimento é `--fumaca`, que
+   vira: no modo claro ele é o cinza escuro, e a letra precisa clarear junto.
+   Travar em `--vazado` daria 2,66:1; `--breu`, que vira gelo, dá 5,38:1. */
 .navLink:hover {
   border-color: var(--fumaca);
   background-size: 100% 100%;
@@ -126,12 +132,12 @@
    passar o mouse sobre a página em que já se está devolve a mesma resposta dos
    outros itens, na tinta que já era dele. */
 .ativo {
-  border-color: var(--neon);
-  color: var(--neon);
+  border-color: var(--neon2);
+  color: var(--neon2);
   background-image: linear-gradient(var(--neon), var(--neon));
 }
 
 .ativo:hover {
-  border-color: var(--neon);
-  color: var(--breu);
+  border-color: var(--neon2);
+  color: var(--vazado);
 }

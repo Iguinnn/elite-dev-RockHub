@@ -35,5 +35,5 @@
 /* ALÉM do :focus-visible global neon, nunca em vez dele: o contorno de foco
    não é desligado em lugar nenhum do projeto. */
 .entrada:focus {
-  border-color: var(--neon);
+  border-color: var(--neon2);
 }

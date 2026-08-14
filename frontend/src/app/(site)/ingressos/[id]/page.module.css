@@ -21,7 +21,7 @@
 }
 
 .voltar:hover {
-  color: var(--neon);
+  color: var(--neon2);
 }
 
 /* Filete `--brasa` = falha; sem filete = ausência. A régua inteira está no
@@ -30,7 +30,7 @@
   max-width: 52ch;
   margin: 28px 12px 0;
   padding-left: 14px;
-  border-left: 2px solid var(--brasa);
+  border-left: 2px solid var(--brasa2);
   font: 21px/1.5 var(--serif);
 }
 
