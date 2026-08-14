@@ -1,0 +1,251 @@
+/* O rodapé — DESIGN.md, mesma gramática do masthead. Anatomia:
+
+   ─────────────────────────────────────────────────   ← fio que fecha a folha
+   RockHub                A EMPRESA   ATENDIMENTO  NAS REDES
+   uma linha de conceito  Razão…      contato@…    ⬡ Instagram  @rockhub
+                          Rua…        (11) …       ⬡ X          @rockhub
+   ─────────────────────────────────────────────────
+   © 2026 …                        Feito por Igor Duarte Vieira — Desafio …
+
+   Nenhum hex: só `var(--token)`. Raio zero, sombra zero, sem caixa (UX-DR3).
+   O rodapé é o fim da folha, não um bloco pousado nela — por isso ele não tem
+   fundo próprio: o único elemento que o separa é o fio de cima, simétrico ao
+   que o masthead usa para fechar o cabeçalho. */
+
+.rodape {
+  margin-top: 72px;
+  padding-top: 30px;
+  border-top: 1px solid var(--fio);
+}
+
+/* ⚠️ **`auto` na primeira coluna e não `1fr`.** O bloco da marca tem largura
+   natural (o lettering, mais uma linha de texto presa a `34ch`), e as três
+   colunas de dados é que devem absorver a sobra — com `1fr` na marca, a linha
+   de conceito esticava até virar uma frase de 90 caracteres, que é o dobro da
+   medida de leitura que o resto do produto respeita. */
+.topo {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 40px;
+  align-items: start;
+  padding-bottom: 26px;
+}
+
+.marca {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* A linha de conceito. Serifada, como todo texto corrido do produto — o mono
+   versalete é para etiqueta e controle, nunca para frase. */
+.assinatura {
+  max-width: 34ch;
+  font: 17px/1.5 var(--serif);
+  color: var(--fumaca);
+}
+
+/* Três colunas de largura igual, e `minmax(0, 1fr)` e não `1fr` puro: o `1fr`
+   tem piso de `min-content`, e o e-mail `contato@rockhub.com.br` (22 caracteres
+   sem espaço) viraria esse piso — a grade transbordaria a lateral antes de
+   quebrar. É a mesma lição que a barra de busca da capa custou em 14/08/2026. */
+.colunas {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ⚠️ **`font-style: normal` zera o itálico que o `<address>` traz do
+   navegador.** A serifada em uso não tem corte itálico desenhado — o navegador
+   sintetizaria um, inclinando os glifos por transformação, e o resultado é a
+   única tipografia falsa da tela. O elemento continua sendo `<address>` porque
+   é o certo para contato; o que sai é só a herança visual dele. */
+.dados {
+  font: 16px/1.7 var(--serif);
+  font-style: normal;
+  color: var(--fumaca);
+}
+
+.redes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+}
+
+/* ⚠️ **Não é `<a>`, e por isso não há `cursor: pointer` nem `:hover`.** As
+   contas são inventadas e não têm destino honesto — o porquê inteiro está no
+   docstring do `Rodape.tsx`. O dia em que existirem, cada `<span>` vira `<a>` e
+   este bloco ganha as duas linhas de estado sem mudar de forma. */
+.rede {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.icone {
+  display: block;
+  width: 18px;
+  height: 18px;
+  color: var(--fumaca);
+}
+
+.icone svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Mono versalete: o nome da rede é etiqueta, não frase. */
+.nomeDaRede {
+  font: 600 13px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cal);
+}
+
+/* A arroba desce para a segunda linha da própria coluna do texto — alinhada com
+   o nome, e não com o ícone, para as quatro entradas desenharem uma coluna só. */
+.arroba {
+  grid-column: 2;
+  font: 15px/1 var(--serif);
+  color: var(--fumaca);
+}
+
+/* ⚠️ **O aviso de ficção fica acima do fio da base, não dentro dela.** Na faixa
+   de baixo ele dividiria linha com o `©` e a autoria e leria como terceira nota
+   de rodapé — três frases cinzas do mesmo tamanho, e a que importa se perde no
+   meio. Sozinho entre as colunas e o fio, ele é o último bloco de conteúdo.
+
+   `--brasa` e não `--fumaca`: é a única linha do rodapé que **corrige** o que
+   está escrito acima dela, e cinza sobre cinza não corrige nada. Não é
+   `--neon`, que é do acento único (UX-DR1) e pertence à ação primária da tela —
+   a brasa já é o token de aviso do produto. */
+.aviso {
+  max-width: 62ch;
+  padding-bottom: 18px;
+  font: 15px/1.6 var(--serif);
+  color: var(--brasa);
+}
+
+.ficticio {
+  font-weight: 700;
+}
+
+/* A faixa de baixo, com o segundo e último fio. */
+.base {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 24px;
+  padding: 18px 0 34px;
+  border-top: 1px solid var(--fio);
+}
+
+.legal,
+.autoria {
+  font: 15px/1.6 var(--serif);
+  color: var(--fumaca);
+}
+
+/* ⚠️ **O nome é `--cal` e não `--neon`.** A tentação é acender a assinatura, e
+   ela contraria o UX-DR1: o acento é único e pertence à ação primária da tela.
+   Um rodapé que brilha mais que o `Reservar` inverte a hierarquia da página
+   inteira por vaidade. O peso 700 já separa o nome do resto da frase. */
+.nome {
+  font-weight: 700;
+  color: var(--cal);
+}
+
+/* O travessão com espaço próprio: colado, ele lê como hífen de palavra
+   composta; com `margin`, ele separa duas informações — quem fez e para quê. */
+.travessao {
+  margin: 0 8px;
+}
+
+/* ---- abaixo de 900px ----------------------------------------------------- */
+
+/* A marca sai de cima das colunas e passa a abrir o bloco, na mesma virada em
+   que a fila da programação vira duas colunas. As três colunas de dados viram
+   duas — com três, `ATENDIMENTO` ficaria com ~90px e o e-mail quebraria no meio
+   do domínio. */
+@media (max-width: 900px) {
+  .topo {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  .colunas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 26px;
+  }
+}
+
+/* ---- abaixo de 560px ----------------------------------------------------- */
+
+/* Coluna única — o mesmo ponto em que a barra de busca da capa empilha. Duas
+   colunas a 320px dão ~112px cada, e nenhuma das três seções cabe nisso sem
+   quebrar linha no meio de `contato@rockhub.com.br`.
+
+   A faixa de baixo também empilha: `space-between` com duas frases que não
+   cabem lado a lado joga uma para cada extremo de linhas diferentes, e a
+   assinatura ficaria alinhada à direita sozinha, longe de tudo. */
+@media (max-width: 560px) {
+  /* ⚠️ **O recuo de cima cai de 72 para 40px.** Ele existe para o rodapé não
+     encostar no fim do conteúdo numa tela larga, onde a lista termina longe da
+     borda; no celular a página já é uma coluna alta, e 72px de vão viram um
+     buraco no meio da rolagem. */
+  .rodape {
+    margin-top: 40px;
+  }
+
+  .colunas {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  /* A entrelinha aperta de 1,7 para 1,5 e o corpo cai um ponto: são doze linhas
+     de dado somadas nas três seções, e num rodapé de tela estreita a folga
+     generosa vira altura que a pessoa rola sem ler. A medida de leitura de
+     texto **corrido** não muda em lugar nenhum — isto aqui é lista de contato,
+     que se varre, não se lê. */
+  .dados {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .topo {
+    gap: 24px;
+    padding-bottom: 22px;
+  }
+
+  /* ⚠️ **As redes viram duas colunas justamente aqui, ao contrário do resto.**
+     Enquanto os blocos de texto empilham, este se espalha — e a razão é
+     altura: quatro entradas de duas linhas somam ~200px numa tela onde o
+     rodapé inteiro precisa caber sem virar uma segunda página. Em duas colunas
+     são duas fileiras, e cada entrada continua com ícone, nome e arroba.
+
+     É a mesma inversão que os chips de período da capa fazem: o que é lista
+     numa tela grande vira grade na pequena, porque lá o que falta é largura e
+     aqui o que falta é altura. */
+  .redes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+  }
+
+  .base {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding-bottom: 26px;
+  }
+}
