@@ -83,7 +83,7 @@
   border: 1px solid var(--fio2);
   background: none;
   color: var(--fumaca);
-  font: 700 14px/1 var(--mono);
+  font: 700 16px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
@@ -143,7 +143,7 @@
 .rotulo {
   display: block;
   margin-bottom: 8px;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -182,7 +182,7 @@
    valida é a única coisa que a pessoa precisa saber para usar esta tela. */
 .dica {
   margin: 10px 0 18px;
-  font: 15px/1.5 var(--serif);
+  font: 17px/1.5 var(--serif);
   color: var(--fumaca);
 }
 

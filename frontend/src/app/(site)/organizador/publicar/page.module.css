@@ -27,7 +27,20 @@
 }
 
 /* O passo 2 abre longe da última fila do catálogo: são duas etapas, não uma
-   lista que continua. */
+   lista que continua.
+
+   ⚠️ **Tentamos abrir com fio no topo, como o passo 3, e foi revertido no mesmo
+   dia** (13/08/2026, decisão do Igor com a tela montada). O raciocínio parecia
+   certo — se o fio marca fronteira de etapa, o passo 2 deveria ter o dele — e o
+   que apareceu na tela foi o problema previsto: o `border-bottom` da última fila
+   do catálogo fica 46px acima, e os dois traços paralelos com vazio entre eles
+   leem como sobra de grade, não como separação. É a mesma figura recusada na
+   chamada principal da raiz, e a distância maior não a salvou.
+
+   **A assimetria fica de propósito**, então: o passo 3 abre com fio porque o que
+   vem antes dele é um formulário, que não termina em traço nenhum; o passo 2
+   abre sem, porque o que vem antes é uma lista, e lista já fecha com fio. O que
+   separa aqui é o intervalo de 52px. */
 .secTituloPasso2 {
   margin-top: 52px;
   /* Alvo do `#passo-2`: sem esta margem o título encosta na borda de cima da
@@ -111,7 +124,7 @@
 }
 
 .estado {
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -159,7 +172,7 @@
 
 .origem {
   margin-top: 5px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -172,14 +185,20 @@
 }
 
 /* A atração escolhida, travada. Texto, não campo desabilitado: campo que
-   ninguém pode editar é campo que não deveria ser campo. */
+   ninguém pode editar é campo que não deveria ser campo.
+
+   ⚠️ **Sem fio embaixo desde 13/08/2026** (decisão do Igor). É o quarto fio
+   removido desta tela, e agora a regra é uma só: **fio é divisória de etapa,
+   nunca decoração de bloco.** Sobraram dois no formulário — o que abre o passo 3
+   e o que fecha o passo 3 acima do botão —, e os dois separam etapas. O que
+   separa a atração dos campos aqui é o intervalo, como já acontece entre o
+   título do passo e o conteúdo dele. */
 .atracao {
   display: grid;
   grid-template-columns: 80px 1fr;
   gap: 20px;
   align-items: center;
   padding-bottom: 24px;
-  border-bottom: 1px solid var(--fio);
 }
 
 /* Onde o show acontece — dois campos do formulário até 13/08/2026, texto daqui
@@ -211,37 +230,75 @@
   gap: 18px;
 }
 
-.tituloSetores {
-  margin-bottom: 12px;
-}
+/* ⚠️ **O `.tituloSetores` foi removido em 13/08/2026** junto com o kicker
+   `SETORES` que ele espaçava (decisão do Igor): era um título de grupo em cima
+   de uma faixa que já abre com a palavra `SETOR`. */
 
+/* ⚠️ **`CAPACIDADE` e `PREÇO` passaram a ter a mesma largura** (14/08/2026,
+   decisão do Igor com a tela montada). Eram `136px` e `148px`, e a diferença de
+   12px não vinha de regra nenhuma — nenhum dos dois conteúdos precisa de mais
+   espaço que o outro. Duas colunas de número quase do mesmo tamanho leem como
+   grade torta, não como hierarquia. */
 .colunasDoSetor,
 .linhaSetor {
   display: grid;
-  grid-template-columns: 1fr 136px 148px 48px;
+  grid-template-columns: 1fr 148px 148px 48px;
   gap: 12px;
   align-items: center;
 }
 
+/* ⚠️ **7px, e não 9px, para casar com a coluna da esquerda** (13/08/2026). O
+   `.rotulo` do `Campo` e o `.kicker` do `globals.css` têm a mesma caixa —
+   `600 14px/1` na mono —, então o que decide se as duas metades do passo 2
+   começam na mesma linha é só o espaço abaixo do rótulo. Com o kicker `SETORES`
+   removido, igualar este valor ao `margin-bottom` do `Campo` põe a primeira
+   entrada de setor exatamente na altura dos campos `DATA` e `HORÁRIO`. */
 .colunasDoSetor {
-  padding-bottom: 9px;
+  padding-bottom: 7px;
 }
 
+/* ⚠️ **Sem fio no topo desde 13/08/2026** (decisão do Igor): com um setor só ele
+   virava uma régua solta entre os kickers e a primeira entrada; com quatro,
+   quatro réguas para separar quatro linhas de campo que o intervalo já separa.
+   Fio é divisória de etapa nesta tela — ver o `.atracao`.
+
+   ⚠️ **O espaço é todo embaixo, e não `11px 0`** (14/08/2026). Este era metade do
+   desalinhamento que a tela mostrava: o `padding-top` de 11px empurrava a
+   **primeira** entrada de setor 11px abaixo dos campos `DATA` e `HORÁRIO`, e o
+   cálculo do `.colunasDoSetor` acima — que existe justamente para as duas metades
+   começarem na mesma linha — era anulado pela linha seguinte. Com `0` em cima, o
+   topo da primeira entrada é `14px` de kicker mais `7px`, exatamente o mesmo do
+   `.rotulo` do `Campo`.
+
+   Os 22px de baixo são os mesmos 11 + 11 que separavam uma linha da outra: o
+   ritmo entre setores não mudou, só saiu de cima da primeira. */
 .linhaSetor {
-  padding: 11px 0;
-  border-top: 1px solid var(--fio);
+  padding: 0 0 22px;
 }
 
-/* Mesmos valores da entrada do `Campo`, com o `padding` menor que a linha de
-   quatro colunas pede. Não é o `Campo` porque aqui o rótulo é oculto e a
-   grade é da linha, não do campo. */
+/* ⚠️ **Idêntica ao `Campo`, e agora pelos tokens em vez de por cópia**
+   (14/08/2026). O comentário aqui dizia "mesmos valores do `Campo`, com o
+   `padding` menor que a linha de quatro colunas pede" — e essa diferença
+   deliberada era metade do desalinhamento que a tela mostrava: `11px` de padding
+   com corpo de `16px` dá uma caixa de **40px**, contra os **48px** dos campos
+   `DATA` e `HORÁRIO` na coluna ao lado. Três entradas na mesma dobra, duas de um
+   tamanho e uma de outro — e 40px ainda ficava abaixo do alvo de toque de 44px
+   do UX-DR6.
+
+   Não é o componente `Campo` porque aqui o rótulo é oculto e a grade é da linha,
+   não do campo. Mas a caixa é a mesma caixa, e desde agora ela vem do mesmo
+   lugar: foi esta cópia que drifou, e é por causa dela que os tokens existem
+   (ver o bloco `--campo-altura` do `globals.css`). O `capacidade` é um
+   `type="number"`, que tem caixa intrínseca própria — mais um motivo para a
+   altura ser fixa e não somada. */
 .entrada {
   width: 100%;
+  height: var(--campo-altura);
   background: var(--breu2);
   border: 1px solid var(--fio);
   color: var(--cal);
-  padding: 11px;
-  font: 16px/1 var(--mono);
+  padding: 0 var(--campo-inset);
+  font: var(--campo-corpo)/1 var(--mono);
 }
 
 .entrada:focus {
@@ -275,13 +332,17 @@
   color: var(--brasa);
 }
 
+/* ⚠️ **Sem `margin-top` desde 14/08/2026.** Os 14px daqui somavam com os 11px de
+   `padding-bottom` da última linha de setor e davam 25px; com o espaço da linha
+   agora todo embaixo (22px), somariam 36 e o botão descolaria da lista que ele
+   continua. Os 22px da linha sozinhos mantêm o mesmo ritmo entre a última
+   entrada e o botão que existe entre uma entrada e a seguinte. */
 .acrescentar {
-  margin-top: 14px;
   padding: 11px 18px;
   background: none;
   border: 1px solid var(--fio2);
   color: var(--cal);
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;
@@ -292,9 +353,14 @@
   color: var(--neon);
 }
 
+/* ⚠️ `gap` e `align-items` entraram em 13/08/2026 para o `FormularioEdicao`, que
+   põe `Cancelar` ao lado de `Salvar alterações`. Não mudam nada aqui: a tela de
+   publicar tem um filho só neste rodapé, e gap sem segundo item é zero. */
 .rodape {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 28px;
   margin-top: 30px;
   padding-top: 22px;
   border-top: 1px solid var(--fio);
@@ -302,20 +368,35 @@
 
 /* ---- passo 3: escalar a portaria (Story 2.5) ---------------------------- */
 
+/* ⚠️ **O fio que abre o passo 3 é um dos dois que sobraram na tela** (decisão do
+   Igor, 13/08/2026), e ele mudou de lugar: era um traço **embaixo do título**,
+   decorando o cabeçalho da etapa, e virou um traço **acima dele**, fechando o
+   passo 2. A diferença não é de pixel — é de significado. Fio embaixo do título
+   separa o título do próprio conteúdo dele, que é a última coisa que precisa ser
+   separada; fio acima do título divide uma etapa da outra, que é a única
+   hierarquia que esta tela tem.
+
+   O outro sobrevivente é o `.rodape`, que fecha o passo 3 acima do botão. Os
+   dois juntos desenham as fronteiras das etapas, e nada mais desenha nada. */
 .passo3 {
   margin-top: 46px;
+  padding-top: 30px;
+  border-top: 1px solid var(--fio);
 }
 
-/* Mesma anatomia do `.secTitulo` da página — título e kicker nas pontas, fio
-   embaixo. Repetido em vez de reusado porque este vive dentro da ilha: o
-   título do passo 3 some junto com o formulário, e os da página não. */
+/* Mesma anatomia do `.secTitulo` da página — título e kicker nas pontas.
+   Repetido em vez de reusado porque este vive dentro da ilha: o título do passo
+   3 some junto com o formulário, e os da página não.
+
+   Sem fio embaixo, como o `.secTitulo` desde 2026-08-13 — o que separa o título
+   do conteúdo é o corpo de 27px em serifada contra o versalete do rótulo
+   seguinte. */
 .secTituloPasso3 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
   padding-bottom: 11px;
-  border-bottom: 1px solid var(--fio);
 }
 
 .secTituloPasso3 h3 {
@@ -335,19 +416,26 @@
   margin-top: 20px;
 }
 
+/* ⚠️ **Sem fio no topo desde 13/08/2026** (decisão do Igor) — ele abria a lista
+   logo abaixo do campo de filtro, e virou o segundo traço num intervalo de 20px.
+   Fio é divisória de etapa nesta tela; ver o `.atracao`. */
 .listaPortarias {
-  border-top: 1px solid var(--fio);
+  margin-top: 6px;
 }
 
 /* Marcação à esquerda, rótulo ocupando o resto: a linha inteira é alvo, e o
-   alvo tem 44px de altura no mínimo. Sem caixa, sem sombra, sem raio —
-   UX-DR3; o que separa uma linha da outra é o fio. */
+   alvo tem 44px de altura no mínimo. Sem caixa, sem sombra, sem raio — UX-DR3.
+
+   ⚠️ **E, desde 13/08/2026, sem fio entre as linhas.** O comentário aqui dizia
+   "o que separa uma linha da outra é o fio", e com duas contas cadastradas isso
+   eram dois traços para separar dois nomes. O que separa agora é a altura de
+   alvo de 44px do `.alvo`, que já existia por acessibilidade e não foi criada
+   para isto — só passou a ser suficiente sozinha. */
 .linhaPortaria {
   display: grid;
   grid-template-columns: 20px 1fr;
   gap: 14px;
   align-items: center;
-  border-bottom: 1px solid var(--fio);
 }
 
 .marcacao {
@@ -373,7 +461,7 @@
 }
 
 .emailDaConta {
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -381,7 +469,7 @@
 
 .contagemEscalados {
   margin-top: 12px;
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--neon);
@@ -421,7 +509,7 @@
 }
 
 .setorPublicado {
-  font: 600 12px/1.6 var(--mono);
+  font: 600 14px/1.6 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
@@ -453,7 +541,7 @@
 
 .saida {
   color: var(--neon);
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -479,8 +567,16 @@
     display: none;
   }
 
+  /* Empilhado, o espaço volta para os dois lados: aqui não há coluna vizinha
+     com que alinhar o topo, e cada linha de setor vira um bloco de três campos
+     rotulados que precisa respirar em cima e embaixo. */
   .linhaSetor {
     padding: 18px 0;
+  }
+
+  /* E o botão recupera a margem que perdeu no desktop, pelo mesmo motivo. */
+  .acrescentar {
+    margin-top: 14px;
   }
 
   .oculto {
@@ -491,7 +587,7 @@
     overflow: visible;
     clip-path: none;
     display: block;
-    font: 600 12px/1 var(--mono);
+    font: 600 14px/1 var(--mono);
     letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--fumaca);

@@ -99,7 +99,7 @@
   padding: 12px 18px;
   border: 1px solid var(--fio2);
   color: var(--fumaca);
-  font: 600 15px/1 var(--mono);
+  font: 600 17px/1 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   background-image: linear-gradient(var(--fumaca), var(--fumaca));

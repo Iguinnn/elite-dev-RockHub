@@ -88,13 +88,13 @@
 }
 
 .diaMes {
-  font: 600 15px/1 var(--mono);
+  font: 600 17px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .ano {
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   color: var(--fumaca);
 }
@@ -105,7 +105,7 @@
 
 .origem {
   margin-top: 5px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -114,7 +114,7 @@
 /* Identificação visual, não dado de uso (techspec da 4.1) — os 8 primeiros
    caracteres do `id`, nunca o `codigo` assinado. */
 .prefixo {
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
   letter-spacing: 0.06em;
   color: var(--fumaca);
 }
@@ -124,14 +124,14 @@
 }
 
 .ativo {
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .hora {
-  font: 15px/1 var(--mono);
+  font: 17px/1 var(--mono);
   letter-spacing: 0.04em;
   color: var(--fumaca);
 }

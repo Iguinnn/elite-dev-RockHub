@@ -1,13 +1,21 @@
 /* O bloco do link compartilhável, embaixo do canhoto (Story 4.3).
 
-   Sem card, sem sombra, sem raio (UX-DR3): um fio no topo separa o bloco do
-   canhoto, como todo corte deste produto. A largura acompanha a do canhoto —
-   a margem lateral é da página, não daqui. */
+   Sem card, sem sombra, sem raio (UX-DR3). A largura acompanha a do canhoto —
+   a margem lateral é da página, não daqui.
+
+   ⚠️ **O fio do topo saiu em 14/08/2026** (decisão do Igor, com a tela montada).
+   Ele separava este bloco do canhoto, e o canhoto **já é uma caixa fechada**,
+   com borda própria dos quatro lados — o traço virava a segunda divisória a
+   30px da primeira, exatamente a figura de "dois traços paralelos com vazio
+   entre eles" que a tela de publicar já tinha recusado. O que separa agora é o
+   intervalo, e o kicker `COMPARTILHAR` que abre o bloco.
+
+   `padding-top` fica: era ele que dava respiro ao fio, e agora é ele que
+   sustenta sozinho a distância até o canhoto. */
 
 .bloco {
   margin-top: 28px;
   padding-top: 20px;
-  border-top: 1px solid var(--fio);
 }
 
 .explicacao {
@@ -41,7 +49,7 @@
   padding: 12px 14px;
   border: 1px solid var(--fio);
   background: var(--breu2);
-  font: 15px/1.5 var(--mono);
+  font: 17px/1.5 var(--mono);
   color: var(--cal);
   overflow-wrap: anywhere;
 }
@@ -55,7 +63,7 @@
   border: 1px solid var(--fio2);
   background: none;
   color: var(--fumaca);
-  font: 600 13px/1 var(--mono);
+  font: 600 15px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   cursor: pointer;

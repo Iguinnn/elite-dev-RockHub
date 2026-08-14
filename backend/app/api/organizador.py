@@ -36,7 +36,7 @@ a coerência.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import obter_sessao
@@ -46,6 +46,7 @@ from app.models.evento import Evento
 from app.models.usuario import PapelUsuario, Usuario
 from app.schemas.catalogo import ItemDoCatalogo
 from app.schemas.evento import (
+    EventoEdicao,
     EventoEntrada,
     EventoResumo,
     EventoSaida,
@@ -167,3 +168,73 @@ def obter_meu_evento(
     **resolve** para um evento seu.
     """
     return servico_de_evento.obter_do_organizador(sessao, organizador, evento_id)
+
+
+@router.put("/eventos/{evento_id}", response_model=EventoSaida)
+def editar_meu_evento(
+    evento_id: UUID,
+    dados: EventoEdicao,
+    organizador: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR)),
+    sessao: Session = Depends(obter_sessao),
+) -> Evento:
+    """Edita data, setores e escala de um evento que ainda não vendeu.
+
+    **`PUT` com o corpo inteiro, e não `PATCH`.** Com uma lista de filhos,
+    "não mandei" e "removi" viram a mesma coisa no corpo — e a ambiguidade cai
+    justo na operação que pode apagar linha. O `PUT` manda o estado final: o que
+    tem `id` é alteração, o que não tem é setor novo, e o que sumiu da lista é
+    remoção.
+
+    **O corpo é o `EventoEdicao`, e não o `EventoEntrada` da publicação.** Os
+    cinco campos copiados do catálogo (AD-1) não entram: o organizador não digita
+    nenhum deles nem ao publicar, e aceitá-los aqui faria esta tela ficar **mais
+    poderosa que a de publicar** — o evento poderia virar outro show sem trocar
+    de `origem_externa_id`.
+
+    **`EventoSaida` de volta, o mesmo das outras três rotas de evento.** É o
+    mesmo significado — "o evento inteiro, como o organizador o vê" —, e é o que
+    faz o recibo da edição e a tela de detalhe nunca divergirem.
+
+    Sexta rota do arquivo e a segunda de escrita, com service pelo critério do
+    docstring do módulo — aqui existem transação e invariantes, e são as mais
+    pesadas do projeto: um `SELECT ... FOR UPDATE`, a colheita do AD-4 e a trava
+    de `vendidos == 0` acontecem todas antes de a primeira linha mudar.
+    """
+    return servico_de_evento.atualizar(sessao, organizador, evento_id, dados)
+
+
+@router.delete("/eventos/{evento_id}", status_code=204, response_class=Response)
+def excluir_meu_evento(
+    evento_id: UUID,
+    organizador: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR)),
+    sessao: Session = Depends(obter_sessao),
+) -> Response:
+    """Apaga um evento que ainda não vendeu, com o rastro morto dele junto.
+
+    **`204` sem corpo, e não `200` com o evento apagado.** Não há consumidor para
+    esse corpo — a tela já sabe o que pediu, e o que ela faz em seguida é sair
+    para `Meus eventos`. O precedente é o `DELETE` do compartilhamento de
+    ingresso (Story 4.4), o primeiro da API, e o `chamarApi` do frontend já corta
+    antes do `.json()` neste status.
+
+    ⚠️ **Não é idempotente como aquele, e a diferença é real.** Revogar um link
+    duas vezes responde `204` nas duas, porque "o link não vale mais" continua
+    verdade. Excluir duas vezes responde `404` na segunda: o recurso do caminho
+    deixou de existir, e dizer `204` fingiria que esta chamada apagou alguma
+    coisa. O `404` é o mesmo de sempre — byte a byte igual para "não existe" e
+    "não é seu".
+
+    **A trava é `vendidos == 0`, e é a única.** Show que já aconteceu **pode** ser
+    excluído, ao contrário da edição — o motivo inteiro da assimetria está no
+    service. Erro possível além do `404`: `409 EVENTO_COM_VENDA`, com a frase no
+    verbo certo.
+
+    Sétima rota do arquivo, terceira de escrita, e a única sem schema de entrada:
+    o caminho é o pedido inteiro.
+    """
+    servico_de_evento.excluir(sessao, organizador, evento_id)
+    # `Response` explícito, e não `return None`: com `status_code=204` o
+    # FastAPI ainda tentaria serializar o retorno e emitir `content-length`,
+    # que é o que quebra um `204` de verdade. Mesma linha do `DELETE` da
+    # Story 4.4, em `api/cliente.py`.
+    return Response(status_code=204)

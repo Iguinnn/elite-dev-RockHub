@@ -90,7 +90,7 @@
 }
 
 .quantidade {
-  font: 600 14px/1.4 var(--mono);
+  font: 600 16px/1.4 var(--mono);
   letter-spacing: 0.1em;
   color: var(--fumaca);
   white-space: nowrap;
@@ -117,7 +117,7 @@
 }
 
 .rotuloDoTotal {
-  font: 600 13px/1.4 var(--mono);
+  font: 600 15px/1.4 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fumaca);

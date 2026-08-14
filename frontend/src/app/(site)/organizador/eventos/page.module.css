@@ -88,13 +88,13 @@
 }
 
 .diaMes {
-  font: 600 15px/1 var(--mono);
+  font: 600 17px/1 var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .ano {
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   color: var(--fumaca);
 }
@@ -105,7 +105,7 @@
 
 .origem {
   margin-top: 5px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -126,7 +126,7 @@
 }
 
 .rotulo {
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -153,10 +153,112 @@
   color: var(--neon);
 }
 
+/* O título do evento e a ação de editar nas pontas (13/08/2026, techspec de
+   editar evento). Mesma anatomia do `.secTitulo` da lista — flex de duas pontas,
+   alinhado pela linha de base — **sem o fio**: aqui o que vem abaixo é a linha do
+   show, não uma fila, e o traço separaria o título do próprio subtítulo dele.
+
+   `flex-wrap` porque a frase que substitui o botão é longa: abaixo de uns 900px
+   ela desce inteira para a linha seguinte em vez de espremer o nome do show em
+   três palavras por linha. */
+.cabecalhoDoEvento {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
 .nomeDoEvento {
   margin-top: 12px;
   font: 400 37px/1.12 var(--serif);
   letter-spacing: -0.02em;
+}
+
+/* As ações do cabeçalho — `Editar` e `Excluir`, ou a frase que toma o lugar de
+   um deles (commit 3 da techspec). Um invólucro só porque agora são dois: sem
+   ele, o `justify-content: space-between` do pai espalharia os dois botões pelas
+   pontas com o título no meio. */
+.acoesDoEvento {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Mesma caixa do `.acrescentar` da tela de publicar: contorno de 1px, mono
+   versalete, sem preenchimento. **Não é o `Botao`** — a identidade reserva o
+   botão cheio para a ação principal da tela, e a principal aqui é ler o
+   inventário, não editar. `padding` vertical suficiente para alvo de toque. */
+.editar,
+.excluir,
+.confirmarExclusao,
+.cancelarExclusao {
+  flex-shrink: 0;
+  padding: 11px 20px;
+  background: none;
+  border: 1px solid var(--fio2);
+  color: var(--cal);
+  font: 600 14px/1 var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.editar:hover,
+.cancelarExclusao:hover {
+  border-color: var(--neon);
+  color: var(--neon);
+}
+
+/* ⚠️ **Em repouso, o `Excluir` é idêntico ao `Editar` — mesma `--cal`, mesmo
+   `--fio2`** (decisão do Igor, 14/08/2026, com a tela montada). Eu tinha
+   apagado ele em `--fumaca` para não puxar o olho para a operação destrutiva
+   numa tela que se abre para ler inventário; na tela, o resultado foi um botão
+   que parecia **desabilitado** ao lado do irmão aceso — e um botão que parece
+   desligado é pior que um botão que chama atenção, porque quem precisa dele
+   acha que não dá.
+
+   O que separa os dois continua existindo, e mora onde a decisão acontece: o
+   hover em `--brasa` (contra o `--neon` do `Editar`) e, sobretudo, o segundo
+   estágio preenchido de vermelho logo abaixo. */
+.excluir:hover {
+  border-color: var(--brasa);
+  color: var(--brasa);
+}
+
+/* O segundo estágio: os dois botões juntos, para o `Cancelar` nascer onde a mão
+   já está. */
+.confirmacaoDeExclusao {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Aqui, sim, a cor de alerta — e preenchida, não só contornada: é o único
+   elemento desta tela que apaga alguma coisa, e ele precisa não se parecer com
+   os vizinhos. */
+.confirmarExclusao {
+  background: var(--brasa);
+  border-color: var(--brasa);
+  color: var(--breu);
+}
+
+.confirmarExclusao:disabled,
+.cancelarExclusao:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* A frase que toma o lugar do botão. Sem filete `--brasa`: nada falhou — é uma
+   regra do produto dita em voz alta, como o "são até 20 setores por evento" da
+   tela de publicar. `max-width` em ch para ela quebrar em duas linhas curtas em
+   vez de atravessar a página inteira ao lado do título. */
+.semEdicao {
+  max-width: 34ch;
+  font: 17px/1.4 var(--serif);
+  color: var(--fumaca);
+  text-align: right;
 }
 
 .linhaDoShow {
@@ -186,7 +288,7 @@
 }
 
 .nomeDoSetor {
-  font: 600 13px/1.5 var(--mono);
+  font: 600 15px/1.5 var(--mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
@@ -210,7 +312,7 @@
 }
 
 .emailDaConta {
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -249,6 +351,26 @@
 
   .nomeDoEvento {
     font-size: 29px;
+  }
+
+  /* Título e ação empilhados, e a frase volta a ler da esquerda: alinhada à
+     direita numa coluna só, ela ficaria pendurada no canto sem nada acima. */
+  .cabecalhoDoEvento {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .semEdicao {
+    max-width: 52ch;
+    text-align: left;
+  }
+
+  /* As ações empilhadas viram uma linha própria, alinhada à esquerda, e as duas
+     quebram para a linha seguinte quando não couberem lado a lado. */
+  .acoesDoEvento {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    align-self: flex-start;
   }
 
   .linhaSetor {

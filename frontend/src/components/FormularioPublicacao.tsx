@@ -20,9 +20,20 @@ import type { MeuEventoDetalhe } from "@/lib/eventos";
 // As três saíram daqui na Story 2.6, e não por faxina: as telas de "Meus
 // eventos" são Server Components, e Server Component **não consegue chamar**
 // função exportada de um módulo `"use client"` — o motivo inteiro está no
-// docstring de `lib/formato.ts`. `reaisParaCentavos` ficou, logo abaixo: ela é
-// do formulário e não tem consumidor de servidor.
-import { centavosParaReais, dataPorExtenso, momentoDaPublicacao } from "@/lib/formato";
+// docstring de `lib/formato.ts`.
+//
+// ⚠️ **A `reaisParaCentavos` e a `hojeEmSaoPaulo` seguiram o mesmo caminho em
+// 13/08/2026**, quando a tela de editar evento virou o segundo consumidor das
+// duas. A primeira carrega a guarda de `Number.isSafeInteger` do code review da
+// Epic 2; a segunda carregava uma **segunda cópia** da string do fuso, fora do
+// `FUSO` que aquele módulo existe para manter num lugar só.
+import {
+  centavosParaReais,
+  dataPorExtenso,
+  hojeEmSaoPaulo,
+  momentoDaPublicacao,
+  reaisParaCentavos,
+} from "@/lib/formato";
 import type { ResultadoDasPortarias } from "@/lib/portarias";
 
 /**
@@ -115,20 +126,6 @@ const MAXIMO_CAPACIDADE = 2_147_483_647;
 const MAXIMO_SETORES = 20;
 const MAXIMO_ESCALADOS = 20;
 
-/**
- * Hoje no fuso do produto, em `AAAA-MM-DD` — o formato que o `<input
- * type="date">` exige no `min`.
- *
- * **Em São Paulo, e não no fuso do navegador**, pelo mesmo motivo do `FUSO` do
- * `lib/formato.ts`: quem publica está no Brasil, e um organizador viajando não
- * deve ver o seletor liberar ontem ou barrar hoje.
- */
-function hojeEmSaoPaulo(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-  }).format(new Date());
-}
-
 /** Mesma convenção do login e do cadastro: o texto vem do `codigo`. */
 function mensagemParaCodigo(codigo: string): React.ReactNode {
   if (codigo === "EVENTO_SEM_SETOR") {
@@ -175,34 +172,6 @@ function mensagemParaCodigo(codigo: string): React.ReactNode {
     );
   }
   return MENSAGEM_GENERICA;
-}
-
-/**
- * Reais digitados → centavos inteiros. `null` quando não dá para ter certeza.
- *
- * A API só conhece `preco_centavos: int` (AD-11), e a conversão mora aqui, na
- * fronteira: nenhum número decimal atravessa o contrato.
- */
-function reaisParaCentavos(valor: string): number | null {
-  const bruto = valor.trim();
-  // Com vírgula, ela é o separador decimal e o ponto é milhar ("1.234,50").
-  // Sem vírgula, o ponto é o decimal ("120.50"). Assim "1.234" não vira
-  // 123.400 por adivinhação — ele falha na regra abaixo e vira erro na tela.
-  const normalizado = bruto.includes(",")
-    ? bruto.replace(/\./g, "").replace(",", ".")
-    : bruto;
-
-  if (!/^\d+(\.\d{1,2})?$/.test(normalizado)) return null;
-
-  const centavos = Math.round(Number(normalizado) * 100);
-  // ⚠️ **`Math.round` mente em silêncio acima de `MAX_SAFE_INTEGER`**, e o
-  // regex acima aceita qualquer quantidade de dígitos. Sem esta guarda,
-  // `999999999999999,99` era enviado **arredondado errado** e gravado sem erro
-  // nenhum — dinheiro corrompido sem ninguém saber, que é exatamente o que o
-  // AD-11 existe para impedir. `null` devolve a mensagem de preço inválido, que
-  // é a resposta certa para um número que o JavaScript não sabe representar.
-  if (!Number.isSafeInteger(centavos)) return null;
-  return centavos;
 }
 
 export default function FormularioPublicacao({ item, portarias }: Props) {
@@ -386,11 +355,16 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
       // **Continua sem `router.push`, e agora por outro motivo.** Na Story 2.4
       // era "não há para onde ir"; desde a 2.6 existe — `/organizador/eventos`
       // está pronta e no masthead. A decisão de não saltar para lá é do Igor:
-      // esta confirmação é o recibo da publicação, e é a **única** vez que o
-      // organizador vê o inventário e quem ficou com a porta. Não há tela de
-      // editar evento para conferir depois, e trocar o recibo por um redirect
-      // apagaria justamente isso. Quem quiser ir para a lista tem o link
-      // abaixo — a escolha é de quem publicou.
+      // esta confirmação é o recibo da publicação, e trocá-la por um redirect
+      // tiraria de quem publicou a chance de conferir o que acabou de nascer.
+      // Quem quiser ir para a lista tem o link abaixo — a escolha é de quem
+      // publicou.
+      //
+      // ⚠️ **O argumento original era mais forte, e caiu em 13/08/2026**: "é a
+      // **única** vez que o organizador vê o inventário, porque não há tela de
+      // editar evento para conferir depois". Existe agora, e o detalhe de "Meus
+      // eventos" mostra o mesmo inventário. A decisão fica de pé pelo que sobrou
+      // dela; o motivo que morreu não continua escrito como se valesse.
       setPublicado(criado);
     } catch (erroCapturado) {
       // Erro de rede (`TypeError: Failed to fetch`) não passa pelo `ErroDaApi`
@@ -431,9 +405,13 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           ))}
         </div>
 
-        {/* Quem ficou com a porta, por nome. É a única confirmação que o
-            organizador recebe da escala — não há tela de editar evento, e
-            descobrir depois que escalou a pessoa errada não teria conserto. */}
+        {/* Quem ficou com a porta, por nome — a conferência na hora, que é
+            quando a memória de quem marcou ainda está fresca.
+
+            ⚠️ Até 13/08/2026 este comentário dizia que era a **única**
+            confirmação, "porque não há tela de editar evento e descobrir depois
+            que escalou a pessoa errada não teria conserto". Tem conserto agora,
+            enquanto o evento não vender. */}
         <div className={estilos.naPorta}>
           <div className="kicker">Na porta</div>
           <p className={estilos.nomesEscalados}>
@@ -510,8 +488,15 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           <div className={estilos.duasColunas}>
             {/* `min` em hoje: a API recusa show no passado com
                 `EVENTO_NO_PASSADO`, e o seletor de data avisa antes da ida à
-                rede. Como não existe tela de editar evento, errar a data é
-                permanente — vale as duas barreiras.
+                rede.
+
+                ⚠️ **O motivo mudou em 13/08/2026, e as duas barreiras ficam.**
+                Era "errar a data é permanente, porque não existe tela de editar
+                evento". Existe — mas ela recusa exatamente o caso que importa
+                aqui: um evento publicado com data no passado **já nasce sem
+                conserto**, porque editar show que já aconteceu é recusado pelo
+                mesmo `EVENTO_NO_PASSADO`. O erro continua permanente; o que
+                mudou é por onde.
 
                 ⚠️ **Não é o `Campo`, e é o único campo do projeto que não é**
                 (13/08/2026). O popup do `<input type="date">` é desenhado pelo
@@ -554,9 +539,15 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
         </div>
 
         <div>
-          <div className={`kicker ${estilos.tituloSetores}`}>Setores</div>
+          {/* ⚠️ **O kicker `SETORES` saiu em 13/08/2026** (decisão do Igor). Ele
+              era um título de grupo em cima de uma faixa que já começa com a
+              palavra `SETOR` — dois rótulos dizendo a mesma coisa, um sobre o
+              outro. E era ele que empurrava a coluna inteira uma linha para
+              baixo: sem ele, a faixa de kickers nasce na mesma altura dos
+              rótulos `DATA` e `HORÁRIO` da coluna ao lado, e as duas metades do
+              passo 2 passam a começar juntas.
 
-          {/* Faixa de kickers: decoração que ajuda quem enxerga. Quem serve a
+              Faixa de kickers: decoração que ajuda quem enxerga. Quem serve a
               quem não enxerga é o `<label>` de cada entrada, logo abaixo —
               visualmente oculto, nunca `display:none`. UX-DR9 pede rótulo
               associado, não rótulo visível, e `placeholder` não conta. */}
@@ -663,9 +654,19 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
           `page.tsx`, porque precisa sumir junto com o formulário quando a
           confirmação toma o lugar dele. */}
       <div className={estilos.passo3}>
+        {/* ⚠️ **O kicker `OBRIGATÓRIO` saiu em 13/08/2026** (decisão do Igor). A
+            frase logo abaixo — "só quem for escalado aqui poderá validar
+            ingressos deste evento" — já diz por que o passo existe, e a recusa
+            do envio diz o resto quando ninguém é escalado. Uma etiqueta na ponta
+            do título repetia isso numa palavra e cobrava antes de a pessoa ter
+            feito nada.
+
+            O `.secTituloPasso3` continua sendo um flex de duas pontas, e não
+            virou um `<h3>` solto: ele é a mesma anatomia dos títulos dos passos 1
+            e 2 da página, e a diferença entre eles passaria a ser estrutural em
+            vez de só o conteúdo. */}
         <div className={estilos.secTituloPasso3}>
           <h3>3 · Escale a portaria</h3>
-          <span className="kicker">Obrigatório</span>
         </div>
 
         {/* Texto do protótipo, palavra por palavra: é ele que explica o que a

@@ -34,11 +34,16 @@
    dividia um controle só em dois. O fio que fecha o conjunto é o do `.grupos`,
    logo abaixo. É o segundo fio removido da tela inicial; o primeiro foi o que
    separava o logotipo do menu no masthead. */
-/* ⚠️ **A grade comum das duas linhas** (decisão do Igor, 13/08/2026). O campo e
-   os chips são duas linhas empilhadas; o `<select>` e o `Buscar` atravessam as
-   duas e ficam **centrados** entre os dois fios que fecham o bloco. Antes eles
-   eram altos e grudavam no topo, com os chips soltos no pé — o mesmo bloco lido
-   como dois pedaços desalinhados.
+/* ⚠️ **A grade comum das duas linhas** (decisão do Igor, 13/08/2026). O campo, o
+   `<select>` de cidade e o `Buscar` ocupam a primeira linha, alinhados entre si;
+   os chips de período ocupam a segunda, embaixo do campo.
+
+   Ela nasceu para **centrar** os dois controles altos entre os fios do bloco
+   (`grid-row: 1 / span 2`), e a travessia caiu na conferência: o `<select>` e o
+   `Buscar` operam o campo ao lado, e alinhados com ele os três leem como uma
+   barra só. O que sobrou da ideia original — e é o que justifica a grade
+   continuar existindo — é o alinhamento **horizontal**: as três colunas são as
+   mesmas nas duas linhas.
 
    ⚠️ **É aqui que a grade tinha de morar, e não no `<form>`.** Os chips são
    `<Link>` de navegação e **não podem entrar no formulário** — clicar num chip é
@@ -105,17 +110,21 @@
    medida dos vizinhos. O `padding` vertical de 15px mais a linha de 18px e as
    duas bordas fecham em 50px, que é a altura do botão. */
 .seletorCidade {
-  /* Segunda coluna, atravessando as duas linhas e centrado nelas — é este par
-     de declarações que cumpre o pedido de centrar os controles entre os fios. */
+  /* ⚠️ **Linha 1, junto do campo — e chegou a atravessar as duas** (13/08/2026).
+     A primeira versão punha `grid-row: 1 / span 2` para centrar o controle entre
+     os dois fios do bloco; com a tela montada, o Igor preferiu os três controles
+     da busca alinhados entre si a eles centrados no conjunto. Faz sentido: o
+     `<select>` e o `Buscar` **operam o campo ao lado**, e os chips embaixo são
+     outro filtro. Alinhado com o campo, o trio lê como uma barra só. */
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   align-self: center;
   max-width: 224px;
   padding: 15px 10px;
   border: 1px solid var(--fio2);
   background: var(--breu);
   color: var(--cal);
-  font: 600 12px/1.5 var(--mono);
+  font: 600 14px/1.5 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -140,9 +149,10 @@
    `flex-shrink: 0`, ele resolve o `100%` contra a barra inteira e o campo
    colapsa a zero — o mesmo invólucro que a busca do catálogo usa. */
 .botaoBusca {
-  /* Terceira coluna, mesma travessia do `<select>` ao lado. */
+  /* Terceira coluna, mesma linha do `<select>` e do campo — ver o comentário
+     dele acima. */
   grid-column: 3;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   align-self: center;
   width: 172px;
 }
@@ -194,7 +204,7 @@
   padding: 7px 12px;
   border: 1px solid var(--fio2);
   color: var(--fumaca);
-  font: 600 12px/1 var(--mono);
+  font: 600 14px/1 var(--mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -381,7 +391,7 @@
 }
 
 .fichaRotulo {
-  font: 13px/1.7 var(--mono);
+  font: 15px/1.7 var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -403,7 +413,7 @@
 .precoDaChamada span {
   display: block;
   margin-bottom: 6px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -531,7 +541,7 @@
 .diaDaSemana,
 .mesEAno,
 .hora {
-  font: 13px/1.5 var(--mono);
+  font: 15px/1.5 var(--mono);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -558,7 +568,7 @@
 }
 
 .local {
-  font: 13px/1.75 var(--mono);
+  font: 15px/1.75 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -593,7 +603,7 @@
 .aPartirDe {
   display: block;
   margin-bottom: 6px;
-  font: 12px/1 var(--mono);
+  font: 14px/1 var(--mono);
   letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--fumaca);
@@ -637,7 +647,7 @@
   padding: 8px 14px;
   background: var(--brasa);
   color: var(--breu);
-  font: 700 12px/1 var(--mono);
+  font: 700 14px/1 var(--mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   clip-path: polygon(
@@ -738,7 +748,7 @@
   }
 
   .mesEAno {
-    font-size: 12px;
+    font-size: 14px;
     letter-spacing: 0.03em;
   }
 

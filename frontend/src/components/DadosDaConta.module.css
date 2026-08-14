@@ -45,14 +45,14 @@
 }
 
 .dados dt {
-  font: 600 12px/1.6 var(--mono);
+  font: 600 14px/1.6 var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--fumaca);
 }
 
 .dados dd {
-  font: 14px/1.6 var(--mono);
+  font: 16px/1.6 var(--mono);
   color: var(--cal);
   /* E-mail longo quebra dentro da própria coluna em vez de empurrar a página:
      é o que segura a ausência de rolagem horizontal em 375px. */

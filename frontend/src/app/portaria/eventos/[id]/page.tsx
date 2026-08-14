@@ -95,8 +95,14 @@ export default async function LeitorDoTurno({
           contador morava neste bloco. Com o contador em faixa própria logo
           abaixo, o cabeçalho voltou para cá: nome do show e ficha não têm estado
           nenhum, e não há motivo para atravessarem um componente cliente. */}
+      {/* ⚠️ **O kicker `LEITOR` saiu em 14/08/2026** (decisão do Igor, com a tela
+          montada). Ele rotulava a tela em que a pessoa já está, e a tela inteira
+          se explica sozinha logo abaixo — `LER PELA CÂMERA`, `CÓDIGO DO
+          INGRESSO`, `VALIDAR`. O que o cabeçalho precisa responder é outra
+          pergunta, e ela é o nome do show. Mesmo corte dos kickers `SETORES` e
+          `OBRIGATÓRIO` da tela de publicar: rótulo que repete o contexto empurra
+          para baixo o que decide. */}
       <div className={estilos.cabecalho}>
-        <span className="kicker">Leitor</span>
         <h1 className={estilos.nome}>{turno.nome}</h1>
         <p className={estilos.ficha}>
           {diaDaSemana}, {dia} {mesEAno} · {hora}

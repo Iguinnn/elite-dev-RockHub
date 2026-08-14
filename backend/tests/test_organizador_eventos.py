@@ -1,5 +1,13 @@
-"""Rota `POST /organizador/eventos` (Stories 2.4 e 2.5) — a primeira rota de
-escrita do domínio.
+"""As duas rotas de **escrita** de evento do organizador: `POST
+/organizador/eventos` (Stories 2.4 e 2.5) e `PUT /organizador/eventos/{id}`
+(techspec `docs/techspec-editar-evento.md`, commit 1).
+
+As duas moram no mesmo arquivo porque compartilham as cinco recusas — a edição
+copia todas, com as mesmas frases —, e é aqui que uma divergência entre elas
+aparece na mesma tela de resultado. O bloco do `PUT` começa no fim do arquivo,
+com helpers próprios: ele grava evento e reserva pelo ORM, porque nenhum estado
+de que ele precisa (setor com histórico, reserva vencida, show que já
+aconteceu) é produzível pelas rotas.
 
 Precisa do Compose no ar (faz login de verdade, como o `test_organizador_
 catalogo.py`) e roda com **zero rede**: publicar não chama a Ticketmaster, e
@@ -32,7 +40,9 @@ from sqlalchemy.orm import Session
 
 from app.integrations import ticketmaster
 from app.models.evento import Evento, Setor, evento_portaria
+from app.models.reserva import EstadoReserva, ItemReserva, Reserva
 from app.models.usuario import PapelUsuario, Usuario
+from app.models.validacao import Validacao, Veredito
 
 
 @pytest.fixture()
@@ -65,6 +75,11 @@ def _instalar_transporte(
     monkeypatch.setattr(ticketmaster, "_criar_cliente", lambda: cliente_http)
 
 
+def _instante(dias: int) -> datetime:
+    """O mesmo relógio do `_daqui_a`, em objeto — para gravar pelo ORM."""
+    return datetime.now(timezone.utc) + timedelta(days=dias)
+
+
 def _daqui_a(dias: int) -> str:
     """Data ISO-8601 com fuso, relativa ao relógio.
 
@@ -74,9 +89,7 @@ def _daqui_a(dias: int) -> str:
     no calendário é uma bomba-relógio: a suíte passaria hoje e falharia inteira
     na quinta-feira, sem ninguém ter tocado em nada.
     """
-    return (
-        datetime.now(timezone.utc) + timedelta(days=dias)
-    ).isoformat().replace("+00:00", "Z")
+    return _instante(dias).isoformat().replace("+00:00", "Z")
 
 
 def _corpo(**ajustes: Any) -> dict[str, Any]:
@@ -961,3 +974,1384 @@ def test_imagem_url_fora_de_http_e_recusada(
 
     assert resposta.status_code == 422
     assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+# =========================================================================== #
+# `PUT /organizador/eventos/{id}` — editar evento que ainda não vendeu
+# (techspec `docs/techspec-editar-evento.md`, commit 1)
+# =========================================================================== #
+
+
+def _evento_gravado(
+    sessao: Session,
+    organizador: Usuario,
+    porteiro: Usuario,
+    *,
+    setores: list[tuple[str, int, int, int]] | None = None,
+    data_hora: datetime | None = None,
+) -> Evento:
+    """Evento publicado com setores e escala, gravado direto pelo ORM.
+
+    Cada setor é `(nome, capacidade, vendidos, preco_centavos)`.
+
+    ⚠️ **Não passa pelo `POST`** de propósito, e por dois motivos que a rota não
+    tem como atender: `vendidos` diferente de zero não é semeável pelo corpo
+    (AD-13, e há teste da 2.4 provando isso), e `data_hora` no passado é
+    justamente o que o `EVENTO_NO_PASSADO` recusa. Mesmo precedente do helper de
+    evento em rascunho da 3.1 e do de reserva vencida da 3.7.
+    """
+    if setores is None:
+        setores = [("Camarote", 60, 0, 42000), ("Pista", 800, 0, 12000)]
+
+    evento = Evento(
+        organizador_id=organizador.id,
+        nome="Baco Exu do Blues — Bluesman Vivo",
+        imagem_url="https://s1.ticketm.net/dam/a/bluesman.jpg",
+        origem_externa_id="G5vYZ9a1kd",
+        data_hora=data_hora if data_hora is not None else _instante(30),
+        local="Espaço Unimed",
+        cidade="São Paulo",
+        publicado_em=_instante(-1),
+        setores=[
+            Setor(
+                nome=nome,
+                capacidade=capacidade,
+                vendidos=vendidos,
+                preco_centavos=preco,
+            )
+            for nome, capacidade, vendidos, preco in setores
+        ],
+        portarias=[porteiro],
+    )
+    sessao.add(evento)
+    sessao.flush()
+    sessao.refresh(evento)
+    return evento
+
+
+def _reserva_gravada(
+    sessao: Session,
+    dono: Usuario,
+    evento: Evento,
+    *itens: tuple[Setor, int],
+    estado: EstadoReserva = EstadoReserva.PENDENTE,
+    vencida: bool = False,
+) -> Reserva:
+    """Uma reserva pelo ORM, com prazo já vencido ou não — helper da 3.7."""
+    reserva = Reserva(
+        cliente_id=dono.id,
+        evento_id=evento.id,
+        estado=estado.value,
+        expira_em=(
+            datetime.now(timezone.utc)
+            + (timedelta(minutes=-1) if vencida else timedelta(minutes=10))
+        ),
+        total_centavos=sum(
+            setor.preco_centavos * quantidade for setor, quantidade in itens
+        ),
+        itens=[
+            ItemReserva(
+                setor_id=setor.id,
+                quantidade=quantidade,
+                preco_unitario_centavos=setor.preco_centavos,
+            )
+            for setor, quantidade in itens
+        ],
+    )
+    sessao.add(reserva)
+    sessao.flush()
+    return reserva
+
+
+def _setor_por_nome(evento: Evento) -> dict[str, Setor]:
+    return {setor.nome: setor for setor in evento.setores}
+
+
+def _edicao(evento: Evento, porteiro: Usuario, **ajustes: Any) -> dict[str, Any]:
+    """O corpo que **não muda nada** — o estado atual, reenviado.
+
+    É o ponto de partida de quase todo teste daqui: cada um mostra só o campo
+    que altera, e o resto do corpo prova de quebra que reenviar o que já está lá
+    é uma edição válida (o `PUT` manda o estado final, não um diff).
+    """
+    corpo: dict[str, Any] = {
+        "data_hora": evento.data_hora.isoformat().replace("+00:00", "Z"),
+        "setores": [
+            {
+                "id": str(setor.id),
+                "nome": setor.nome,
+                "capacidade": setor.capacidade,
+                "preco_centavos": setor.preco_centavos,
+            }
+            for setor in sorted(evento.setores, key=lambda setor: setor.nome)
+        ],
+        "portaria_ids": [str(porteiro.id)],
+    }
+    corpo.update(ajustes)
+    return corpo
+
+
+def _organizador(fabricar_usuario: Callable[..., Usuario], sufixo: str) -> Usuario:
+    return fabricar_usuario(PapelUsuario.ORGANIZADOR, f"editar-{sufixo}@exemplo.com")
+
+
+# --------------------------------------------------------------------------- #
+# Editar evento sem venda troca data, setores e escala
+# --------------------------------------------------------------------------- #
+
+
+def test_editar_troca_data_setores_e_escala_e_o_get_seguinte_confirma(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O caminho feliz inteiro, conferido pela rota de leitura.
+
+    O `GET` seguinte é a asserção que importa: a resposta do `PUT` prova o
+    schema de saída, e só uma segunda ida ao banco prova que o que voltou é o
+    que ficou gravado.
+    """
+    dono = _organizador(fabricar_usuario, "feliz")
+    outro_porteiro = fabricar_usuario(PapelUsuario.PORTARIA, "porteiro2@exemplo.com")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    nova_data = _daqui_a(45)
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            data_hora=nova_data,
+            setores=[
+                {"nome": "Arquibancada", "capacidade": 300, "preco_centavos": 9000}
+            ],
+            portaria_ids=[str(outro_porteiro.id)],
+        ),
+    )
+
+    assert resposta.status_code == 200
+
+    depois = cliente.get(f"/organizador/eventos/{evento.id}").json()
+    assert depois["data_hora"].replace("+00:00", "Z") == nova_data
+    assert [setor["nome"] for setor in depois["setores"]] == ["Arquibancada"]
+    assert depois["setores"][0]["capacidade"] == 300
+    assert depois["setores"][0]["preco_centavos"] == 9000
+    assert [portaria["id"] for portaria in depois["portarias"]] == [
+        str(outro_porteiro.id)
+    ]
+    # E a resposta do `PUT` diz exatamente a mesma coisa que o `GET`.
+    assert resposta.json() == depois
+
+
+def test_setor_com_id_e_alterado_sem_id_e_criado_e_ausente_e_removido(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """As três operações que cabem numa lista só, numa chamada só."""
+    dono = _organizador(fabricar_usuario, "tres-operacoes")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    pista = _setor_por_nome(evento)["Pista"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                # Alterado: mesmo `id`, outro nome, outra capacidade, outro preço.
+                {
+                    "id": str(pista.id),
+                    "nome": "Pista Premium",
+                    "capacidade": 900,
+                    "preco_centavos": 15000,
+                },
+                # Novo: sem `id`.
+                {"nome": "Mezanino", "capacidade": 120, "preco_centavos": 25000},
+                # E o "Camarote" simplesmente não veio — é remoção.
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 200
+
+    gravados = {
+        setor.nome: setor
+        for setor in sessao.scalars(
+            select(Setor).where(Setor.evento_id == evento.id)
+        )
+    }
+    assert sorted(gravados) == ["Mezanino", "Pista Premium"]
+    # O alterado continua sendo a **mesma linha**: renomear não é apagar e criar.
+    assert gravados["Pista Premium"].id == pista.id
+    assert gravados["Pista Premium"].capacidade == 900
+    assert gravados["Pista Premium"].preco_centavos == 15000
+    assert gravados["Mezanino"].vendidos == 0
+
+
+def test_os_cinco_campos_do_catalogo_no_corpo_sao_ignorados(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O `EventoEdicao` não tem os cinco campos do catálogo, e sem
+    `extra="forbid"` eles são **ignorados** — não recusados.
+
+    É a garantia de que a tela de editar não é mais poderosa que a de publicar:
+    não existe corpo que faça este evento virar outro show sem trocar de
+    `origem_externa_id`.
+    """
+    dono = _organizador(fabricar_usuario, "catalogo")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            nome="Outro show completamente diferente",
+            imagem_url="https://exemplo.com/outra.jpg",
+            local="Outro lugar",
+            cidade="Outra cidade",
+            origem_externa_id="ZZZZZZZZ",
+        ),
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["nome"] == "Baco Exu do Blues — Bluesman Vivo"
+    assert corpo["local"] == "Espaço Unimed"
+    assert corpo["cidade"] == "São Paulo"
+    assert corpo["origem_externa_id"] == "G5vYZ9a1kd"
+    assert corpo["imagem_url"] == "https://s1.ticketm.net/dam/a/bluesman.jpg"
+
+
+def test_editar_nao_mexe_no_publicado_em(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Editar não é republicar."""
+    dono = _organizador(fabricar_usuario, "publicado-em")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    antes = evento.publicado_em
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora=_daqui_a(60)),
+    )
+
+    assert resposta.status_code == 200
+    gravado = sessao.get(Evento, evento.id)
+    assert gravado is not None
+    assert gravado.publicado_em == antes
+
+
+# --------------------------------------------------------------------------- #
+# A trava: `vendidos == 0` em todos os setores, depois da colheita
+# --------------------------------------------------------------------------- #
+
+
+def test_evento_com_reserva_paga_e_409_evento_com_venda(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "vendido")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador1@exemplo.com")
+    evento = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Pista", 800, 2, 12000)]
+    )
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(sessao, comprador, evento, (pista, 2), estado=EstadoReserva.PAGA)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora=_daqui_a(60)),
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_COM_VENDA"
+    # Nada mudou: a recusa acontece antes de a primeira linha ser escrita.
+    gravado = sessao.get(Evento, evento.id)
+    assert gravado is not None
+    assert gravado.data_hora == evento.data_hora
+
+
+def test_reserva_pendente_ainda_viva_tambem_trava_a_edicao(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Descartei travar só com reserva `PAGA`.
+
+    O preço vai congelado na reserva, então não haveria prejuízo contábil — mas
+    quem está digitando o cartão veria o preço mudar na tela no meio da compra.
+    """
+    dono = _organizador(fabricar_usuario, "pendente-viva")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador2@exemplo.com")
+    evento = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Pista", 800, 3, 12000)]
+    )
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(sessao, comprador, evento, (pista, 3), vencida=False)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora=_daqui_a(60)),
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_COM_VENDA"
+
+
+def test_reserva_vencida_e_colhida_na_mesma_chamada_e_a_edicao_passa(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O teste que justifica a colheita dentro da transação.
+
+    Sem o `expirar_vencidas` do passo 3, um checkout abandonado seguraria a
+    edição por até dez minutos — e a tela diria "esse evento já vendeu" sobre um
+    evento que não vendeu nada. Mentira temporária que o organizador não tem
+    como distinguir da verdadeira.
+    """
+    dono = _organizador(fabricar_usuario, "vencida")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador3@exemplo.com")
+    evento = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Pista", 800, 4, 12000)]
+    )
+    pista = _setor_por_nome(evento)["Pista"]
+    reserva = _reserva_gravada(sessao, comprador, evento, (pista, 4), vencida=True)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora=_daqui_a(60)),
+    )
+
+    assert resposta.status_code == 200
+    # O estoque voltou **nesta mesma chamada**, e a reserva foi marcada.
+    gravado = sessao.get(Setor, pista.id)
+    assert gravado is not None
+    assert gravado.vendidos == 0
+    colhida = sessao.get(Reserva, reserva.id)
+    assert colhida is not None
+    assert colhida.estado == EstadoReserva.EXPIRADA.value
+    # ⚠️ E o corpo da resposta diz o mesmo que o banco. Com
+    # `synchronize_session=False` na colheita e `expire_on_commit=False` na
+    # sessão, é aqui que sairia o `vendidos` de antes da expiração.
+    assert resposta.json()["setores"][0]["vendidos"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# A armadilha central: FK sem `ondelete` em `item_reserva` e `ingresso`
+# --------------------------------------------------------------------------- #
+
+
+def test_remover_setor_com_reserva_expirada_e_422_e_nao_500(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O teste que justifica a spec inteira.
+
+    A reserva `EXPIRADA` devolveu o estoque, então o setor **passa** na trava do
+    passo 4 — e a linha de `item_reserva` continua apontando para ele. Sem o
+    passo 7, o `DELETE` estoura `IntegrityError` no `commit`, sobe ao handler
+    genérico e vira `500 ERRO_INTERNO`.
+    """
+    dono = _organizador(fabricar_usuario, "historico")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador4@exemplo.com")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    camarote = _setor_por_nome(evento)["Camarote"]
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(
+        sessao,
+        comprador,
+        evento,
+        (camarote, 1),
+        estado=EstadoReserva.EXPIRADA,
+    )
+    _entrar(cliente, dono)
+
+    # O Camarote sai da lista — ou seja, seria removido.
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(pista.id),
+                    "nome": pista.nome,
+                    "capacidade": pista.capacidade,
+                    "preco_centavos": pista.preco_centavos,
+                }
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    corpo = resposta.json()
+    assert corpo["erro"]["codigo"] == "SETOR_COM_HISTORICO"
+    # O nome do setor na mensagem: sem ele, o organizador com quatro setores não
+    # sabe qual deles é o impedido.
+    assert "Camarote" in corpo["erro"]["mensagem"]
+    # E os dois continuam lá.
+    assert sessao.get(Setor, camarote.id) is not None
+    assert sessao.get(Setor, pista.id) is not None
+
+
+def test_setor_sem_historico_nenhum_e_removido_normalmente(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O caso legítimo mais comum: criou "Camarote" por engano e ninguém encostou.
+
+    Descartei proibir remoção de qualquer setor justamente por causa dele.
+    """
+    dono = _organizador(fabricar_usuario, "remocao-limpa")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    camarote = _setor_por_nome(evento)["Camarote"]
+    pista = _setor_por_nome(evento)["Pista"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(pista.id),
+                    "nome": pista.nome,
+                    "capacidade": pista.capacidade,
+                    "preco_centavos": pista.preco_centavos,
+                }
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 200
+    assert sessao.get(Setor, camarote.id) is None
+
+
+# --------------------------------------------------------------------------- #
+# `uq_setor_evento_id_nome`: as duas ordens de escrita que virariam 500
+# --------------------------------------------------------------------------- #
+
+
+def test_trocar_os_nomes_de_dois_setores_entre_si_nao_e_500(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """A restrição é conferida a cada statement, não no fim da transação.
+
+    Sem a fase do nome temporário, o `UPDATE` do primeiro setor colide com o
+    nome que o segundo ainda tem — `IntegrityError` no meio de um corpo
+    perfeitamente válido.
+    """
+    dono = _organizador(fabricar_usuario, "troca-de-nomes")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    camarote = _setor_por_nome(evento)["Camarote"]
+    pista = _setor_por_nome(evento)["Pista"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(camarote.id),
+                    "nome": "Pista",
+                    "capacidade": camarote.capacidade,
+                    "preco_centavos": camarote.preco_centavos,
+                },
+                {
+                    "id": str(pista.id),
+                    "nome": "Camarote",
+                    "capacidade": pista.capacidade,
+                    "preco_centavos": pista.preco_centavos,
+                },
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 200
+    trocados = {
+        setor.id: setor.nome
+        for setor in sessao.scalars(select(Setor).where(Setor.evento_id == evento.id))
+    }
+    assert trocados[camarote.id] == "Pista"
+    assert trocados[pista.id] == "Camarote"
+
+
+def test_remover_um_setor_e_criar_outro_com_o_mesmo_nome_nao_e_500(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """A ordem padrão do unit of work emite os `INSERT` **antes** dos `DELETE`.
+
+    Sem a fase B antes da D, o setor novo nasce enquanto o antigo ainda existe,
+    com o mesmo nome e o mesmo evento.
+    """
+    dono = _organizador(fabricar_usuario, "recriar-nome")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    camarote = _setor_por_nome(evento)["Camarote"]
+    pista = _setor_por_nome(evento)["Pista"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(pista.id),
+                    "nome": pista.nome,
+                    "capacidade": pista.capacidade,
+                    "preco_centavos": pista.preco_centavos,
+                },
+                # Sem `id`: é um Camarote **novo**, e o antigo sai da lista.
+                {"nome": "Camarote", "capacidade": 40, "preco_centavos": 50000},
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 200
+    gravados = {
+        setor.nome: setor
+        for setor in sessao.scalars(select(Setor).where(Setor.evento_id == evento.id))
+    }
+    assert sorted(gravados) == ["Camarote", "Pista"]
+    assert gravados["Camarote"].id != camarote.id
+    assert gravados["Camarote"].capacidade == 40
+
+
+# --------------------------------------------------------------------------- #
+# O `404` do dono, byte a byte igual ao de evento inexistente
+# --------------------------------------------------------------------------- #
+
+
+def test_editar_evento_de_outro_organizador_e_404_igual_ao_de_id_inexistente(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Distinguir os dois faria desta rota um oráculo sobre os eventos alheios."""
+    dono = _organizador(fabricar_usuario, "dono")
+    intruso = _organizador(fabricar_usuario, "intruso")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    corpo_enviado = _edicao(evento, porteiro)
+    _entrar(cliente, intruso)
+
+    do_outro = cliente.put(f"/organizador/eventos/{evento.id}", json=corpo_enviado)
+    inexistente = cliente.put(
+        f"/organizador/eventos/{uuid.uuid4()}", json=corpo_enviado
+    )
+
+    assert do_outro.status_code == 404
+    assert do_outro.json()["erro"]["codigo"] == "EVENTO_NAO_ENCONTRADO"
+    assert do_outro.json() == inexistente.json()
+    # E nada do evento alheio mudou.
+    gravado = sessao.get(Evento, evento.id)
+    assert gravado is not None
+    assert gravado.data_hora == evento.data_hora
+
+
+# --------------------------------------------------------------------------- #
+# As cinco recusas copiadas do `publicar`, uma asserção cada
+# --------------------------------------------------------------------------- #
+
+
+def test_editar_sem_nenhum_setor_e_422_evento_sem_setor(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "sem-setor")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}", json=_edicao(evento, porteiro, setores=[])
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_SEM_SETOR"
+
+
+def test_dois_setores_com_o_mesmo_nome_na_edicao_e_422_setor_duplicado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "nome-repetido")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    camarote = _setor_por_nome(evento)["Camarote"]
+    pista = _setor_por_nome(evento)["Pista"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(pista.id),
+                    "nome": "Pista",
+                    "capacidade": 800,
+                    "preco_centavos": 12000,
+                },
+                # ` pista ` com espaços e caixa diferente é a mesma intenção — e
+                # o `uq_setor_evento_id_nome` recusaria os dois com um `500`.
+                {
+                    "id": str(camarote.id),
+                    "nome": " pista ",
+                    "capacidade": 60,
+                    "preco_centavos": 42000,
+                },
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "SETOR_DUPLICADO"
+
+
+def test_editar_sem_escalar_ninguem_e_422_evento_sem_portaria(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """AD-7 vale igual na edição: evento sem escala é ingresso que ninguém
+    valida na porta. Não dá para publicar assim, e não dá para *ficar* assim.
+    """
+    dono = _organizador(fabricar_usuario, "sem-portaria")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, portaria_ids=[]),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_SEM_PORTARIA"
+
+
+def test_escalar_conta_que_nao_e_portaria_na_edicao_e_422_portaria_invalida(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "portaria-invalida")
+    intruso = fabricar_usuario(PapelUsuario.CLIENTE, "cliente-escalado@exemplo.com")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, portaria_ids=[str(intruso.id)]),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "PORTARIA_INVALIDA"
+
+
+def test_nova_data_no_passado_e_422_evento_no_passado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Consertar a data para trás só faria o show reaparecer na programação."""
+    dono = _organizador(fabricar_usuario, "data-passada")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora=_daqui_a(-1)),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_NO_PASSADO"
+
+
+def test_editar_show_que_ja_aconteceu_e_422_evento_no_passado(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O mesmo código nas duas pontas: a data que está lá e a data que veio."""
+    dono = _organizador(fabricar_usuario, "show-passado")
+    evento = _evento_gravado(sessao, dono, porteiro, data_hora=_instante(-2))
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora=_daqui_a(30)),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_NO_PASSADO"
+
+
+def test_data_hora_sem_fuso_na_edicao_e_422(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """AD-11 vale nos dois schemas — é o `DataComFuso` compartilhado."""
+    dono = _organizador(fabricar_usuario, "sem-fuso")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(evento, porteiro, data_hora="2027-08-15T00:00:00"),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "DADOS_INVALIDOS"
+
+
+# --------------------------------------------------------------------------- #
+# `id` de setor: o que não é deste evento, e o que veio duas vezes
+# --------------------------------------------------------------------------- #
+
+
+def test_setor_de_outro_evento_e_422_setor_desconhecido(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Um código só para "não é setor nenhum" e para "é de outro evento"."""
+    dono = _organizador(fabricar_usuario, "setor-alheio")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    outro = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Geral", 100, 0, 5000)]
+    )
+    alheio = _setor_por_nome(outro)["Geral"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(alheio.id),
+                    "nome": "Geral",
+                    "capacidade": 100,
+                    "preco_centavos": 5000,
+                }
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "SETOR_DESCONHECIDO"
+    # O setor do outro evento continua intacto — a recusa vem antes de escrever.
+    ainda_la = sessao.get(Setor, alheio.id)
+    assert ainda_la is not None
+    assert ainda_la.evento_id == outro.id
+
+
+def test_id_inexistente_recebe_o_mesmo_setor_desconhecido(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "setor-fantasma")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(uuid.uuid4()),
+                    "nome": "Pista",
+                    "capacidade": 800,
+                    "preco_centavos": 12000,
+                }
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "SETOR_DESCONHECIDO"
+
+
+def test_o_mesmo_setor_duas_vezes_e_422_e_nao_perda_silenciosa(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Sem esta recusa o estrago é silencioso.
+
+    Dois nomes diferentes para o mesmo `id` passam pelo `SETOR_DUPLICADO`, a
+    segunda entrada sobrescreve a primeira, e o setor que ficou de fora da lista
+    é **removido**: o organizador mandou dois setores e recebeu um, com `200`.
+    """
+    dono = _organizador(fabricar_usuario, "id-repetido")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    pista = _setor_por_nome(evento)["Pista"]
+    _entrar(cliente, dono)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}",
+        json=_edicao(
+            evento,
+            porteiro,
+            setores=[
+                {
+                    "id": str(pista.id),
+                    "nome": "Pista A",
+                    "capacidade": 400,
+                    "preco_centavos": 12000,
+                },
+                {
+                    "id": str(pista.id),
+                    "nome": "Pista B",
+                    "capacidade": 400,
+                    "preco_centavos": 12000,
+                },
+            ],
+        ),
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["erro"]["codigo"] == "SETOR_DUPLICADO"
+    assert len(sessao.get(Evento, evento.id).setores) == 2  # type: ignore[union-attr]
+
+
+# --------------------------------------------------------------------------- #
+# Autorização: a mesma das irmãs
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "papel,email",
+    [
+        (PapelUsuario.CLIENTE, "cliente-editar@exemplo.com"),
+        (PapelUsuario.PORTARIA, "portaria-editar@exemplo.com"),
+    ],
+)
+def test_editar_sem_papel_de_organizador_e_403(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    papel: PapelUsuario,
+    email: str,
+) -> None:
+    dono = _organizador(fabricar_usuario, f"papel-{papel.value.lower()}")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    corpo_enviado = _edicao(evento, porteiro)
+    intruso = fabricar_usuario(papel, email)
+    _entrar(cliente, intruso)
+
+    resposta = cliente.put(f"/organizador/eventos/{evento.id}", json=corpo_enviado)
+
+    assert resposta.status_code == 403
+
+
+def test_editar_sem_cookie_e_401_e_nao_403(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "sem-cookie")
+    evento = _evento_gravado(sessao, dono, porteiro)
+
+    resposta = cliente.put(
+        f"/organizador/eventos/{evento.id}", json=_edicao(evento, porteiro)
+    )
+
+    assert resposta.status_code == 401
+
+
+def test_a_rota_aparece_no_openapi_com_200_e_o_schema_de_saida(
+    cliente: TestClient,
+) -> None:
+    esquema = cliente.get("/openapi.json").json()
+    put = esquema["paths"]["/organizador/eventos/{evento_id}"]["put"]
+
+    assert "200" in put["responses"]
+    referencia = put["responses"]["200"]["content"]["application/json"]["schema"]
+    assert referencia["$ref"].endswith("/EventoSaida")
+    corpo = put["requestBody"]["content"]["application/json"]["schema"]
+    assert corpo["$ref"].endswith("/EventoEdicao")
+    # Os cinco campos do catálogo não existem no contrato de entrada.
+    propriedades = esquema["components"]["schemas"]["EventoEdicao"]["properties"]
+    assert sorted(propriedades) == ["data_hora", "portaria_ids", "setores"]
+
+
+# =========================================================================== #
+# `DELETE /organizador/eventos/{id}` — excluir evento que ainda não vendeu
+# (techspec `docs/techspec-editar-evento.md`, commit 3)
+# =========================================================================== #
+
+
+def _validacao_gravada(
+    sessao: Session,
+    evento: Evento,
+    porteiro: Usuario,
+    *,
+    resultado: Veredito = Veredito.INVALIDO,
+) -> Validacao:
+    """A tentativa frustrada na porta — `ingresso_id` nulo, de propósito.
+
+    ⚠️ **É a linha que passa batido**, e o helper existe para ela ter teste. A
+    `validacao` nasce na porta e ninguém associa "portaria" a "excluir evento" —
+    mas ela é gravada **mesmo quando o código não resolve para ingresso nenhum**,
+    ou seja, existe em evento que nunca vendeu nada. Que é exatamente o único
+    evento que o `DELETE` consegue apagar.
+    """
+    validacao = Validacao(
+        evento_id=evento.id,
+        portaria_id=porteiro.id,
+        ingresso_id=None,
+        resultado=resultado.value,
+        criado_em=datetime.now(timezone.utc),
+    )
+    sessao.add(validacao)
+    sessao.flush()
+    return validacao
+
+
+def _quantas_reservas(sessao: Session) -> int:
+    return sessao.scalar(select(func.count()).select_from(Reserva)) or 0
+
+
+def _quantos_itens(sessao: Session) -> int:
+    return sessao.scalar(select(func.count()).select_from(ItemReserva)) or 0
+
+
+# --------------------------------------------------------------------------- #
+# O caminho feliz, e o que precisa sumir junto
+# --------------------------------------------------------------------------- #
+
+
+def test_excluir_evento_sem_venda_e_204_e_o_get_seguinte_e_404(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "excluir-feliz")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 204
+    # `204` é sem corpo, e é o `Response` explícito da rota que garante isso.
+    assert resposta.content == b""
+    assert cliente.get(f"/organizador/eventos/{evento.id}").status_code == 404
+
+
+def test_excluir_leva_setores_e_escala_junto_sem_deixar_linha_orfa(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """Os dois caem pelo `ondelete="CASCADE"` que declaram desde a Story 2.3."""
+    dono = _organizador(fabricar_usuario, "excluir-cascata")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    assert _quantos_setores(sessao) == 2
+    assert _quantas_escalas(sessao) == 1
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 204
+    assert _quantos_eventos(sessao) == 0
+    assert _quantos_setores(sessao) == 0
+    assert _quantas_escalas(sessao) == 0
+
+
+def test_evento_excluido_some_de_meus_eventos_e_da_programacao_publica(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "excluir-listagens")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    assert len(cliente.get("/organizador/eventos").json()) == 1
+
+    assert cliente.delete(f"/organizador/eventos/{evento.id}").status_code == 204
+
+    assert cliente.get("/organizador/eventos").json() == []
+    # A rota pública é aberta, e o cookie do organizador não muda o que ela vê.
+    cliente.cookies.clear()
+    assert cliente.get("/eventos").json() == []
+    assert cliente.get(f"/eventos/{evento.id}").status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# O rastro morto: reserva não paga, itens e validação
+# --------------------------------------------------------------------------- #
+
+
+def test_evento_com_reserva_expirada_e_excluido_e_a_reserva_some_junto(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """O teste que justifica o commit inteiro.
+
+    É a armadilha do `SETOR_COM_HISTORICO` um nível acima: a reserva `EXPIRADA`
+    devolveu o estoque, então o evento **passa** na trava — e `reserva.evento_id`
+    é FK sem `ondelete`. Sem o passo 6, o `DELETE` do evento estoura
+    `IntegrityError` no `commit` e vira `500`. A única forma de errar aqui é
+    testar só com evento limpo.
+    """
+    dono = _organizador(fabricar_usuario, "excluir-expirada")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador5@exemplo.com")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    camarote = _setor_por_nome(evento)["Camarote"]
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(
+        sessao,
+        comprador,
+        evento,
+        (camarote, 1),
+        (pista, 2),
+        estado=EstadoReserva.EXPIRADA,
+    )
+    _entrar(cliente, dono)
+
+    assert _quantas_reservas(sessao) == 1
+    assert _quantos_itens(sessao) == 2
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 204
+    assert _quantas_reservas(sessao) == 0
+    # Os itens caem pelo `ondelete="CASCADE"` do `reserva_id`, no banco.
+    assert _quantos_itens(sessao) == 0
+    assert _quantos_eventos(sessao) == 0
+
+
+def test_evento_com_validacao_de_tentativa_frustrada_e_excluido_normalmente(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """A FK que ninguém lembra: `validacao.evento_id`, também sem `ondelete`.
+
+    Ela nasce na porta, e um `INVALIDO` é gravado com `ingresso_id` nulo — ou
+    seja, existe em evento que nunca vendeu nada. Esquecer o passo 5 dá um `500`
+    que só aparece depois de alguém ter apontado a câmera para um QR errado.
+    """
+    dono = _organizador(fabricar_usuario, "excluir-validacao")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _validacao_gravada(sessao, evento, porteiro)
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 204
+    assert sessao.scalar(select(func.count()).select_from(Validacao)) == 0
+    assert _quantos_eventos(sessao) == 0
+
+
+def test_evento_com_reserva_recusada_e_validacao_juntas_tambem_sai(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """As duas FKs no mesmo evento — é assim que um evento de verdade fica.
+
+    `RECUSADA` também devolveu o estoque, então ela passa na trava exatamente
+    como a `EXPIRADA`.
+    """
+    dono = _organizador(fabricar_usuario, "excluir-rastro-duplo")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador6@exemplo.com")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(
+        sessao, comprador, evento, (pista, 1), estado=EstadoReserva.RECUSADA
+    )
+    _validacao_gravada(sessao, evento, porteiro, resultado=Veredito.EVENTO_ERRADO)
+    _entrar(cliente, dono)
+
+    assert cliente.delete(f"/organizador/eventos/{evento.id}").status_code == 204
+    assert _quantos_eventos(sessao) == 0
+    assert _quantas_reservas(sessao) == 0
+
+
+# --------------------------------------------------------------------------- #
+# A trava, e a prova de que a recusa não destrói nada
+# --------------------------------------------------------------------------- #
+
+
+def test_excluir_evento_com_reserva_paga_e_409_e_a_reserva_continua_no_banco(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """A recusa acontece **antes** de qualquer `DELETE` — nada é destruído.
+
+    O `estado != 'PAGA'` do passo 6 é a segunda barreira, e existe para o dia em
+    que a primeira falhar: sem ele, o bug viraria "a exclusão apagou uma venda".
+    """
+    dono = _organizador(fabricar_usuario, "excluir-paga")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador7@exemplo.com")
+    evento = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Pista", 800, 2, 12000)]
+    )
+    pista = _setor_por_nome(evento)["Pista"]
+    reserva = _reserva_gravada(
+        sessao, comprador, evento, (pista, 2), estado=EstadoReserva.PAGA
+    )
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_COM_VENDA"
+    # A frase está no verbo certo: uma recusa de exclusão que diz "editado"
+    # seria a tela mentindo sobre o que o organizador acabou de tentar.
+    assert "excluído" in resposta.json()["erro"]["mensagem"]
+    # E nada foi destruído: o evento, a reserva paga e os setores continuam lá.
+    assert sessao.get(Evento, evento.id) is not None
+    assert sessao.get(Reserva, reserva.id) is not None
+    assert _quantos_setores(sessao) == 1
+
+
+def test_excluir_evento_com_reserva_pendente_viva_e_409(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "excluir-pendente-viva")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador8@exemplo.com")
+    evento = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Pista", 800, 3, 12000)]
+    )
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(sessao, comprador, evento, (pista, 3), vencida=False)
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 409
+    assert resposta.json()["erro"]["codigo"] == "EVENTO_COM_VENDA"
+    assert sessao.get(Evento, evento.id) is not None
+
+
+def test_reserva_vencida_e_colhida_e_o_evento_e_excluido_na_mesma_chamada(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """A colheita do passo 3, na exclusão.
+
+    Sem ela, um checkout abandonado seguraria a exclusão por até dez minutos, e
+    a tela diria "esse evento já vendeu" sobre um evento que não vendeu nada.
+    """
+    dono = _organizador(fabricar_usuario, "excluir-vencida")
+    comprador = fabricar_usuario(PapelUsuario.CLIENTE, "comprador9@exemplo.com")
+    evento = _evento_gravado(
+        sessao, dono, porteiro, setores=[("Pista", 800, 4, 12000)]
+    )
+    pista = _setor_por_nome(evento)["Pista"]
+    _reserva_gravada(sessao, comprador, evento, (pista, 4), vencida=True)
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 204
+    assert _quantos_eventos(sessao) == 0
+    # A reserva foi colhida **e** apagada na mesma transação: ela virou
+    # `EXPIRADA` no passo 3 e caiu no passo 6.
+    assert _quantas_reservas(sessao) == 0
+
+
+# --------------------------------------------------------------------------- #
+# A assimetria com o `PUT`: show que já aconteceu **pode** ser excluído
+# --------------------------------------------------------------------------- #
+
+
+def test_show_que_ja_aconteceu_e_excluido_normalmente_ao_contrario_do_put(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """**Intencional, e diferente do `PUT`** — decisão da seção 3 da techspec.
+
+    O motivo da recusa na edição é específico do verbo: editar a data de um show
+    passado o faria reaparecer na programação pública. Excluí-lo não faz nada
+    reaparecer, e é justamente o caso em que a exclusão é faxina. Recusar
+    prenderia todo evento antigo em `Meus eventos` para sempre.
+
+    O par deste teste é o `test_editar_show_que_ja_aconteceu_e_422_evento_no_passado`
+    lá em cima: os dois provam a assimetria, um de cada lado.
+    """
+    dono = _organizador(fabricar_usuario, "excluir-passado")
+    evento = _evento_gravado(sessao, dono, porteiro, data_hora=_instante(-2))
+    _entrar(cliente, dono)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 204
+    assert _quantos_eventos(sessao) == 0
+
+
+# --------------------------------------------------------------------------- #
+# O `404`, e a não-idempotência que o separa do `DELETE` da Story 4.4
+# --------------------------------------------------------------------------- #
+
+
+def test_excluir_evento_de_outro_organizador_e_404_igual_ao_de_id_inexistente(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "excluir-dono")
+    intruso = _organizador(fabricar_usuario, "excluir-intruso")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, intruso)
+
+    do_outro = cliente.delete(f"/organizador/eventos/{evento.id}")
+    inexistente = cliente.delete(f"/organizador/eventos/{uuid.uuid4()}")
+
+    assert do_outro.status_code == 404
+    assert do_outro.json()["erro"]["codigo"] == "EVENTO_NAO_ENCONTRADO"
+    assert do_outro.json() == inexistente.json()
+    # E o evento alheio continua inteiro.
+    assert sessao.get(Evento, evento.id) is not None
+
+
+def test_excluir_duas_vezes_devolve_404_na_segunda(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    """⚠️ **Não é idempotente, e a diferença com o `DELETE` da Story 4.4 é real.**
+
+    Revogar um link duas vezes responde `204` nas duas, porque "o link não vale
+    mais" continua verdade. Aqui o recurso do caminho deixou de existir: dizer
+    `204` fingiria que a segunda chamada apagou alguma coisa.
+    """
+    dono = _organizador(fabricar_usuario, "excluir-duas-vezes")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    _entrar(cliente, dono)
+
+    assert cliente.delete(f"/organizador/eventos/{evento.id}").status_code == 204
+
+    segunda = cliente.delete(f"/organizador/eventos/{evento.id}")
+    assert segunda.status_code == 404
+    assert segunda.json()["erro"]["codigo"] == "EVENTO_NAO_ENCONTRADO"
+
+
+@pytest.mark.parametrize(
+    "papel,email",
+    [
+        (PapelUsuario.CLIENTE, "cliente-excluir@exemplo.com"),
+        (PapelUsuario.PORTARIA, "portaria-excluir@exemplo.com"),
+    ],
+)
+def test_excluir_sem_papel_de_organizador_e_403(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+    papel: PapelUsuario,
+    email: str,
+) -> None:
+    dono = _organizador(fabricar_usuario, f"excluir-papel-{papel.value.lower()}")
+    evento = _evento_gravado(sessao, dono, porteiro)
+    intruso = fabricar_usuario(papel, email)
+    _entrar(cliente, intruso)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 403
+    assert sessao.get(Evento, evento.id) is not None
+
+
+def test_excluir_sem_cookie_e_401_e_nao_403(
+    cliente: TestClient,
+    sessao: Session,
+    fabricar_usuario: Callable[..., Usuario],
+    porteiro: Usuario,
+) -> None:
+    dono = _organizador(fabricar_usuario, "excluir-sem-cookie")
+    evento = _evento_gravado(sessao, dono, porteiro)
+
+    resposta = cliente.delete(f"/organizador/eventos/{evento.id}")
+
+    assert resposta.status_code == 401
+    assert sessao.get(Evento, evento.id) is not None
+
+
+def test_o_delete_aparece_no_openapi_com_204_e_sem_corpo_de_entrada(
+    cliente: TestClient,
+) -> None:
+    esquema = cliente.get("/openapi.json").json()
+    rota = esquema["paths"]["/organizador/eventos/{evento_id}"]["delete"]
+
+    assert "204" in rota["responses"]
+    # Sem schema de entrada: o caminho é o pedido inteiro.
+    assert "requestBody" not in rota

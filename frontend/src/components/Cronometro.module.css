@@ -13,7 +13,7 @@
 }
 
 .rotulo {
-  font: 600 12px/1.8 var(--mono);
+  font: 600 14px/1.8 var(--mono);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--fumaca);

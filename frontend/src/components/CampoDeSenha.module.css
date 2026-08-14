@@ -22,10 +22,17 @@
    dele já é a base da entrada. Descontar a margem aqui subia o botão para cima
    do campo, que foi o primeiro desenho e estava errado na tela.
 
-   A aritmética do alinhamento: a entrada mede 48px (14px de padding em cima e
-   embaixo + 18px de corpo com `line-height: 1` + as duas bordas de 1px). O botão
-   de 46px começando 1px acima da borda de baixo fica centrado nela — e 44px é o
-   alvo de toque do UX-DR6, que é por isso que ele é bem maior que o ícone. */
+   A aritmética do alinhamento: a entrada mede 48px, e o botão de 46px começando
+   1px acima da borda de baixo fica centrado nela — 44px é o alvo de toque do
+   UX-DR6, que é por isso que ele é bem maior que o ícone.
+
+   ⚠️ **Esses 48px passaram a ser um token em 14/08/2026, e antes eram uma
+   soma.** O texto aqui dizia "14px de padding em cima e embaixo + 18px de corpo
+   com `line-height: 1` + as duas bordas de 1px" — a conta estava certa e a
+   premissa não: `padding + corpo` só dá a mesma altura em `<input>` do mesmo
+   tipo, e o `Campo` serve a `text`, `date`, `time`, `number` e `search`. Agora é
+   `--campo-altura` no `globals.css`, e a altura desta caixa é a mesma 48px por
+   declaração, não por coincidência de tipo. */
 .olho {
   position: absolute;
   right: 1px;
