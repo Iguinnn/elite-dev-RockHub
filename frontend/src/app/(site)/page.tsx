@@ -591,8 +591,9 @@ function ChamadaPrincipal({
     return <div className={estilos.chamada}>{conteudo}</div>;
   }
 
-  // `/eventos/{id}` **só nasce na Story 3.4** — a mesma janela consciente que a
-  // `Fila` abriu na 3.1, registrada no `frontend/README.md`.
+  // `/eventos/{id}` nasceu **só na Story 3.4** — a mesma janela consciente que a
+  // `Fila` abriu na 3.1. Fechada desde então; o registro está no
+  // `sprint-status.yaml`, no bloco da 3.4.
   return (
     <Link href={`/eventos/${evento.id}`} className={estilos.chamada}>
       {conteudo}
@@ -653,8 +654,9 @@ function Chip({
  * **não seja clicável**, e a única forma honesta de fazer isso é o elemento
  * não ser um link.
  *
- * O `href` aponta para `/eventos/{id}`, que **só nasce na Story 3.4** — janela
- * consciente de três stories, registrada no `frontend/README.md`.
+ * O `href` aponta para `/eventos/{id}`, que **só nasceu na Story 3.4** — janela
+ * consciente de três stories, hoje fechada. O registro está no
+ * `sprint-status.yaml`, no bloco da 3.1.
  */
 function Fila({ evento }: { evento: EventoNaProgramacao }) {
   const { diaDaSemana, dia, mesEAno, hora } = partesDaFilaPublica(evento.data_hora);

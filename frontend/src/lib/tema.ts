@@ -8,9 +8,10 @@
  * grupo `(site)` já era dinâmico por causa do masthead que lê sessão, e as
  * outras duas cascas passam a ser.
  *
- * **Sem `prefers-color-scheme` em lugar nenhum, de propósito.** Quem chega vê o
- * jornal noturno; clara quem quiser. Seguir a preferência do sistema faria
- * metade de quem abre o produto nunca ver a identidade que está sendo avaliada.
+ * **Sem `prefers-color-scheme` em lugar nenhum, de propósito.** O modo de entrada
+ * é decisão do produto, não do sistema operacional de quem chega — seguir a
+ * preferência da máquina faria a primeira tela ser sorteada por uma
+ * configuração que ninguém fez pensando neste site.
  *
  * Este módulo **não importa `next/headers`**, e isso não é descuido: ele é
  * importado dos dois lados da fronteira — os layouts leem o cookie no servidor,
@@ -32,11 +33,25 @@ export const COOKIE_DO_TEMA = "tema";
 export const VALIDADE_DO_TEMA = 60 * 60 * 24 * 365;
 
 /**
- * O escuro é o padrão, e **qualquer coisa que não seja `claro` cai nele** —
- * cookie ausente, valor antigo, lixo digitado à mão no inspetor. A leitura é
- * deliberadamente assimétrica: o modo escuro é a identidade do produto, então
- * ele é o estado para o qual o erro cai.
+ * ⚠️ **O claro virou o padrão em 14/08/2026** (decisão do Igor). Era o escuro
+ * desde a Story 1.2, e a inversão é de uma linha porque a assimetria sempre
+ * esteve concentrada aqui: `layout.tsx` escreve `data-tema` explícito em toda
+ * requisição, e a cascata do `globals.css` funciona nos dois sentidos sem tocar
+ * num token. A `/portaria` **não muda**, e não por sorte — ela declara
+ * `data-tema="escuro"` na própria casca (`portaria/layout.tsx:56`), justamente
+ * para ficar travada no jornal noturno enquanto o resto do produto clareia.
+ *
+ * **Qualquer coisa que não seja `escuro` cai no claro** — cookie ausente, valor
+ * antigo, lixo digitado à mão no inspetor. A leitura continua deliberadamente
+ * assimétrica; o que mudou é o lado para o qual o erro cai.
+ *
+ * ⚠️ **Isto contraria a identidade "jornal noturno"** do `DESIGN.md`, que é
+ * artefato de planejamento congelado e não foi atualizado. O escuro era o padrão
+ * exatamente para que quem abre o produto visse a identidade sem pedir. Fica
+ * registrado que a troca é escolha consciente, não descuido: o modo claro já
+ * era um modo inteiro e calibrado (contraste conferido em 14/08/2026), e a
+ * decisão de qual deles recebe quem chega é de produto, não de arquitetura.
  */
 export function normalizarTema(valor: string | undefined): Tema {
-  return valor === "claro" ? "claro" : "escuro";
+  return valor === "escuro" ? "escuro" : "claro";
 }
