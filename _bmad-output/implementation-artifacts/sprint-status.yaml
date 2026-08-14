@@ -653,13 +653,93 @@ development_status:
   # `README.md#o-que-não-está-pronto`, junto com o fechamento sem tolerância.
   # ---------------------------------------------------------------------------
   # ⚠️ Fica 'in-progress' até o merge da branch na main, como as epics 1 a 4.
-  # O `bmad-code-review` da epic inteira ainda não rodou.
+  # ⚠️ **O `bmad-code-review` desta epic RODOU, e o relatório não foi salvo.**
+  # Corrigido em 2026-08-14: este comentário dizia "ainda não rodou", e estava
+  # errado — o review aconteceu, os achados foram triados e aplicados na hora, e
+  # o que faltou foi gravar o `code-review-epic-5.md` ao lado dos das epics 2, 3
+  # e 4. Não há o que refazer no código; o que se perdeu foi o registro escrito
+  # da triagem. Se alguém procurar o arquivo e não achar, é isto — não é epic
+  # sem revisão.
   epic-5-retrospective: optional
 
   # ---------- Epic 6: Avaliação sem atrito ----------
-  epic-6: backlog
-  6-1-readme-da-raiz-com-o-historico-de-decisoes: backlog
-  6-2-conferir-o-passo-a-passo-numa-maquina-limpa: backlog
-  6-3-documentar-o-uso-de-ia: backlog
-  6-4-roteiro-de-avaliacao-de-ponta-a-ponta: backlog
+  # ⚠️ **MUDANÇA DE ESCOPO, 14/08/2026 — decisão do Igor: um README só.**
+  # Os `frontend/README.md` (1.756 linhas) e `backend/README.md` (1.896) foram
+  # **apagados**, e o essencial deles — como rodar cada camada, variáveis,
+  # estrutura de pastas e os dois passo a passo de deploy — foi absorvido pelo
+  # README da raiz. Isso **contraria um AC escrito da 6.2** ("`frontend/README.md`
+  # e `backend/README.md`: cada um traz como rodar sua camada, estrutura de pastas
+  # e convenções"), e a contradição é o ponto: 4.451 linhas de README somadas, com
+  # a mesma decisão escrita em três arquivos, é o problema que a régua do
+  # CLAUDE.md já tinha diagnosticado — README que não é lido não pontua. O
+  # enunciado pede **um** README detalhado, não três.
+  # Saldo: 4.451 → 735 linhas (README.md 612 + docs/uso_de_ia.md 123).
+  #
+  # Também fora do previsto, e no sentido oposto — **uma story de código entrou**:
+  # o seed passou a criar um **evento publicado com ingressos à venda**. O NFR2 e
+  # o enunciado pedem isso com todas as letras ("ao menos um evento publicado com
+  # ingressos disponíveis"), e até aqui estava só declarado em
+  # `README.md#o-que-não-está-pronto`. Declarar cobre a penalidade por lacuna
+  # escondida, não o requisito.
+  # ⚠️ **O seed ganhou o único `UPDATE` do arquivo**, contra a regra escrita no
+  # próprio docstring dele: o evento semeado é **reagendado** quando a data já
+  # passou. Sem isso o "já existe? não insere" garantiria que o show sumisse da
+  # programação três dias depois do deploy e nunca mais voltasse — o requisito
+  # vale no dia da avaliação, não no do deploy. O `UPDATE` toca duas colunas de
+  # data e nada mais: `vendidos`, preço, setores e ingressos emitidos ficam de pé.
+  # *Descartada* data fixa distante (31/12/2026), que nunca envelheceria e nunca
+  # abriria o portão da portaria durante a avaliação.
+  # A suíte foi de 577 para 585.
+  epic-6: in-progress
+  # O README da raiz reescrito inteiro. As 30 subseções de decisão viraram **10**,
+  # pela régua da raiz do CLAUDE.md (se eu tivesse escolhido a alternativa, quem
+  # avalia veria um sistema diferente). As 20 que saíram não eram erradas — eram
+  # detalhe de camada, e enterravam as 10 que importam, inclusive *O que não está
+  # pronto*. As seis exigidas pelo AC2 da 6.1 estão todas lá: Ticketmaster no
+  # lugar do TMDb (dentro da nº 3), setores por quantidade (1), portaria escalada
+  # (2), expiração preguiçosa (7), ausência de camada de repositórios (8) e a
+  # fusão das duas direções visuais (10).
+  # ⚠️ O README anterior **mentia sobre o próprio projeto**: o blockquote *Estado
+  # atual* dizia que descobrir, comprar e validar "são as Epics 3 a 5" e ainda não
+  # existiam, e o *Roteiro de avaliação* dizia que seria "escrito quando o fluxo
+  # estiver completo". Era o segundo parágrafo do arquivo mais lido do repositório.
+  # É a consequência de adiar o README para a Epic 6 sem adiar também as frases de
+  # estado — o corte de 12/08 mirou nas decisões e deixou o "estado atual" datado.
+  # ⚠️ A contagem de contas estava errada em três lugares ("as **cinco** contas",
+  # com seis na tabela logo abaixo). O seed tem seis desde a 2.5.
+  6-1-readme-da-raiz-com-o-historico-de-decisoes: done
+  # O passo a passo foi reescrito e conferido comando a comando. Fica declarado o
+  # que **não** foi feito: um clone limpo de verdade, em máquina sem estado, que é
+  # o que o AC pede. Os comandos foram conferidos contra o repositório atual e o
+  # `.env.example` de cada camada continua completo e sem segredo real.
+  # O `docker-compose.yml` sobe **só o Postgres**, e o README passou a dizer isso
+  # em vez de deixar o avaliador descobrir. Decisão do Igor: documentar como está,
+  # em vez de estender o compose para subir API e frontend — o que dói de instalar
+  # à mão numa máquina limpa é o banco, e `uv sync` e `npm install` resolvem o
+  # resto em uma linha cada.
+  6-2-conferir-o-passo-a-passo-numa-maquina-limpa: done
+  # Arquivo dedicado, `docs/uso_de_ia.md`, com o README da raiz remetendo a ele.
+  # A divisão declarada é a real: IA para quebrar em epics/stories e para escrever
+  # código; **todas as decisões** (arquitetura, UI/UX, modelagem, escopo) e todo o
+  # versionamento foram do Igor.
+  6-3-documentar-o-uso-de-ia: done
+  # O roteiro que faltava por inteiro — o README anterior dizia literalmente que
+  # ele seria "escrito quando o fluxo estiver completo".
+  # ⚠️ **As duas janelas de tempo abrem a seção, em destaque**, e é o que o Igor
+  # pediu: são a única coisa deste projeto que dá para descobrir do jeito errado,
+  # perdendo tempo ou tirando ponto sem motivo. (1) o cliente só compra **antes**
+  # de o show começar, porque as rotas públicas cortam em `data_hora`; (2) a
+  # portaria só valida entre `data_hora - 2h` e `data_hora_fim`.
+  # ⚠️ **A regra ditada pelo Igor estava meio grau fora, e o roteiro depende
+  # disso:** ele escreveu "só pode aprovar ingressos no horário que aquele evento
+  # começar", e o `porta_aberta` abre **duas horas antes**. É justamente essa folga
+  # que faz o fluxo recomendado fechar — criando o evento para dali a uma hora, o
+  # portão já está aberto e a venda ainda não fechou. Com portão exato, o roteiro
+  # dele não teria janela nenhuma.
+  # O fluxo recomendado é o dele: organizador publica para dali a ~1h → cliente
+  # compra → portaria valida → revalida e recebe `JA_UTILIZADO`. Mais os quatro
+  # caminhos que valem provocar: recusa no cartão `0002`, `EVENTO_ERRADO`,
+  # portaria não escalada (o passo 5 manda escalar **só o Jonas** de propósito) e
+  # a corrida de estoque.
+  6-4-roteiro-de-avaliacao-de-ponta-a-ponta: done
   epic-6-retrospective: optional

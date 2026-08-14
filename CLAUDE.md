@@ -176,7 +176,8 @@ Sequência (comprimida por causa do prazo — PRD foi cortado de propósito):
    `docs/desafio-elite-dev.md` com outras palavras
 3. ~~`bmad-architecture`~~ ✅ **concluído** — `_bmad-output/planning-artifacts/architecture/architecture-elite-dev-RockHub-2026-08-09/ARCHITECTURE-SPINE.md`
    contém 14 decisões (AD-1 a AD-14). **São vinculantes** — código que as contraria está errado.
-   Saiu junto `docs/decisoes-tecnicas.md`, hoje **congelado** (ver *Documentos congelados* abaixo)
+   Saiu junto um `docs/decisoes-tecnicas.md`, **apagado em 2026-08-14** (ver *Documentos congelados*
+   abaixo)
 3b. ~~`bmad-ux`~~ ✅ **concluído** — `_bmad-output/planning-artifacts/ux-designs/ux-elite-dev-RockHub-2026-08-09/`
    `DESIGN.md` (identidade "jornal noturno") + `EXPERIENCE.md` (comportamento) +
    `mockups/proto-jornal-noturno.html` (protótipo navegável de 11 telas).
@@ -271,10 +272,12 @@ está pronto.
 Estes existem, continuam versionados e **não recebem mais manutenção**. Não os edite ao terminar
 uma story, e não os cite como se estivessem em dia:
 
-- **`docs/decisoes-tecnicas.md`** — rascunho da fase de arquitetura. Descreve em tempo presente
-  coisas que ainda não existem (reserva de 10 min, HMAC do QR, link de compartilhamento, cartão de
-  teste). Congelado em 2026-08-11, com aviso no topo do próprio arquivo. As decisões vivas moram no
-  `README.md` da raiz
+- ~~**`docs/decisoes-tecnicas.md`**~~ — **apagado em 2026-08-14, na Epic 6.** Era rascunho da fase de
+  arquitetura e descrevia em tempo presente coisas que só existiram depois; congelá-lo em 2026-08-11
+  não bastou, porque documento congelado ainda é documento que alguém abre e acredita. O raciocínio
+  do dia do planejamento continua inteiro em `ARCHITECTURE-SPINE.md` e nos `.memlog.md`, e as
+  decisões vivas — com a alternativa descartada de cada uma — moram no `README.md` da raiz. O git
+  guarda o arquivo se ele fizer falta
 - **`_bmad-output/planning-artifacts/`** — brainstorm, arquitetura, UX e `epics.md` são artefatos de
   **planejamento**, escritos antes da implementação. Eles registram o plano como ele foi feito; não
   os reescreva para casar com o que o código virou

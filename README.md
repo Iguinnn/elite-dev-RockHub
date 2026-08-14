@@ -6,40 +6,154 @@ e recebe um ingresso com QR; a portaria valida esse QR na entrada. É a minha re
 Elite Dev** da Verzel — o enunciado completo está em
 [docs/desafio-elite-dev.md](docs/desafio-elite-dev.md).
 
-Monorepo com `backend/` (FastAPI + PostgreSQL) e `frontend/` (Next.js). Este README é o histórico
-de decisões do projeto: o que eu escolhi, por que, e o que eu descartei no caminho. Os READMEs de
-[backend/](backend/README.md) e [frontend/](frontend/README.md) tratam do que é específico de cada
-camada — como rodar, estrutura de pastas, convenções e armadilhas.
+Monorepo com `backend/` (FastAPI + PostgreSQL) e `frontend/` (Next.js), publicado nas duas metades.
+O fluxo está completo de ponta a ponta: publicar, descobrir, reservar, pagar (com aprovação **e**
+recusa), receber o ingresso, compartilhar por link, revogar o link e validar na porta — pela câmera
+ou digitando o código.
 
-> **Estado atual:** em construção, e **as duas metades estão no ar** —
-> <https://elite-dev-rock-hub.vercel.app> é a aplicação, com o PostgreSQL da Railway migrado e
-> semeado por trás. O acesso está fechado pelos dois lados (cadastro, login, sessão em cookie
-> `httpOnly`, guarda por papel) e a **Epic 2 publica de verdade**: em `/organizador/publicar` o
-> organizador busca a atração no catálogo, preenche data, local e setores, escala quem vai validar
-> na porta, e acompanha o que publicou em `/organizador/eventos`. O que ainda não existe é o outro
-> lado — descobrir, comprar e validar são as Epics 3 a 5. A seção
-> [O que não está pronto](#o-que-não-está-pronto) é mantida honesta a cada passo.
+---
+
+## Roteiro de avaliação
+
+**Comece por aqui.** Este é o caminho de ponta a ponta — publicar, comprar, receber o ingresso e
+validar na porta — em uns 10 minutos, com as contas já prontas.
+
+| Se você quer… | Vá para |
+|---|---|
+| Abrir a aplicação agora, sem instalar nada | **<https://elite-dev-rock-hub.vercel.app>** |
+| As credenciais dos três papéis | [Contas semeadas](#contas-semeadas) |
+| Rodar na sua máquina | [Como executar](#como-executar) |
+| Ver o contrato da API | [Documentação da API](#documentação-da-api) |
+
+### ⚠️ Antes de começar: as duas janelas de tempo
+
+Estas duas regras são a única coisa deste projeto que dá para descobrir do jeito errado, perdendo
+tempo. Elas são deliberadas e estão testadas:
+
+> **1. O cliente só compra ANTES de o show começar.**
+> No minuto em que a `data_hora` do evento chega, ele some da programação, da busca e da criação de
+> reserva. Um show que começou não é mais programação e não é mais compra.
+>
+> **2. A portaria só valida da abertura dos portões até o término.**
+> O portão abre **2 horas antes** da `data_hora` e fecha **na `data_hora_fim`** que o organizador
+> declarou. Fora dessa janela a rota responde `403` (`EVENTO_NAO_ABERTO` ou `EVENTO_ENCERRADO`) e o
+> turno nem aparece como aberto na lista da portaria.
+
+As duas juntas deixam uma janela de **2 horas** em que dá para comprar e validar o mesmo ingresso —
+entre `início − 2h` e o `início`. É por isso que o roteiro abaixo manda criar o evento **para daqui
+a uma hora**: o portão já está aberto, e a venda ainda não fechou.
+
+### O caminho recomendado, do começo ao fim
+
+Funciona igual [na aplicação publicada](https://elite-dev-rock-hub.vercel.app) e na sua máquina.
+São uns 10 minutos.
+
+**1 · Como organizador — publicar o show**
+
+1. Entre com `organizador@rockhub.dev` / `rockhub123` e abra **Publicar evento**. A tela já chega
+   mostrando shows reais do catálogo da Ticketmaster, sem precisar buscar nada
+2. Clique numa fila para escolher a atração. Repare que a URL ganha `?escolhido=…`: recarregar
+   mantém a escolha, e o botão voltar a desfaz
+3. **Marque a data de hoje e um horário de início cerca de UMA HORA à frente do relógio.** É este o
+   passo que faz o resto do roteiro funcionar — veja as janelas acima. Em *Termina às*, ponha três
+   ou quatro horas depois
+4. Preencha a casa de show e ao menos um setor (`Pista`, `50`, `120,00`)
+5. No passo 3, **escale apenas o Jonas Ribeiro** — deixe a Ana de fora de propósito, que é o que
+   torna verificável o item 4 abaixo. A confirmação aparece na própria tela
+
+**2 · Como cliente — comprar**
+
+6. Saia, entre com `cliente@rockhub.dev` / `rockhub123`. O show que você acabou de publicar está na
+   programação da raiz
+7. Abra o evento, escolha a quantidade e reserve. A reserva **segura o estoque por 10 minutos**, com
+   cronômetro na tela
+8. No checkout, pague com **cartão** — qualquer número aprova, exceto o caso do item 12. Depois de
+   uma tela de espera de 6 segundos, o ingresso é emitido
+9. Abra **Meus ingressos** → o canhoto com o **QR** e o código de 8 caracteres. **Anote o código**,
+   você vai precisar dele
+10. Clique em *Compartilhar* → um link público que abre o canhoto sem login. Abra numa janela
+    anônima para conferir, volte e clique em *Revogar link* → o mesmo link agora responde como se
+    nunca tivesse existido
+
+**3 · Como portaria — validar**
+
+11. Saia, entre com `portaria@rockhub.dev` / `rockhub123`. Você cai direto na casca da portaria, com
+    a lista de turnos — e o show que você publicou está lá, com o portão **aberto**
+12. Abra o turno e valide o ingresso, pela **câmera** (apontando para o QR na outra tela ou no
+    celular) ou digitando o código de 8 caracteres. Resultado: **VÁLIDO**, em verde, com símbolo
+13. **Valide o mesmo ingresso de novo** → **JÁ UTILIZADO**, com a hora da primeira entrada. É a
+    garantia que o desafio pede, e ela é um `UPDATE` condicional no banco, não um `if` em Python
+14. Digite um código inventado → **INVÁLIDO**. ⚠️ Não use as letras `I`, `L`, `O` ou `U`: o alfabeto
+    é base32 de Crockford e não as contém — um código com elas é malformado, não forjado
+15. O contador do turno sobe a cada leitura, e sobrevive a recarregar a página
+
+### Os quatro caminhos que valem a pena provocar
+
+| O quê | Como |
+|---|---|
+| **Recusa de pagamento** | No checkout, use um cartão **terminado em `0002`**. A recusa é determinística, a reserva vira `RECUSADA` e **o estoque volta** |
+| **Evento errado** | Publique um segundo evento, compre nele, e tente validar aquele ingresso no turno do primeiro → **EVENTO ERRADO**. Repare que a tela **não diz de qual show o ingresso é** — devolver isso a quem não foi escalado nele é justamente o furo que a escala existe para fechar |
+| **Portaria não escalada** | Entre como `portaria2@rockhub.dev` (Ana, que você deixou de fora no passo 5) → o turno **não aparece** na lista dela. Digitar a URL do turno à mão devolve `403` e cai de volta em `/portaria` |
+| **Estoque disputado** | Publique um evento com **1 lugar**, e reserve por dois navegadores ao mesmo tempo → uma venda e uma recusa, nunca duas vendas. É `UPDATE ... WHERE vendidos + :q <= capacidade`, decidido no banco |
+
+### O que dá para conferir sem instalar nada
+
+Se você só quer olhar por cima, sem seguir o roteiro: o evento semeado já está na programação e é
+comprável (ele começa daqui a três dias, então **não** dá para validar o ingresso dele na porta —
+essa é a janela de 2h da regra 2). E o cookie de sessão: no DevTools → Application, `rockhub_sessao`
+está no domínio da **Vercel**, com `HttpOnly` marcado, e `document.cookie` no console não o mostra.
+Na aba Network, toda chamada saiu para `/api/...` no domínio da Vercel, **nunca** para
+`up.railway.app`.
+
+---
+
+## Documentação da API
+
+A API é documentada automaticamente pelo FastAPI, a partir dos próprios schemas Pydantic. **São 27
+operações**, e dá para exercitar todas pelo navegador, logando com qualquer
+[conta semeada](#contas-semeadas):
+
+| | |
+|---|---|
+| **Swagger UI** | **<https://elite-dev-rockhub-production.up.railway.app/docs>** |
+| ReDoc | <https://elite-dev-rockhub-production.up.railway.app/redoc> |
+| OpenAPI (JSON) | <https://elite-dev-rockhub-production.up.railway.app/openapi.json> |
+| Saúde | <https://elite-dev-rockhub-production.up.railway.app/saude> |
+
+Rodando local, os mesmos endereços em <http://127.0.0.1:8000/docs>.
+
+> **Para autenticar no Swagger:** chame `POST /auth/login` com um e-mail e senha da tabela de
+> contas. A sessão volta num cookie `httpOnly`, que o navegador guarda sozinho — daí em diante todo
+> `Try it out` das rotas protegidas já vai autenticado. Não há campo `Authorize`, e é de propósito:
+> não existe `Authorization: Bearer` neste projeto ([por quê](#5--sessão-em-cookie-httponly-e-nunca-token-no-localstorage)).
+
+As 27 operações, por grupo:
+
+| Grupo | Operações |
+|---|---|
+| **Acesso** (`auth`) | `POST /auth/cadastro` · `POST /auth/login` · `POST /auth/logout` · `GET /auth/eu` |
+| **Público** | `GET /eventos` · `GET /eventos/cidades` · `GET /eventos/destaque` · `GET /eventos/{id}` · `GET /ingressos/compartilhados/{token}` |
+| **Organizador** | `GET /organizador/catalogo` · `GET`/`POST /organizador/eventos` · `GET`/`PUT`/`DELETE /organizador/eventos/{id}` · `GET /organizador/portarias` |
+| **Cliente** | `POST /reservas` · `GET /reservas/{id}` · `POST /reservas/{id}/pagamento` · `GET /ingressos` · `GET /ingressos/{id}` · `POST`/`DELETE /ingressos/{id}/compartilhamento` |
+| **Portaria** | `GET /portaria/eventos` · `GET /portaria/eventos/{id}` · `POST /portaria/eventos/{id}/validacoes` |
+| **Operação** | `GET /saude` |
+
+**Todo erro sai no mesmo formato**, venha da regra de negócio, do Pydantic ou de uma rota
+inexistente — `{"erro": {"codigo": "ESTOQUE_INSUFICIENTE", "mensagem": "..."}}`. O `codigo` é
+estável e é por ele que o frontend decide o texto, nunca pela mensagem.
+
+---
 
 ## No ar
 
-A aplicação está publicada na Vercel — **é esta URL que abre a interface**:
+| | |
+|---|---|
+| **Aplicação** (Vercel) | **<https://elite-dev-rock-hub.vercel.app>** |
+| **API + PostgreSQL** (Railway) | <https://elite-dev-rockhub-production.up.railway.app> |
 
-**<https://elite-dev-rock-hub.vercel.app>**
-
-Entre com qualquer uma das credenciais de [Contas semeadas](#contas-semeadas). O caminho completo
-está em [Roteiro de avaliação](#roteiro-de-avaliação).
-
-A API vive à parte, na Railway, com o banco no mesmo projeto:
-
-**<https://elite-dev-rockhub-production.up.railway.app>**
-
-Você não precisa dela para usar a aplicação — o navegador nunca fala com esse endereço, e é de
-propósito ([por quê](#proxy-api-no-next-não-samesitenone-em-produção)). Ela está aqui para quem
-quiser ver o contrato:
-
-- **[`/saude`](https://elite-dev-rockhub-production.up.railway.app/saude)** → `{"status": "ok"}`
-- **[`/docs`](https://elite-dev-rockhub-production.up.railway.app/docs)** → documentação automática,
-  com todas as rotas. Dá para entrar por ali mesmo, com qualquer conta semeada
+É a URL da Vercel que abre a interface. Você não precisa da API para usar a aplicação — o navegador
+nunca fala com aquele endereço, e é de propósito
+([por quê](#6--o-navegador-nunca-fala-com-a-api-o-next-faz-proxy)).
 
 ```bash
 curl -i -X POST https://elite-dev-rock-hub.vercel.app/api/auth/login \
@@ -50,12 +164,9 @@ curl -i -X POST https://elite-dev-rock-hub.vercel.app/api/auth/login \
 Essa chamada prova o sistema inteiro num comando: ela só responde `200` se o build da Vercel leu o
 endereço da API, **e** o proxy `/api/*` reescreveu para a Railway do lado do servidor, **e** as
 migrações rodaram, **e** o seed gravou as contas. Repare no `Set-Cookie`: ele volta pelo domínio da
-Vercel, com `HttpOnly`, `Secure` e `SameSite=lax` — é o cookie de sessão atravessando dois
-fornecedores, que é a coisa que este deploy existe para provar.
+Vercel, com `HttpOnly`, `Secure` e `SameSite=lax`.
 
-Como cada plataforma foi configurada, campo por campo, está em
-[Deploy na Vercel](frontend/README.md#deploy-na-vercel) e
-[Deploy na Railway](backend/README.md#deploy-na-railway).
+---
 
 ## Como executar
 
@@ -66,14 +177,24 @@ Como cada plataforma foi configurada, campo por campo, está em
 - **Docker**, com o plugin Compose (`docker compose`, com espaço), para o PostgreSQL 16
 - **Node ≥ 20.9** e **npm** para o frontend. O Next 16 não roda no Node 18
 
-### Banco de dados
+### 1 · O banco, com Docker Compose
 
 ```bash
-docker compose up -d      # Postgres 16 em localhost:5432, com o banco de teste já criado
-docker compose ps         # conferir que o serviço está saudável
+docker compose up -d      # Postgres 16 em localhost:5432
+docker compose ps         # conferir que o serviço está "healthy"
 ```
 
-### Backend
+O `docker-compose.yml` está na raiz e sobe **o PostgreSQL**, com volume nomeado para os dados
+persistirem entre reinícios e um script de inicialização que já cria o banco `rockhub_teste` usado
+pela suíte. **Ele não sobe a API nem o frontend** — os dois rodam com `uv` e `npm` nos passos
+abaixo. Foi escolha: containerizar as duas camadas acrescentaria dois Dockerfiles e um entrypoint
+para resolver um problema que `uv sync` e `npm install` já resolvem em uma linha cada, e o que
+realmente dói de instalar à mão numa máquina limpa é o Postgres.
+
+Não quer Docker? Qualquer PostgreSQL 16 serve — aponte a `DATABASE_URL` para ele e crie o
+`rockhub_teste` à mão se for rodar os testes.
+
+### 2 · O backend
 
 ```bash
 cd backend
@@ -82,26 +203,19 @@ cp .env.example .env      # no Windows: copy .env.example .env
 uv sync                   # cria a .venv/ e instala exatamente o que está no uv.lock
 
 uv run alembic upgrade head       # cria o schema
-uv run python -m seeds.semear     # cria as 6 contas de avaliação
+uv run python -m seeds.semear     # cria as contas e o evento de avaliação
 uv run uvicorn app.main:app --reload
 ```
 
 Sobe em <http://127.0.0.1:8000>, com `/saude` e `/docs` respondendo.
 
 Em desenvolvimento o `JWT_SECRET` de exemplo funciona e você pode pular a geração de segredo; com
-`AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito. A
-`TICKETMASTER_API_KEY` segue a mesma regra e pode ficar vazia aqui — em `local` a busca no catálogo
-responde `CATALOGO_INDISPONIVEL` em vez de travar a avaliação por falta de conta no portal da
-Ticketmaster. Detalhes em [Configuração](backend/README.md#configuração).
+`AMBIENTE=producao` ele **derruba a aplicação na subida**, de propósito, e o mesmo vale para o
+`TICKET_SIGNING_SECRET`. A `TICKETMASTER_API_KEY` pode ficar vazia aqui — em `local` a busca no
+catálogo responde `CATALOGO_INDISPONIVEL` em vez de travar a avaliação por falta de conta no portal
+da Ticketmaster.
 
-Testes (exigem o Compose no ar — a suíte migra o banco de teste pelo próprio Alembic):
-
-```bash
-cd backend
-uv run pytest
-```
-
-### Frontend
+### 3 · O frontend
 
 Em outro terminal:
 
@@ -117,9 +231,38 @@ Abre em <http://localhost:3000>. **Suba o backend antes** — o frontend o alcan
 próprio: o navegador só conhece `/api/...`, e o Next reescreve para `http://localhost:8000` do lado
 do servidor.
 
+### 4 · Os testes
+
+```bash
+cd backend
+uv run pytest       # 585 testes
+```
+
+Exigem o Compose no ar: a suíte roda contra **PostgreSQL de verdade**, e ela mesma migra o banco de
+teste pelo Alembic a cada sessão. Não há teste automatizado no frontend, e isso é
+[corte consciente](#o-que-não-está-pronto).
+
+### Variáveis de ambiente
+
+Cada camada tem um `.env.example` versionado, comentado linha a linha, **sem nenhum segredo real**.
+
+| Variável | Camada | Para quê |
+|---|---|---|
+| `AMBIENTE` | backend | `local` ou `producao`. Em `producao` ativa o `Secure` do cookie e recusa segredos de exemplo |
+| `DATABASE_URL` | backend | Conexão com o Postgres. Aceita `postgres://`, `postgresql://` e `postgresql+psycopg://` |
+| `DATABASE_URL_TESTE` | backend | Banco usado pelo `pytest` |
+| `JWT_SECRET` | backend | Assina o JWT da sessão |
+| `TICKET_SIGNING_SECRET` | backend | Assina o código do ingresso. **Variável própria**, e não o `JWT_SECRET` reaproveitado: girar a chave de sessão passaria a invalidar todo ingresso já emitido |
+| `TICKETMASTER_API_KEY` | backend | Chave da Discovery. Opcional em `local` |
+| `CORS_ORIGENS` | backend | Origens autorizadas a chamar a API direto |
+| `COOKIE_SESSAO_NOME` | backend | Nome do cookie. ⚠️ O frontend procura esse nome por literal — trocar só de um lado deixa todo mundo deslogado sem um erro sequer |
+| `API_URL` | frontend | Endereço da API, lido **no servidor**. Sem `NEXT_PUBLIC_`, sem barra no fim, sempre `https://` em produção |
+
+---
+
 ## Contas semeadas
 
-Um comando cria as cinco contas de avaliação, com o Compose no ar e a migração aplicada:
+Um comando cria as **seis contas** e **um evento publicado com ingressos à venda**:
 
 ```bash
 cd backend
@@ -135,110 +278,32 @@ uv run python -m seeds.semear
 | `PORTARIA` | Jonas Ribeiro | `portaria@rockhub.dev` | `rockhub123` |
 | `PORTARIA` | Ana Sampaio | `portaria2@rockhub.dev` | `rockhub123` |
 
-**São dois clientes de propósito**, para demonstrar duas garantias que um cliente só deixaria no ar:
-que o ingresso de um não aparece na conta do outro (Epic 4) e que duas pessoas disputando o último
-ingresso produzem uma venda e uma recusa (Epic 3). **E são duas portarias** desde a Story 2.5, para
-que o cenário do AD-7 — a portaria A **não** valida o evento da portaria B — seja demonstrável sem
-criar conta na mão. Conta de portaria não se cria pela interface, de propósito.
+**São duas de cada papel de propósito.** Dois clientes, porque o ingresso de um não aparecer na
+conta do outro é uma frase que ninguém confere com uma conta só. Dois organizadores, pelo mesmo
+motivo, em `Meus eventos`. Duas portarias, porque é isso que torna demonstrável a regra de que a
+portaria A não valida o evento da portaria B. **Conta de portaria não se cria pela interface**, de
+propósito.
 
-**As mesmas cinco contas existem no banco da Railway**, criadas por este mesmo comando, que roda a
-cada deploy logo depois das migrações. Então elas valem nos três lugares: local, aplicação publicada
-e `/docs` da API.
+**O evento semeado** é *Câmara Escura*, no Audio Club (São Paulo), marcado para **três dias à
+frente**, com dois setores à venda — `Pista` (800 lugares, R$ 120,00) e `Mezanino` (200, R$ 220,00)
+— e as duas portarias escaladas. Ele existe para o enunciado ("ao menos um evento publicado com
+ingressos disponíveis") e para você poder comprar sem precisar publicar nada antes. Ele **não** vem
+do catálogo da Ticketmaster: o seed não chama a API externa, senão avaliar exigiria uma conta no
+portal.
 
-**Rodar de novo é seguro:** o comando não duplica conta, não apaga e não sobrescreve nada. Ele
-imprime `criada` na primeira execução e `mantida` nas seguintes. Dois detalhes que evitam dez minutos
-de confusão: rode **com o `-m`** (executar o arquivo direto quebra o caminho de import) e **a partir
-de `backend/`**, que é de onde o `.env` é lido.
+**Rodar de novo é seguro:** o comando não duplica conta, não apaga e não sobrescreve nada. Imprime
+`criada` na primeira execução e `mantida` nas seguintes. A única escrita que ele faz numa execução
+seguinte é **reagendar o evento semeado** se a data dele já tiver passado — duas colunas de data, e
+nada mais; quem já tinha ingresso continua com ele.
 
-**Conta criada por `/cadastro` nasce sempre `CLIENTE`**: não há seletor de papel, e enviar `papel` na
-requisição não muda nada.
+Dois detalhes que evitam dez minutos de confusão: rode **com o `-m`** (executar o arquivo direto
+quebra o caminho de import) e **a partir de `backend/`**, que é de onde o `.env` é lido.
 
-## Roteiro de avaliação
+**As mesmas contas existem no banco da Railway**, criadas por este mesmo comando, que roda a cada
+deploy logo depois das migrações. **Conta criada por `/cadastro` nasce sempre `CLIENTE`**: não há
+seletor de papel, e enviar `papel` na requisição não muda nada.
 
-O caminho de ponta a ponta — publicar, comprar, receber o ingresso, provocar a recusa de pagamento e
-validar na portaria — é escrito quando o fluxo estiver completo. O que dá para verificar hoje:
-
-### Sem instalar nada
-
-Abra <https://elite-dev-rock-hub.vercel.app>. São cinco minutos, sem clonar, sem Docker:
-
-1. A raiz abre com a identidade aplicada — fundo escuro, masthead com o fio duplo, serifada nos
-   títulos. O masthead mostra `Início` · `Entrar`, porque você ainda não tem sessão
-2. Abra `/conta` direto na barra de endereço → você é levado para `/login?voltar=%2Fconta`. A guarda
-   de rota está valendo em produção
-3. Entre com `organizador@rockhub.dev` / `rockhub123` → você **volta para a `/conta`**, e ela mostra
-   **Helena Marques**, papel `ORGANIZADOR`. Essa conta não poderia ter nascido pela interface
-4. O masthead vira `Início` · `Meus eventos` · `Publicar evento` · `Minha conta`. Clique em `Sair` →
-   ele volta para `Entrar` **imediatamente, sem recarregar a página**
-5. No DevTools, aba Application: o cookie `rockhub_sessao` está no domínio da **Vercel**, com
-   `HttpOnly` marcado — e `document.cookie` no console não o mostra. Na aba Network, toda chamada
-   saiu para `/api/...` no domínio da Vercel, **nunca** para `up.railway.app`
-
-O passo 5 é o que eu pediria para olhar com atenção: a interface está na Vercel, a API na Railway, e
-mesmo assim não existe requisição entre domínios nem cookie de terceiro. O motivo está em
-[Proxy `/api/*` no Next](#proxy-api-no-next-não-samesitenone-em-produção).
-
-**O que ainda não dá para fazer por lá:** descobrir evento, comprar, receber o QR ou validar na
-portaria. Publicar **existe**, mas o roteiro dele está abaixo, em *Na sua máquina*, porque publicar
-em produção criaria um evento no banco real que ninguém pediu.
-
-### Na sua máquina
-
-Rodando local pelos passos de [Como executar](#como-executar), começando pelo seed.
-
-**Acesso e sessão**
-
-1. Entrar como `organizador@rockhub.dev` → a `/conta` mostra **Helena Marques**, `ORGANIZADOR`
-2. Rodar `uv run python -m seeds.semear` **de novo** → as seis linhas dizem `mantida`, o comando sai
-   em `0`, e nenhuma conta criada por você desaparece. É a garantia que faz esse comando poder rodar
-   a cada deploy
-3. Criar uma conta em `/cadastro` → cai na raiz já logado. Senhas diferentes nos dois campos mostram
-   o erro **sem nenhuma requisição no Network** — a confirmação nunca sai do navegador
-4. Cadastrar **o mesmo e-mail de novo** (inclusive com outra caixa: `IGOR@Exemplo.COM`) → `409`, com
-   mensagem legível. Nunca um `500`
-5. Errar a senha → `401 CREDENCIAIS_INVALIDAS`. Um e-mail que **não existe** devolve exatamente a
-   mesma coisa, no mesmo tempo ([por quê](#recusa-não-entrega-o-que-ela-sabe))
-6. `curl -i http://127.0.0.1:8000/auth/eu` sem cookie → `401 NAO_AUTENTICADO` no formato
-   `{"erro": {...}}`. E `/rota-que-nao-existe` → `404` no mesmo formato, em português
-7. Abrir `/login?voltar=//exemplo.com` (ou `?voltar=javascript:alert(1)`) e entrar → você cai em `/`.
-   **Nunca fora do site**
-
-**Publicar um evento** — o primeiro fluxo completo do produto, do catálogo externo até o banco
-
-8. Como organizador, abrir `Publicar evento`. A tela **já chega mostrando shows reais** do catálogo
-   da Ticketmaster, sem precisar buscar nada primeiro
-9. **Clicar numa fila** → a URL ganha `?escolhido=…` e o passo 2 aparece. Recarregar mantém a
-   escolha; o botão voltar a desfaz
-10. Preencher data, horário, casa de show e um setor (`Pista`, `800`, `120,00`); no passo 3, marcar
-    **as duas** portarias → a confirmação aparece **na própria tela**, com capacidade, preço e os dois
-    nomes sob `Na porta`
-11. Conferir que as linhas existem de verdade:
-    `docker compose exec db psql -U rockhub -d rockhub -c "select nome, data_hora, local from evento;"`
-    e `... -c "select * from evento_portaria;"` → duas linhas para esse evento
-12. Repetir com **dois setores de mesmo nome** (`Pista` e `pista`) → `422 SETOR_DUPLICADO`, nunca um
-    `500`, e nada fica gravado. `"setores": []` pela API → `422 EVENTO_SEM_SETOR`
-13. **Publicar sem marcar ninguém no passo 3** → a tela recusa sem requisição. Pela API, corpo sem
-    `portaria_ids` → `422 EVENTO_SEM_PORTARIA`
-14. **Escalar uma conta que não é de portaria** (`"portaria_ids": ["<id do cliente>"]`) →
-    `422 PORTARIA_INVALIDA`. Um UUID que não existe responde **exatamente o mesmo**
-15. `curl` em `/organizador/portarias` com cookie de **cliente** → `403 SEM_PERMISSAO`; sem cookie →
-    `401 NAO_AUTENTICADO`
-
-**Acompanhar o que foi publicado**
-
-16. Abrir `Meus eventos` → os shows numa fila com data, nome, `local · cidade` e
-    `vendidos/capacidade` à direita. **Números exatos, sem medidor** — é o inventário de quem é dono
-    da informação
-17. Publicar um show com **data no passado** → ele aparece em `Já aconteceram`, separado de
-    `Em cartaz`
-18. **Clicar numa fila** → o detalhe abre com os setores um a um, com preço, e o bloco `Na porta`.
-    Ao lado do título há **`Editar`** — data, setores e escala. Ele só aparece enquanto o evento não
-    vendeu nada: com um ingresso vendido, no lugar dele fica a frase que explica por quê, e a URL
-    `/organizador/eventos/{id}/editar` digitada à mão diz a mesma coisa
-19. Pedir pela API o detalhe de **um evento que não é seu** → `404 EVENTO_NAO_ENCONTRADO`, com corpo
-    **idêntico** ao de um UUID que nunca existiu
-20. Entrar como `cliente@rockhub.dev` e digitar `/organizador/eventos` → você cai na raiz, e
-    `Meus eventos` não está no masthead
+---
 
 ## Stack e estrutura
 
@@ -248,37 +313,96 @@ Rodando local pelos passos de [Como executar](#como-executar), começando pelo s
 | Sessão | Argon2id (`argon2-cffi`) para a senha · JWT HS256 (`PyJWT`) em cookie `httpOnly` |
 | Banco | PostgreSQL 16 · SQLAlchemy 2 · Alembic |
 | Frontend | Next.js 16 · React 19 · TypeScript · CSS próprio, sem framework |
+| Leitura do QR | `@zxing/browser`, carregado sob demanda |
 | Catálogo externo | Ticketmaster Discovery v2 |
-| Deploy | Vercel (frontend) e Railway (API e banco) — **as duas no ar** |
+| Testes | `pytest`, 585 testes contra PostgreSQL real |
+| Deploy | Vercel (frontend) e Railway (API e banco) |
 
 ```text
 docker-compose.yml   # Postgres 16 local — infraestrutura do projeto inteiro, por isso na raiz
 docker/initdb/       # script que cria o banco de teste na primeira subida do Compose
-backend/             # API FastAPI          → backend/README.md
-frontend/            # Next.js              → frontend/README.md
-docs/                # enunciado do desafio e specs avulsas
+backend/
+  app/api/           # rotas HTTP, uma por área (auth, publico, cliente, organizador, portaria)
+  app/services/      # regra de negócio e transações — é aqui que mora o domínio
+  app/models/        # tabelas SQLAlchemy
+  app/schemas/       # contratos de entrada e saída (Pydantic)
+  app/core/          # config, sessão do banco, segurança, formato de erro
+  app/integrations/  # cliente da Ticketmaster
+  migrations/        # Alembic
+  seeds/             # dados de avaliação
+  tests/             # 585 testes
+frontend/src/
+  app/(site)/        # casca do jornal: programação, evento, reserva, ingressos, organizador
+  app/(entrada)/     # login e cadastro
+  app/portaria/      # casca própria da portaria, sem o masthead do site
+  components/        # componentes e ilhas "use client"
+  lib/               # acesso à API, formatação, sessão
+docs/                # enunciado do desafio, techspecs e uso de IA
 _bmad-output/        # artefatos de planejamento: brainstorm, arquitetura, UX, epics e stories
 ```
 
 **`_bmad-output/` é versionado de propósito**, porque o desafio pede os artefatos de planejamento
-junto do código. Lá dentro estão a sessão de brainstorming (com o `.memlog.md` completo, que registra
-o que foi considerado e recusado), a espinha de arquitetura com as 14 decisões vinculantes
-(AD-1 a AD-14), o design de UX com protótipo navegável, e as 38 stories — uma por commit.
+junto do código. Lá estão a sessão de brainstorming (com o `.memlog.md` completo, que registra o que
+foi considerado e recusado), a espinha de arquitetura com as 14 decisões vinculantes, o design de UX
+com protótipo navegável de 11 telas, e as 38 stories.
+
+---
+
+## Deploy e integração contínua
+
+**As duas metades sobem sozinhas a partir do `main`.** É um monorepo, e cada plataforma está
+apontada para o seu diretório: um `git push` na `main` dispara o build do frontend na Vercel e o do
+backend na Railway, em paralelo, sem nenhum passo manual.
+
+| | Vercel | Railway |
+|---|---|---|
+| **Root Directory** | `frontend` | `backend` |
+| **Branch de produção** | `main` | `main` |
+| **Build** | detectado (Next.js) | Railpack, detectado pelo `pyproject.toml` |
+| **Pré-deploy** | — | `alembic upgrade head && python -m seeds.semear` |
+| **Start** | — | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| **Health check** | — | `/saude` |
+| **Variáveis** | `API_URL` | `AMBIENTE`, `DATABASE_URL`, `JWT_SECRET`, `TICKET_SIGNING_SECRET`, `TICKETMASTER_API_KEY`, `CORS_ORIGENS` |
+
+**Não existe `vercel.json`, `railway.json`, `Dockerfile` nem `Procfile` neste repositório** — a
+configuração de deploy mora no painel de cada plataforma, e esta tabela é onde ela está escrita.
+
+Três armadilhas que me custaram build, e que valem para quem for subir a própria cópia:
+
+- **O `Root Directory` é o campo que derruba o primeiro build nas duas plataformas.** Ele não vem
+  preenchido, e sem ele a plataforma olha a raiz do monorepo, não acha `package.json` nem
+  `pyproject.toml`, e falha sem dizer o que faltou
+- **A branch de produção é escolhida sozinha** (`main`, `master`, ou a padrão do repositório).
+  Trocá-la no painel não dispara deploy nenhum
+- **Os comandos da Railway não usam `uv run`.** O `uv` só existe na fase de build; o que chega ao
+  contêiner de execução é a virtualenv, com `alembic`, `uvicorn` e `python` já no `PATH`
+
+**Migração e seed rodam num contêiner separado, antes de o tráfego ser trocado.** Se a migração
+falhar, o deploy não prossegue e a versão anterior continua atendendo — em vez de tirar do ar o que
+estava funcionando. É também por isso que o seed sai em `0` mesmo quando avisa: um `exit(1)` por
+causa de um aviso derrubaria o deploy inteiro.
+
+O que **não** existe é integração contínua no sentido de rodar a suíte a cada push: não há GitHub
+Actions ([por quê](#o-que-não-está-pronto)).
+
+---
 
 ## Decisões: por que isso e não aquilo
 
-Esta seção só guarda decisão que **muda o produto ou a arquitetura** — a régua é: se eu tivesse
-escolhido a alternativa, quem avalia veria um sistema diferente. Decisão de detalhe (nome de
-componente, ordem de campo, escolha de biblioteca menor) mora no README da camada, ao lado do código
-que ela afeta.
+O desafio diz, com todas as letras, que o que interessa não é volume entregue — é como se pensa, o
+que foi descartado, por que a tela é assim e não de outro jeito. Esta seção é a resposta a isso.
 
-### Setores por quantidade, não mapa de assentos
+A régua para uma decisão entrar aqui: **se eu tivesse escolhido a alternativa, quem avalia veria um
+sistema diferente.** Detalhe de tela, nome de componente e biblioteca menor ficam de fora — eles
+estão documentados ao lado do código, nas techspecs em [`docs/`](docs/).
+
+### 1 · Setores por quantidade, não mapa de assentos
 
 **Decidi** vender por setor com capacidade e contador (`Pista`, `800`, `120,00`), sem assento
 numerado. O desafio aceita qualquer um dos dois.
 
-**Por quê:** a plataforma é focada em show — pista, área VIP, camarote —, onde assento numerado não é
-o padrão. Escolher o formato que casa com o produto vale mais do que escolher o mais vistoso.
+**Por quê:** a plataforma é focada em show — pista, área VIP, camarote —, onde assento numerado não
+é o padrão. Escolher o formato que casa com o produto vale mais do que escolher o mais vistoso.
 
 **O que caiu:** o **mapa de assentos** de cinema e teatro, que é o mais impressionante de demonstrar
 e o que o enunciado cita primeiro. Ele exigiria modelar assento individual, desenhar a planta e
@@ -286,49 +410,25 @@ resolver seleção em tempo real — e a invariante que importa ("o mesmo lugar 
 vezes") é a **mesma** nos dois modelos, só que com muito mais tela pela frente. Preferi o fluxo
 inteiro completo à metade sofisticada, que é literalmente o que o enunciado recomenda.
 
-### Portaria é escala de trabalho, não nível de permissão
+### 2 · Portaria é escala de trabalho, não nível de permissão
 
-**Decidi** que o usuário de portaria é **escalado para eventos específicos** pelo organizador, no ato
-da publicação. Ao entrar, ele vê só os eventos em que trabalha. É a tabela `evento_portaria`, com
-chave composta, e um evento aceita vários escalados.
+**Decidi** que o usuário de portaria é **escalado para eventos específicos** pelo organizador, no
+ato da publicação. Ao entrar, ele vê só os eventos em que trabalha. É a tabela `evento_portaria`,
+com chave composta, e um evento aceita vários escalados.
 
 **Por quê:** a leitura óbvia do enunciado é tratar os três papéis como níveis de permissão — e aí
 **qualquer conta de portaria valida ingresso de qualquer evento do sistema**. O papel diz o que a
 pessoa pode fazer, mas não *onde*. Numa plataforma com vários organizadores, isso é um furo de
-autorização. Um efeito colateral bem-vindo: como a validação sempre acontece dentro do contexto de um
-evento escolhido, o retorno "evento errado" que o desafio pede **surge do modelo**, em vez de ser uma
-regra inventada à parte.
+autorização. Um efeito colateral bem-vindo: como a validação sempre acontece dentro do contexto de
+um evento escolhido, o retorno "evento errado" que o desafio pede **surge do modelo**, em vez de ser
+uma regra inventada à parte.
 
 **O que caiu:** **papel como permissão pura**, que é o que o enunciado sugere e custa uma tabela a
 menos. E, dentro da escala, **um único porteiro por evento** (um `<select>`, que é o que o protótipo
 desenhava): caiu porque a interface passaria a ser a única coisa impedindo o que o banco permite, e
-não há tela de editar evento para corrigir depois — um evento com uma pessoa só escalada, e ela
-faltando na noite do show, é um evento sem portaria.
+um evento com uma pessoa só escalada, faltando na noite do show, é um evento sem portaria.
 
-### A programação pública só mostra o que ainda vai acontecer
-
-**Decidi** que `GET /eventos` devolve apenas eventos com `data_hora >= agora`, e que esse corte é
-feito **no backend**, no `where` da consulta. Show que já aconteceu simplesmente não existe para
-quem chega na raiz do site.
-
-**Por quê:** a programação pública é o que está por vir. Quem abre a página inicial quer saber o que
-dá para comprar, e um show que já passou não é nenhuma das duas coisas — não é programação e não é
-compra. O histórico não se perde: ele continua inteiro em `/organizador/eventos`, que é a tela de
-quem publicou, e é lá que ele significa alguma coisa. Foi a primeira vez neste projeto que uma
-decisão de produto minha virou uma condição de `where` em vez de um filtro de tela, e isso é
-proposital: "a programação é o que ainda vai acontecer" não é preferência de layout, é a definição
-do que essa rota devolve.
-
-**O que caiu:** **duas seções na tela, `Em cartaz` e `Já aconteceram`**, que é exatamente o que eu
-fiz em "Meus eventos" duas stories antes. Caiu porque lá o dono da informação é o organizador e o
-histórico é o inventário dele; aqui o visitante veria metade da página inicial ocupada por shows que
-não pode comprar. E caiu também **uma lista só, em ordem crescente, sem filtro nenhum** — menos
-código, menos decisão —, porque ela põe um show de 2001 no topo da primeira tela do produto. A
-consequência que aceito é que um evento que começa daqui a cinco minutos continua na programação e
-continua vendendo: parar de vender X horas antes é regra de produto que ainda não decidi, e ela vale
-mais perto da story da reserva.
-
-### O catálogo externo é copiado na publicação, não consultado ao vivo
+### 3 · O catálogo externo é copiado na publicação, não consultado ao vivo
 
 **Decidi** que a Ticketmaster é chamada **apenas** quando o organizador busca uma atração para
 publicar. No ato da publicação, os dados usados são gravados no banco. Nenhuma tela de cliente ou de
@@ -342,69 +442,12 @@ o registro depois.
 
 **O que caiu:** **consultar ao vivo com cache**, que manteria os dados sempre atualizados. Caiu
 porque "atualizado" é a propriedade errada aqui: um ingresso vendido para um show que mudou de nome
-na origem tem que continuar dizendo o que dizia quando foi vendido.
+na origem tem que continuar dizendo o que dizia quando foi vendido. Caiu junto o **TMDb**, a outra
+API que o enunciado oferece: ela é catálogo de filme, e um catálogo de filme empurraria o produto
+para sessão de cinema — que é onde o mapa de assentos faria falta, e eu já tinha decidido não
+fazê-lo.
 
-### Publicação exige atração do catálogo — sem cadastro manual de evento
-
-**Decidi** que o organizador só publica a partir de uma atração encontrada no catálogo. Não existe, e
-não vai existir, um caminho de "não achei — cadastro na mão".
-
-**Por quê:** é o que o enunciado descreve literalmente — "o organizador monta um evento **a partir
-de** um catálogo vindo de uma API externa" — e é o que a decisão acima pressupõe: o dado do catálogo
-vira cópia no banco, o que só faz sentido existindo uma atração de origem.
-
-**O que caiu:** um segundo caminho, "não encontrou? cadastre manualmente". Cobriria casos reais —
-cover, evento independente, show sem página na Ticketmaster — mas abriria um formulário novo com
-validação própria e sairia do que o enunciado pede para demonstrar. Fica registrado como
-[limitação](#o-que-não-está-pronto).
-
-### Só cliente cria a própria conta; organizador e portaria nascem por fora
-
-**Decidi** que o cadastro pela interface produz **sempre** uma conta `CLIENTE`. Não há seletor de
-papel, não há campo `papel` no schema de entrada, e enviar `{"papel": "ORGANIZADOR"}` cria uma conta
-cliente do mesmo jeito, calada.
-
-**Por quê:** um seletor de papel numa tela pública é escalada de privilégio com aparência de
-formulário. E a portaria é ainda mais direta: ela só valida onde foi *escalada*, então uma conta de
-portaria autocriada não estaria ligada a evento algum. Papel é uma afirmação sobre confiança, e
-afirmação de confiança não pode vir de quem está pedindo o acesso. Fiz questão de que o campo
-desconhecido seja **ignorado** em vez de recusado com `422`: um `422` provaria que o servidor viu o
-campo; ignorá-lo prova que ele não influencia nada.
-
-**O que caiu:** um seletor "sou cliente / sou organizador", que várias plataformas de evento têm —
-elas resolvem com aprovação manual ou verificação de CNPJ, que é exatamente a etapa que este projeto
-não tem. E **um cadastro de organizador em rota própria**, que está *adiado, não descartado*: sem uma
-forma de decidir quem merece o papel, seria o mesmo buraco com outro endereço.
-
-### Backend separado em FastAPI, e não Next.js full-stack
-
-**Decidi** separar a API do frontend, com FastAPI de um lado e Next.js do outro.
-
-**Por quê:** o núcleo do desafio é concorrência — não vender o mesmo lugar duas vezes, não validar o
-mesmo ingresso duas vezes. Isso se resolve com `UPDATE` condicional e transação, e eu queria a
-ferramenta que deixa isso explícito. Separar também torna o contrato da API visível, que é justamente
-o que está sendo avaliado.
-
-**O que caiu:** Next.js full-stack com Route Handlers e Prisma. Seria menos código e um deploy só,
-mas empurraria a regra de concorrência para dentro do framework de tela, onde ela fica difícil de
-enxergar — e apagaria a fronteira entre API e interface que o desafio pede para demonstrar.
-
-### `routers → services → models`, sem camada de repositórios
-
-**Decidi** duas camadas antes do modelo: `app/api/` cuida do HTTP, `app/services/` cuida da regra de
-negócio e das transações. Não existe `app/repositories/`.
-
-**Por quê:** a `Session` do SQLAlchemy já é, na prática, um repositório com unidade de trabalho. Numa
-aplicação deste tamanho, a camada extra viraria uma pilha de funções de repasse — `criar`,
-`buscar_por_id`, `salvar` — que não separam nada e só afastam a regra do lugar onde ela acontece.
-
-**O que caiu:** o `router → service → repository` que é padrão em projeto grande. Ele se paga quando
-há mais de uma fonte de dados ou troca de ORM no horizonte; não é o caso, e adotar por hábito seria
-cerimônia sem contrapartida. A mesma régua criou **uma exceção deliberada**: a rota do catálogo chama
-a integração da Ticketmaster direto, sem service, porque um service ali teria como corpo inteiro
-`return ticketmaster.buscar_eventos(q)` — a definição de camada de repasse que eu acabei de recusar.
-
-### O estoque é protegido pelo banco, não pela aplicação
+### 4 · O estoque é protegido pelo banco, não pela aplicação
 
 **Decidi** que toda mudança de estoque é um único comando condicional, e que o banco carrega uma
 constraint que torna o estado inválido impossível de gravar:
@@ -417,175 +460,35 @@ UPDATE setor SET vendidos = vendidos + :quantidade
 **Por quê:** o caso que interessa não é o normal, é o simultâneo — duas pessoas comprando o último
 ingresso no mesmo instante. Como a verificação e a escrita acontecem no mesmo comando, não existe
 intervalo entre "conferir" e "gravar", que é exatamente onde a corrida aconteceria. Se o comando
-afetar zero linhas, não havia estoque, e a transação é revertida. O comando já existe e é testado
-desde a Story 2.3, antes de a Epic 3 ter consumidor para ele.
+afetar zero linhas, não havia estoque, e a transação é revertida.
 
 **O que caiu:** **`SELECT` para conferir e depois `UPDATE`**, que é o caminho intuitivo e tem a
 corrida embutida entre as duas linhas. E **lock na aplicação**, que resolveria numa instância só e
 quebraria assim que houvesse duas réplicas — que é justamente a situação de um deploy real. A mesma
-disciplina vai valer para a validação de ingresso na Epic 5: `WHERE id = :id AND usado_em IS NULL`.
+disciplina vale para a validação na porta: `WHERE id = :id AND usado_em IS NULL`. Nos dois casos eu
+provei a diferença por **mutação**, não por leitura: trocar o `UPDATE` condicional por um `if` em
+Python passa em todos os testes sequenciais e falha só no de duas conexões simultâneas.
 
-### Dinheiro é inteiro em centavos, do banco à fronteira
+### 5 · Sessão em cookie `httpOnly`, e nunca token no `localStorage`
 
-**Decidi** que todo valor monetário é `int` em centavos no banco e no contrato da API. A conversão de
-`120,00` para `12000` acontece no cliente, antes do `POST`.
-
-**Por quê:** ponto flutuante não representa `0,10` exatamente, e preço de ingresso somado várias
-vezes é onde isso aparece. A fronteira é o lugar certo para a conversão: do lado de fora quem digita
-escreve como escreveria num cartaz; do lado de dentro, todo valor é inteiro, sem exceção.
-
-**O que caiu:** **aceitar reais na API e converter no backend**, que tiraria o parsing do cliente —
-caiu porque põe ponto flutuante no contrato. E **pedir centavos direto ao organizador**, zero
-conversão e zero ambiguidade, ao custo de ele fazer a conta de cabeça a cada setor.
-
-### Erro da API tem código estável, e o frontend decide por ele
-
-**Decidi** que **toda** resposta de erro sai como
-`{"erro": {"codigo": "ESTOQUE_INSUFICIENTE", "mensagem": "..."}}` — as mesmas duas chaves, venha o
-erro da regra de negócio, do framework (rota inexistente, método errado), da validação do Pydantic ou
-de uma exceção não prevista. Fixei isso na primeira story, antes de existir qualquer regra de
-negócio.
-
-**Por quê:** o `codigo` é contrato; a `mensagem` é texto para humano. Com essa separação eu reescrevo
-qualquer mensagem sem quebrar tela nenhuma. E padronizar as origens de uma vez é o que dá ao frontend
-**um caminho só** para tratar erro — se o `404` do framework falasse `{"detail": ...}` e o do meu
-service falasse `{"erro": ...}`, cada tela teria que saber os dois. O corpo do `500` não carrega a
-causa: mensagem de exceção traz host, usuário e nome de tabela com frequência demais para virar
-resposta HTTP.
-
-**O que caiu:** deixar cada endpoint devolver o `detail` padrão do FastAPI e o frontend interpretar o
-texto. Funciona até a primeira vez que alguém corrige uma vírgula na mensagem e derruba um `if` do
-outro lado. **O que abri mão junto:** o erro de validação do Pydantic vem como lista de objetos
-aninhados, mais rica para depurar; achatei em texto para não ter uma forma de erro diferente só nesse
-caso.
-
-### Alembic desde a primeira tabela, nunca `create_all` — nem em teste
-
-**Decidi** que todo schema nasce por migração versionada, sem exceção — inclusive nos testes, que
-migram o banco de teste pelo Alembic em vez de criar as tabelas a partir dos modelos.
-
-**Por quê:** `create_all` seria mais rápido de montar, mas deixaria de verificar exatamente o que a
-migração entrega. Sem um `downgrade()` exercitado, uma migração pode estar quebrada por meses sem
-ninguém perceber — e seria o deploy a descobrir isso, da pior forma possível.
-
-**O que caiu:** `Base.metadata.create_all`, cogitado especificamente para os testes por ser mais
-rápido de escrever. Cai fora do projeto inteiro, não só de uma story.
-
-### Testes de banco contra Postgres real, não SQLite em memória
-
-**Decidi** que a suíte roda `alembic downgrade base` seguido de `upgrade head` contra um banco de
-teste real (`rockhub_teste`) antes de qualquer asserção.
-
-**Por quê:** SQLite não tem UUID nativo, não tem `TIMESTAMPTZ` e trata `CHECK` de outro jeito —
-passaria verde sem provar nada sobre o schema que a migração de verdade cria. Como as invariantes
-deste projeto **moram no banco** (a decisão do estoque, acima), testar contra um banco que não é o de
-produção testaria a coisa errada.
-
-**O que caiu:** **SQLite em memória**, mais rápido e sem dependência externa. O custo que aceitei foi
-que `uv run pytest` passa a exigir o Compose no ar, e isso está documentado.
-
-### SQLAlchemy síncrono, não `AsyncSession`
-
-**Decidi** usar a `Session` síncrona do SQLAlchemy 2, no estilo tipado (`Mapped` / `mapped_column`).
-
-**Por quê:** o núcleo do desafio é concorrência resolvida com `UPDATE` condicional dentro de uma
-transação, e esse código fica mais legível no síncrono. O volume de uma avaliação não cobra o preço
-de I/O assíncrono.
-
-**O que caiu:** `AsyncSession` — melhor sob carga alta de I/O, mas exigiria `await` disciplinado em
-toda consulta e em toda fixture, e um `await` esquecido bloqueia o event loop de um jeito difícil de
-diagnosticar. A mesma régua manteve a integração com a Ticketmaster em `httpx` **síncrono**: um único
-caminho `async` no backend inteiro criaria duas formas de escrever rota num projeto que tem uma só.
-
-### Configuração só por variável de ambiente
-
-**Decidi** que tudo que muda entre máquinas vem do ambiente, lido por uma classe `Settings` do
-Pydantic, e que nenhum segredo entra no repositório — o que é versionado é o `.env.example`. Segredo
-ausente em `AMBIENTE=producao` **derruba a aplicação na subida**.
-
-**Por quê:** com o hábito estabelecido desde a primeira story, não existe o momento de tentação em
-que alguém "só comita o valor para testar". E derrubar na subida é deliberado: um deploy com a
-variável esquecida ficaria **verde**, e a falha só apareceria no dia em que alguém fosse publicar o
-primeiro evento. O modo de falhar que assusta é justamente o que funciona.
-
-**O que caiu:** um `config.py` com valores por ambiente versionado — mais cômodo de ler, e é
-exatamente o arquivo em que segredo acaba caindo. E **nunca derrubar, sempre degradar**, que é mais
-tolerante e esconderia o esquecimento até o pior momento possível.
-
-### Senha em Argon2id, não bcrypt nem SHA com sal
-
-**Decidi** gravar senha como hash **Argon2id**, pelo `argon2-cffi`.
-
-**Por quê:** é o vencedor da Password Hashing Competition e a recomendação atual do OWASP, e o único
-dos candidatos que resiste tanto a ataque por GPU quanto a hardware dedicado, porque custa **memória**
-além de tempo. Ele me dá de graça três coisas que eu teria que construir e defender sozinho: sal
-aleatório por hash (por isso não existe coluna de sal no banco), parâmetros embutidos no próprio hash
-(dá para endurecê-los depois sem invalidar o que já está gravado) e um custo deliberado de ~50ms por
-verificação.
-
-**O que caiu:** **bcrypt**, ainda aceitável, mas trunca a senha em 72 bytes silenciosamente e não
-impõe custo de memória. E **SHA-256 com sal**, que é o erro clássico: parece seguro porque é
-criptografia de verdade, mas é rápido *por projeto* — e velocidade é exatamente a propriedade errada,
-porque quem tem o banco vazado testa bilhões de palpites por segundo.
-
-### Sessão em cookie `httpOnly`, não token no `localStorage`
-
-**Decidi** que o JWT viaja num cookie `httpOnly`, `SameSite=Lax`, `Path=/`, com 8 horas de validade e
-`Secure` em produção. JavaScript nunca lê o token.
+**Decidi** que o JWT viaja num cookie `httpOnly`, `SameSite=Lax`, `Path=/`, com 8 horas de validade
+e `Secure` em produção. JavaScript nunca lê o token. A senha é Argon2id.
 
 **Por quê:** token em `localStorage` é legível por qualquer script que rode na página — uma única
 falha de XSS, em qualquer dependência, entrega a sessão inteira. E como o frontend é Next com Server
 Components, cookie é também a única forma que funciona nos dois lados: `localStorage` não existe no
 servidor, então eu acabaria com dois jeitos de autenticar. As 8 horas cobrem um turno de portaria,
-que é o cenário mais longo do sistema, e não são configuráveis de propósito — invariante com
-justificativa de domínio não vira knob.
+que é o cenário mais longo do sistema.
 
 **O que caiu:** `Authorization: Bearer` com o token no `localStorage`, que é o padrão que quase todo
 tutorial de SPA ensina: mais simples de depurar e imune a CSRF por construção, mas troca uma classe
 de ataque difícil por uma fácil e quebraria os Server Components. Caiu junto o **refresh token** —
 para 8 horas de validade num sistema avaliado em dias, expirou e faz login de novo.
 
-### O papel vem do banco, não do que está escrito no token
+### 6 · O navegador nunca fala com a API: o Next faz proxy
 
-**Decidi** que a dependência de autorização consulta o usuário no banco a cada requisição, mesmo com
-o `papel` gravado dentro do JWT.
-
-**Por quê:** a sessão dura 8 horas. Um papel corrigido no banco continuaria valendo o antigo por todo
-esse tempo, e a única forma de derrubar o token seria trocar o `JWT_SECRET` — deslogando todo mundo.
-Além disso, a consulta acontece de qualquer jeito, porque a dependência precisa do usuário inteiro
-para responder o `GET /auth/eu`: ler o papel do banco custa zero.
-
-**O que caiu:** **ler `carga["papel"]` do token**, que é o caminho curto e o que a maior parte dos
-exemplos de JWT faz. A economia é real e paga-se com uma janela de 8 horas em que a autorização está
-errada e ninguém consegue corrigir. Um teste guarda isso: um usuário gravado como `CLIENTE`, com
-token forjado dizendo `ORGANIZADOR`, recebe `403`.
-
-### Autorização é dependência na assinatura do endpoint, não `if` no corpo
-
-**Decidi** que papel se declara, não se confere:
-
-```python
-@router.get("/organizador/eventos")
-def meus_eventos(usuario: Usuario = Depends(exigir_papel(PapelUsuario.ORGANIZADOR))): ...
-```
-
-Não existe um `if usuario.papel == ...` dentro do corpo de handler nenhum, no projeto inteiro.
-
-**Por quê:** a proteção passa a fazer parte da *assinatura* da rota. Ela aparece na documentação
-gerada, e esquecê-la vira uma linha ausente que se vê à distância, em vez de uma verificação que
-alguém precisava lembrar de escrever. Autorização espalhada por handler é o tipo de coisa que
-funciona em 19 rotas e falha na vigésima, sem nada acusando.
-
-**O que caiu:** **conferir o papel dentro do handler**, o caminho de menos código e o que qualquer
-tutorial mostra — não custa nada na primeira rota, custa na décima. E um **middleware que inspeciona
-o caminho da URL** (`/organizador/*` exige `ORGANIZADOR`): resolveria de um lugar só, ao preço de
-manter uma tabela caminho→papel paralela às rotas — duas listas que divergem, e a desatualizada é
-sempre a que ninguém olha.
-
-### Proxy `/api/*` no Next, não `SameSite=None` em produção
-
-**Decidi** que o navegador **nunca fala com o backend diretamente**. Ele chama `/api/auth/login` no
-domínio do próprio frontend, e o Next reescreve para a API do lado do servidor.
+**Decidi** que o navegador chama `/api/auth/login` no domínio do próprio frontend, e o Next reescreve
+para a API do lado do servidor.
 
 **Por quê:** o deploy separa as duas metades em `vercel.app` e `up.railway.app`, e para o navegador
 esses são *sites diferentes* — os dois estão na Public Suffix List, então não existe domínio
@@ -596,149 +499,82 @@ proxy, o cookie é de origem própria e o `SameSite=Lax` vale literalmente.
 
 **O que caiu:** **`SameSite=None; Secure` em produção**, que é menos código e a saída óbvia — ela
 transforma a sessão em cookie de terceiro, que o Safari bloqueia por padrão, então o login
-simplesmente não entraria naquele navegador. **O que veio junto:** como as chamadas passaram a ser de
-mesma origem, o CORS deixou de participar do caminho do navegador — mas eu **não** removi o
-`CORSMiddleware`, que continua sendo a rede de proteção de qualquer chamada direta.
+simplesmente não entraria naquele navegador.
 
-### Recusa não entrega o que ela sabe
+### 7 · A expiração da reserva é preguiçosa, não agendada
 
-**Decidi** que respostas de recusa não distinguem casos que revelariam quem existe no sistema. E-mail
-inexistente e senha errada devolvem o mesmo `401 CREDENCIAIS_INVALIDAS`, com a mesma mensagem **e no
-mesmo tempo**. Escalar um id que não existe e escalar uma conta que não é de portaria devolvem o
-mesmo `422 PORTARIA_INVALIDA`. Pedir o detalhe de um evento de outro organizador devolve o mesmo
-`404` de um UUID que nunca existiu.
+**Decidi** que a reserva nasce `PENDENTE` já consumindo estoque, com 10 minutos de validade, e que
+**não há worker nem cron**. Uma reserva vencida é colhida no momento em que alguém a toca: ao tentar
+pagá-la, ou quando outra pessoa pede estoque daquele setor.
 
-**Por quê:** a metade fácil é a mensagem — "esse e-mail não está cadastrado" entrega, para quem
-perguntar, quem tem conta no sistema. A metade que quase todo mundo esquece é o **tempo**: o caminho
-natural responde em ~1ms para e-mail desconhecido e ~50ms para e-mail existente com senha errada,
-porque só o segundo paga o custo do Argon2. Cinquenta vezes de diferença é medível de fora com um
-`for` e um cronômetro. A correção é uma linha: quando o usuário não existe, eu confiro a senha contra
-um hash descartável e jogo o resultado fora. Os testes comparam as duas respostas **entre si**, não
-cada uma com um literal.
+**Por quê:** quem devolve o estoque é quem precisa dele, no instante em que precisa. Um agendador
+resolveria o mesmo problema ao custo de um processo a mais para hospedar, monitorar e explicar — e
+faria trabalho varrendo reservas que ninguém está disputando. Só as rotas de **escrita** colhem; as
+de leitura não, senão a programação, que é Server Component, viraria escrita a cada visita.
 
-**O que caiu:** a resposta específica ("e-mail não cadastrado", com link para criar conta), que é
-mais gentil e é o que muito site grande faz — ela ajuda o usuário legítimo que errou o e-mail e
-entrega a base de cadastro para qualquer um que perguntar. Caiu também **distinguir os casos da
-escala** para facilitar a depuração: o ganho é meu, no console, e o custo é de quem tem conta.
+**O que caiu:** o **worker com `APScheduler` ou cron da Railway**, que é a resposta de manual. E
+**colher também na leitura**, que deixaria o número da tela sempre exato. A consequência que aceito
+está declarada abaixo: a página pode dizer "Esgotado" com reservas já vencidas. É inofensiva, porque
+no momento em que o estoque importa — o clique em reservar — ele já está correto.
 
-### A interface é um jornal noturno, e não um catálogo de e-commerce
+### 8 · `routers → services → models`, sem camada de repositórios
+
+**Decidi** duas camadas antes do modelo: `app/api/` cuida do HTTP, `app/services/` cuida da regra de
+negócio e das transações. Não existe `app/repositories/`.
+
+**Por quê:** a `Session` do SQLAlchemy já é, na prática, um repositório com unidade de trabalho.
+Numa aplicação deste tamanho, a camada extra viraria uma pilha de funções de repasse — `criar`,
+`buscar_por_id`, `salvar` — que não separam nada e só afastam a regra do lugar onde ela acontece.
+
+**O que caiu:** o `router → service → repository` que é padrão em projeto grande. Ele se paga quando
+há mais de uma fonte de dados ou troca de ORM no horizonte; não é o caso, e adotar por hábito seria
+cerimônia sem contrapartida. A mesma régua criou **uma exceção deliberada**: a rota do catálogo
+chama a integração da Ticketmaster direto, sem service, porque um service ali teria como corpo
+inteiro `return ticketmaster.buscar_eventos(q)` — a definição de camada de repasse que eu acabei de
+recusar.
+
+### 9 · Backend separado em FastAPI, e não Next.js full-stack
+
+**Decidi** separar a API do frontend, com FastAPI de um lado e Next.js do outro.
+
+**Por quê:** o núcleo do desafio é concorrência — não vender o mesmo lugar duas vezes, não validar o
+mesmo ingresso duas vezes. Isso se resolve com `UPDATE` condicional e transação, e eu queria a
+ferramenta que deixa isso explícito. Separar também torna o contrato da API visível, que é
+justamente o que está sendo avaliado.
+
+**O que caiu:** Next.js full-stack com Route Handlers e Prisma. Seria menos código e um deploy só,
+mas empurraria a regra de concorrência para dentro do framework de tela, onde ela fica difícil de
+enxergar — e apagaria a fronteira entre API e interface que o desafio pede para demonstrar.
+
+### 10 · A interface é um jornal noturno, e o CSS é escrito à mão
 
 **Decidi** que a listagem de shows não tem card: são filas separadas por fio, com a data na margem
-esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Chão de petróleo, rosa
-neon como acento único, raio zero e sombra zero em todo o sistema.
+esquerda, nome de artista em serifada e etiquetas em monoespaçada versalete. Chão de petróleo
+`#0B1618`, rosa neon `#FF4F9A` como acento único, raio zero e sombra zero em todo o sistema. Sem
+shadcn, MUI, Chakra ou Tailwind — um `globals.css` com os tokens e um `.module.css` por componente.
+Nenhuma fonte é baixada.
 
 **Por quê:** ingresso não é produto de prateleira — é o direito de entrar num lugar, numa hora. Card
-com imagem, preço e botão é vocabulário de e-commerce, e carrega junto a promessa errada. A estrutura
-de impresso diz a coisa certa sobre o que está sendo vendido, e custa o mesmo para construir. O
-desafio penaliza por escrito a interface que "parece gerada", e o que denuncia uma interface gerada
-não é ser feia: é ser bonita de um jeito só. Escolher qual dos vários bonitos era o ponto.
-
-**O que caiu:** a fileira horizontal de cards com paleta empresarial — o formato de Sympla, Eventim e
-Ingresso.com. É o que o mercado faz e o que qualquer gerador entrega por padrão, então seria a
-escolha segura. Caiu junto uma lista de padrões que proibi de propósito, anotada no
-[DESIGN.md](_bmad-output/planning-artifacts/ux-designs/ux-elite-dev-RockHub-2026-08-09/DESIGN.md):
-faixa que varre a tela, grade de 6 a 8 cards por seção, par de título gigante com textinho embaixo, e
-a linha de contexto decorativa no cabeçalho — essa última eu cheguei a montar no protótipo e removi,
-porque soava gerada. Duas direções competiram antes: um jornal de eventos londrino, editorial e
-claro, e uma parede de cartazes noturna. Nenhuma resolvia sozinha; a identidade final é a fusão —
-estrutura de impresso, cor de madrugada.
-
-**A cor mudou depois da Epic 2, e a estrutura não.** O primeiro acento era âmbar `#F2A413` sobre
-preto quente — quase o `amber-500` do Tailwind, que é a receita exata do tema escuro gerado que eu
-tinha acabado de listar como anti-padrão. Troquei pelas duas tintas de um pôster serigrafado:
-petróleo `#0B1618` e rosa neon `#FF4F9A`. **Descartei** vermelho de jornal (é a cor mais fiel ao
-conceito, mas colide com o vermelho de erro e com o `INVÁLIDO` da portaria) e roxo sobre cinza (que
-é o dark mode padrão de metade das ferramentas — trocaria um default por outro pior).
-
-### CSS escrito à mão, sem biblioteca de componentes
-
-**Decidi** não usar shadcn, MUI, Chakra nem Tailwind. O frontend tem um `globals.css` com os nove
-tokens da identidade e um `.module.css` por componente. Nenhuma fonte é baixada — Georgia para a voz
-serifada, monoespaçada do sistema para etiqueta.
-
-**Por quê:** é a mesma razão da decisão acima. Biblioteca de componentes não traz só código pronto —
-traz junto um vocabulário visual, e é exatamente o vocabulário que este projeto está tentando não
-ter. O card arredondado com sombra sutil vem de graça, e tirá-lo depois dá mais trabalho do que nunca
+com imagem, preço e botão é vocabulário de e-commerce, e carrega junto a promessa errada. O desafio
+penaliza por escrito a interface que "parece gerada", e o que denuncia uma interface gerada não é
+ser feia: é ser bonita de um jeito só. Biblioteca de componentes não traz só código pronto — traz
+junto um vocabulário visual, e é exatamente o vocabulário que este projeto está tentando não ter: o
+card arredondado com sombra sutil vem de graça, e tirá-lo depois dá mais trabalho do que nunca
 tê-lo.
 
-**O que caiu:** **Tailwind**, que é o padrão do `create-next-app` e teria sido mais rápido de
-escrever — além do argumento acima, ele empurra a decisão visual para dentro do JSX, onde eu não
-consigo mais ler a identidade inteira num arquivo só. E **uma serifada de display do Google Fonts**,
-que seria mais distinta: ganhar meio grau de personalidade não paga fazer a primeira renderização
-depender de rede.
+**O que caiu:** a fileira horizontal de cards com paleta empresarial — o formato de Sympla, Eventim
+e Ingresso.com, e o que qualquer gerador entrega por padrão. Caiu junto uma lista de padrões que
+proibi de propósito: faixa que varre a tela, grade de 6 a 8 cards por seção, par de título gigante
+com textinho embaixo, e a linha de contexto decorativa no cabeçalho — essa última eu cheguei a
+montar no protótipo e removi, porque soava gerada. Duas direções competiram antes: um jornal de
+eventos londrino, editorial e claro, e uma parede de cartazes noturna; a identidade final é a fusão
+— estrutura de impresso, cor de madrugada. E **o primeiro acento era âmbar `#F2A413` sobre preto
+quente** — quase o `amber-500` do Tailwind, que é a receita exata do tema escuro gerado que eu tinha
+acabado de listar como anti-padrão. Descartei também vermelho de jornal (colide com o vermelho de
+erro e com o `INVÁLIDO` da portaria) e roxo sobre cinza (o dark mode padrão de metade das
+ferramentas — trocaria um default por outro pior).
 
-### O frontend é server-first; `"use client"` é exceção justificada
-
-**Decidi** que toda tela nasce Server Component, e que estado que o usuário pode querer compartilhar,
-recarregar ou desfazer mora **na URL**. A busca do catálogo é um `<form method="get">`; a atração
-escolhida é um `<Link>` que muda a query. Ilha de cliente só onde a interação exige o navegador — o
-formulário de setores, que adiciona e remove linhas.
-
-**Por quê:** com o estado na URL, recarregar mantém, o botão voltar desfaz, e o link abre no mesmo
-lugar para outra pessoa — três coisas de graça. E o "sem spinner: a estrutura aparece e o conteúdo
-preenche" do UX é natural no servidor e artificial no cliente. A fronteira que sai daqui vale para as
-Epics 3 a 5, que vão ter mais interação (stepper de quantidade, câmera da portaria): ilha pequena
-dentro de página de servidor, com a prop serializada como fronteira.
-
-**O que caiu:** **estado no cliente com `onClick`**, que é o que qualquer formulário moderno faria —
-tiraria a escolha da URL e transformaria a tela **inteira** numa ilha, levando junto a busca, o
-catálogo e a guarda de sessão, sem nenhum deles precisar do navegador. E **Server Actions**, que
-seriam o idiomático da versão instalada: caíram por ser mecanismo novo no projeto e por não resolver
-o que motivou a ilha — o setor dinâmico continuaria exigindo número fixo de linhas.
-
-### A guarda de rota mora na página, não em `middleware` do Next
-
-**Decidi** que cada página protegida lê a sessão e redireciona por conta própria — três linhas
-repetidas por página — e que o redirecionamento leva o destino junto (`/login?voltar=%2Fconta`),
-filtrado para aceitar só caminho interno.
-
-**Por quê:** o middleware só consegue ver que **existe** um cookie, não que ele vale. Validar o JWT
-ali exigiria o `JWT_SECRET` no ambiente do frontend, e o segredo que assina a sessão não tem por que
-existir na Vercel. A guarda na página pergunta ao backend, que é quem tem o segredo. Quanto ao
-`?voltar=`: é um valor que quem chega escolhe e a aplicação obedece — sem filtro é o redirecionamento
-aberto clássico, e a documentação do Next avisa que uma URL `javascript:` entregue ao `router.push`
-executa no contexto da página, o que faz disso um XSS.
-
-**O que caiu:** **o `middleware.ts` conferindo o cookie**, que é o caminho que todo tutorial mostra e
-centraliza a regra num arquivo só — além do problema do segredo, viraria uma segunda lista de rotas
-protegidas, paralela às páginas. E `unauthorized()`/`forbidden()`, que o Next 16 traz e seriam o
-caminho idiomático: estão atrás de flag experimental, e eu não ligo flag experimental por
-conveniência.
-
-### O domínio é escrito em português
-
-**Decidi** nomear as entidades como o enunciado as chama: `evento`, `setor`, `reserva`, `ingresso`,
-`portaria`. Inclusive a rota de saúde é `/saude`, e as mensagens de erro do framework foram
-traduzidas.
-
-**Por quê:** quem avalia lê o enunciado em português e depois o código. Sem tradução no meio, a
-correspondência é direta e não sobra dúvida sobre qual requisito cada parte atende.
-
-**O que caiu:** o inglês por convenção de mercado. Criaria um dicionário mental entre requisito e
-código — `sector` é setor ou seção? `gate` é portaria ou portão? — em troca de nada que o projeto
-aproveite.
-
-### A configuração de deploy mora no painel, não versionada
-
-**Decidi** não versionar `railway.json`, `railway.toml` nem `vercel.json`. Builder, `Root Directory`,
-branch, variáveis, comandos e health check estão nos painéis, e descritos campo por campo em
-[Deploy na Railway](backend/README.md#deploy-na-railway) e
-[Deploy na Vercel](frontend/README.md#deploy-na-vercel). A migração e o seed rodam no **Pre-deploy**,
-separados do comando que sobe a aplicação.
-
-**Por quê:** o painel **sobrescreve** o arquivo quando alguém edita por lá, e é por lá que se edita
-no meio de um deploy que falhou, às pressas. Duas fontes para a mesma verdade divergem em silêncio, e
-a desatualizada é sempre a que fica no repositório, parecendo documentação correta. Quanto ao
-Pre-deploy: ele roda num contêiner à parte, **antes** de o tráfego ser trocado — migração quebrada
-impede a subida em vez de derrubar a versão que estava funcionando.
-
-**O que caiu:** o **`railway.json` versionado**, que é a escolha de infraestrutura-como-código e teria
-uma vantagem real: recriar o serviço viraria reimportar o repositório. **O custo que aceitei, e como
-cobri:** a configuração some se o serviço for apagado e não aparece em nenhum diff — por isso as
-seções de deploy dos dois READMEs não são resumo, são os nomes exatos dos campos, os valores e os
-erros que cada omissão produz. **A aposta foi cobrada e pagou:** configurar a Vercel reproduziu os
-**dois** erros que eu já tinha cometido na Railway — `Root Directory` vazio e branch de produção
-errada. Estavam documentados como armadilha, e custaram minutos em vez de uma noite.
+---
 
 ## O que não está pronto
 
@@ -747,53 +583,64 @@ esquecimentos:
 
 | O quê | Por quê |
 |---|---|
-| **Mapa de assentos** | Escolhi venda por quantidade em setores, que o desafio aceita. O raciocínio está em [Setores por quantidade](#setores-por-quantidade-não-mapa-de-assentos) |
-| **Editar evento depois de ele ter vendido** | Editar existe desde 13/08/2026 — data, setores e escala —, mas só enquanto `vendidos == 0` em **todos** os setores. Descartei travar só com reserva paga: o preço já vai congelado na reserva, então não haveria prejuízo, mas quem estivesse digitando o cartão veria o preço mudar na tela no meio da compra. Show que já aconteceu também não se edita: consertar a data de um show que já foi só o faria reaparecer na programação. O que continua fora de qualquer caso é o resto — `nome`, `imagem`, `local` e `cidade` vêm do catálogo (AD-1) e não são campo de formulário nem ao publicar |
-| **Evento publicado entre a Story 2.4 e a 2.5 fica sem portaria** | A janela fechou — publicar exige portaria escalada desde a 2.5. O que foi publicado naquele intervalo continua sem ninguém, porque nada é escalado retroativamente; desde 13/08/2026 o conserto é abrir o evento e usar `Editar`, e só falha se ele já tiver vendido |
-| **Evento publicado entre os dados semeados** | O enunciado pede um evento já publicado junto das contas, e o seed continua criando só contas. O impedimento técnico acabou na Story 2.3; o que falta é decidir qual show, com que setores e em qual story isso entra. O fluxo de publicar pela interface existe e funciona, mas não substitui o seed: travaria o roteiro no primeiro passo se a Ticketmaster estivesse fora do ar |
-| **A seção "Já aconteceram" de `Meus eventos` não tem como ser vista** | Decidi no code review da Epic 2 que publicar show com data no passado é recusado (`EVENTO_NO_PASSADO`), porque na Epic 3 esse evento venderia ingresso para uma noite que já passou. A tela de editar, de 13/08/2026, não abre exceção: ela recusa data no passado pelo mesmo código, e recusa editar um show que já aconteceu. O preço é que a seção do histórico fica vazia na avaliação — só apareceria com evento antigo no seed, que ainda não existe. Preferi assim: seção vazia é menos grave que evento impossível gravado para sempre |
-| **Cancelamento pelo cliente** | O modelo já suporta (a reserva tem estado que devolve estoque); faltam endpoint e tela |
-| **O portão fecha no instante exato do término, sem tolerância** | Desde 14/08/2026 o organizador declara a hora em que o show acaba, e é ela que aposenta o ingresso e encerra o turno da portaria. Não há folga do lado de lá: às 02h00 em ponto de um show marcado até 02h00, o retardatário na fila não entra mais. Descartei uma tolerância simétrica às duas horas de antecedência com que a porta abre — ela cobriria esse caso, e o preço seria o sistema discordando do número que o organizador acabou de digitar: o ingresso valeria por X horas a mais do que a tela do cliente diz. A folga mora na hora declarada, e quem quiser margem marca 03h em vez de 02h |
-| **O corte das telas públicas continua no início do show, não no fim** | Um evento some da programação, da busca e da criação de reserva no minuto em que começa — e não quando acaba. Isso deixa a portaria trabalhando do outro lado do corte: às 21h30 de um show das 21h, a fila anda e o evento já não existe para o catálogo. Mover o corte para o término é o comportamento certo do mundo real e conserta a assimetria, mas custa quatro rotas públicas, a criação de reserva, o `EVENTO_NO_PASSADO` da edição, o roteiro de avaliação e uma pergunta de produto nova — vender ingresso durante o show. É uma feature boa que merece decisão própria e não pega carona na do término |
-| **A página pode dizer "Esgotado" com reservas já vencidas** | A expiração é preguiçosa por decisão de arquitetura (AD-4): quem devolve o estoque é quem precisa dele, no instante em que precisa. Só as rotas de escrita colhem — as de leitura não, senão a programação, que é Server Component, viraria escrita a cada visita. Na prática quem clicar em reservar consegue: no momento em que o estoque importa, ele já está correto |
-| **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis: cartão terminado em `0002` é recusado, qualquer outro aprova |
-| **O Pix é encenação, e o botão "cobrança paga" é o atalho do avaliador** | O QR e o código copia-e-cola são gerados na tela, aleatórios, e não chegam ao servidor — um app de banco recusa aquele código. O backend só recebe "o meio foi Pix" e aprova. Simular cobrança de verdade exigiria provedor, webhook e conciliação; o caminho que o enunciado pontua é a **recusa**, e ela vive no cartão. A tela avisa em letras que a cobrança é fictícia |
-| **Os dados do comprador não são guardados** | O checkout pede nome, e-mail, CPF e telefone porque um checkout sem eles não parece um checkout. Só o **nome** sobrevive à requisição, como titular do ingresso — os outros três são validados no formato e descartados. Guardar CPF de gente é dado sensível sem nenhum consumidor neste sistema. Pelo mesmo motivo o CPF valida só o formato, sem dígito verificador: o algoritmo rejeita `111.111.111-11`, que é exatamente o que se digita quando a tela manda usar dado fictício |
-| **Nada limita quantas reservas uma conta segura ao mesmo tempo** | O teto de 6 ingressos é **por compra**, não por pessoa: uma conta autenticada chamando `POST /reservas` em laço prende o show inteiro por 10 minutos, renováveis — e a colheita preguiçosa devolve o estoque no mesmo `criar()` que o laço está chamando. Apareceu no code review da Epic 3. Fechar exige um limite de reservas `PENDENTE` por cliente e evento, com código de erro e tela próprios; com três dias de prazo e 13 stories de código pela frente, escolhi declarar em vez de implementar. Não afeta o roteiro de avaliação, que é um comprador de cada vez |
-| **Nenhuma rota tem limite de chamadas** | Vale para todas, não só para a reserva acima: não há rate limit por IP nem por conta em lugar nenhum. É a mesma razão do limite de tentativas de login logo abaixo — contador com expiração compartilhado entre instâncias é infraestrutura que não se paga no prazo |
-| **A programação devolve no máximo 200 shows** | Teto fixo em vez de paginação, decidido no code review da Epic 3. A rota não tinha teto nenhum e é a da tela mais visitada; paginar seria rota, schema, tela e testes para um contrato que nenhuma tela consome. Duzentos está muito acima de qualquer catálogo que este projeto vá ver, e o corte é no fim da fila ordenada por data. Quando apertar, o conserto é a paginação — não aumentar o número |
-| **Refresh token** | Sessão de 8 horas basta para o cenário avaliado |
-| **Limite de tentativas de login** | Não há bloqueio por IP nem por conta. É a defesa direta contra força bruta e exige contador com expiração compartilhado entre instâncias — infraestrutura demais para o prazo. O que **está** feito é o custo de ~50ms por tentativa e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
-| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail. É por não existir que o cadastro tem confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
+| **Mapa de assentos** | Escolhi venda por quantidade em setores, que o desafio aceita. O raciocínio está em [Setores por quantidade](#1--setores-por-quantidade-não-mapa-de-assentos) |
 | **Cadastro de organizador pela interface** | **Adiado, não descartado** — sem uma forma de decidir quem merece o papel, a rota separada seria o mesmo buraco com outro endereço. **Portaria fica de fora em qualquer cenário**, porque ela só valida onde foi escalada |
-| **Enumeração de e-mail no cadastro** | O `409` revela que aquele e-mail tem conta — o que o login gasta um hash fantasma para não revelar. É inevitável: o login esconde porque as duas respostas cabem numa frase só; o cadastro ou diz que o e-mail já existe, ou mente. A mitigação padrão exige verificação por e-mail, que está fora do escopo |
-| **Busca do organizador limitada ao Brasil** | `countryCode=BR` é fixo na chamada à Discovery. Sem ele, buscar "metallica" devolve os vinte primeiros shows do mundo e nenhum brasileiro entra — a tela pareceria quebrada justamente para quem avalia. O custo é que um show fora do Brasil não aparece |
+| **Cancelamento pelo cliente** | O modelo já suporta (a reserva tem estado que devolve estoque); faltam endpoint e tela |
+| **Editar evento depois de ele ter vendido** | Editar existe — data, setores e escala —, mas só enquanto `vendidos == 0` em **todos** os setores. Descartei travar só com reserva paga: o preço já vai congelado na reserva, então não haveria prejuízo, mas quem estivesse digitando o cartão veria o preço mudar na tela no meio da compra. `nome`, `imagem`, `local` e `cidade` vêm do catálogo e não são campo de formulário em caso nenhum |
 | **Evento sem entrada no catálogo da Ticketmaster** | Não dá para publicar um cover de bar ou um evento independente. É consequência direta de o enunciado pedir que o evento nasça "a partir de" a API externa |
-| **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não é escopo de story nenhuma |
-| **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**. A alternativa deixaria todo Preview com o login quebrado em silêncio, que é pior; um segundo banco é infraestrutura que não se paga em sete dias. No plano Hobby os Previews ficam atrás do login da Vercel, então não são endereço público |
-| **Integração contínua** | Não há GitHub Actions. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade. O que existe no lugar: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender |
+| **Busca do organizador limitada ao Brasil** | `countryCode=BR` é fixo na chamada à Discovery. Sem ele, buscar "metallica" devolve os vinte primeiros shows do mundo e nenhum brasileiro entra — a tela pareceria quebrada justamente para quem avalia |
+| **Pagamento real** | O gateway é simulado, com recusa determinística para que os dois caminhos sejam testáveis: cartão terminado em `0002` é recusado, qualquer outro aprova |
+| **O Pix é encenação** | O QR e o código copia-e-cola são gerados na tela, aleatórios, e não chegam ao servidor — um app de banco recusa aquele código. O botão "cobrança paga" é o atalho do avaliador. Simular cobrança de verdade exigiria provedor, webhook e conciliação; o caminho que o enunciado pontua é a **recusa**, e ela vive no cartão. A tela avisa em letras que a cobrança é fictícia |
+| **Os dados do comprador não são guardados** | O checkout pede nome, e-mail, CPF e telefone porque um checkout sem eles não parece um checkout. Só o **nome** sobrevive à requisição — os outros três são validados no formato e descartados. Pelo mesmo motivo o CPF valida só o formato, sem dígito verificador: o algoritmo rejeita `111.111.111-11`, que é exatamente o que se digita quando a tela manda usar dado fictício |
+| **O portão fecha no instante exato do término, sem tolerância** | Às 02h00 em ponto de um show marcado até 02h00, o retardatário na fila não entra mais. Descartei uma tolerância simétrica às duas horas com que a porta abre — ela cobriria esse caso, e o preço seria o sistema discordando do número que o organizador acabou de digitar. A folga mora na hora declarada: quem quiser margem marca 03h em vez de 02h |
+| **O corte das telas públicas é no início do show, não no fim** | Um evento some da programação, da busca e da criação de reserva no minuto em que começa — e não quando acaba. Isso deixa a portaria trabalhando do outro lado do corte. Mover o corte para o término é o comportamento certo do mundo real, mas custa quatro rotas públicas, a criação de reserva, a edição, o roteiro de avaliação e uma pergunta de produto nova — vender ingresso durante o show. É uma feature boa que merece decisão própria |
+| **A página pode dizer "Esgotado" com reservas já vencidas** | A expiração é [preguiçosa por decisão](#7--a-expiração-da-reserva-é-preguiçosa-não-agendada). Na prática quem clicar em reservar consegue: no momento em que o estoque importa, ele já está correto |
+| **Nada limita quantas reservas uma conta segura ao mesmo tempo** | O teto de 6 ingressos é **por compra**, não por pessoa: uma conta autenticada chamando `POST /reservas` em laço prende o show inteiro por 10 minutos, renováveis. Fechar exige um limite de reservas `PENDENTE` por cliente e evento, com código de erro e tela próprios; escolhi declarar em vez de implementar. Não afeta o roteiro de avaliação, que é um comprador de cada vez |
+| **Nenhuma rota tem limite de chamadas** | Não há rate limit por IP nem por conta em lugar nenhum, e não há bloqueio por tentativas de login. É a defesa direta contra força bruta e exige contador com expiração compartilhado entre instâncias — infraestrutura que não se paga no prazo. O que **está** feito é o custo de ~50ms por tentativa e a resposta idêntica para e-mail inexistente e senha errada, inclusive no tempo |
+| **A programação devolve no máximo 200 shows** | Teto fixo em vez de paginação. Paginar seria rota, schema, tela e testes para um contrato que nenhuma tela consome. Quando apertar, o conserto é a paginação — não aumentar o número |
+| **Recuperação de senha** | O enunciado dispensa, e exigiria envio de e-mail. É por não existir que o cadastro tem confirmação de senha: sem ela, uma letra errada seria conta perdida para sempre |
+| **Enumeração de e-mail no cadastro** | O `409` revela que aquele e-mail tem conta — o que o login gasta um hash fantasma para não revelar. É inevitável: o login esconde porque as duas respostas cabem numa frase só; o cadastro ou diz que o e-mail já existe, ou mente |
+| **Editar a própria conta** | A `/conta` mostra nome, e-mail e papel, e permite sair. Trocar nome ou senha não entrou no escopo |
+| **A câmera da portaria não abre por IP na rede local** | `getUserMedia` só existe em **contexto seguro**: `https` ou `localhost`, e nada mais. Na Vercel funciona, e no `localhost:3000` também — mas um celular apontado para `http://192.168.0.x:3000` não recebe a câmera, e nenhum código meu contorna isso. A tela detecta o caso e explica, com o campo manual continuando a funcionar. Para testar a câmera no celular, use a URL da Vercel |
+| **Integração contínua (testes a cada push)** | Não há GitHub Actions. CI aqui exigiria subir um PostgreSQL no runner, porque a suíte roda contra banco de verdade. O **deploy** contínuo existe e é automático nas duas plataformas. O que existe no lugar do CI: o `--locked` do build **falha** se o lockfile divergir do `pyproject.toml`, e a migração roda antes de a aplicação atender |
 | **Teste automatizado no frontend** | Não há Vitest, Testing Library nem Playwright, e é decisão. As invariantes que valem ponto — não vender o mesmo lugar duas vezes, não validar o mesmo ingresso duas vezes, assinatura do QR — moram todas no backend, que tem `pytest` desde a primeira story. O frontend é verificado por `npm run build`, `tsc --noEmit`, ESLint e conferência no navegador |
-| **A câmera da portaria não abre por IP na rede local** | `getUserMedia` só existe em **contexto seguro**: `https` ou `localhost`, e nada mais. Na Vercel funciona, e no `localhost:3000` da máquina de desenvolvimento também — mas um celular apontado para `http://192.168.0.x:3000` não recebe a câmera do navegador, e nenhum código meu contorna isso. A tela detecta o caso e explica em uma frase, com o campo manual continuando a funcionar: é o mesmo caminho de quem negou a permissão. Para testar a câmera no celular, use a URL da Vercel |
+| **Sete arestas conhecidas de interface** | Achados dos meus code reviews que escolhi declarar em vez de consertar, porque cada um pede refactor de componente e não patch. Estão listadas [logo abaixo da tabela](#as-sete-arestas-de-interface) |
+| **Ambiente separado para os Previews** | Os deploys de branch da Vercel apontam para o **mesmo banco de produção**. A alternativa deixaria todo Preview com o login quebrado em silêncio, que é pior; um segundo banco é infraestrutura que não se paga em sete dias |
 | **Domínio próprio** | Custa dinheiro e propagação de DNS, e não acrescenta nada ao que está sendo avaliado |
+
+### As sete arestas de interface
+
+Saíram dos meus code reviews e eu **escolhi declará-las em vez de consertá-las**: cada uma pede
+refactor de componente, não um patch, e nenhuma bloqueia o roteiro de avaliação.
+
+1. **A chamada à API não tem timeout.** Se a rede pendurar, o botão fica em *"Reservando…"* sem
+   resolver, e a única saída é recarregar sem saber se a reserva foi criada
+2. **Trocar Cartão → Pix → Cartão apaga o cartão já digitado.** Os quatro campos são não
+   controlados e o bloco é montado condicionalmente; o código do Pix é preservado, o do cartão não
+3. **Editar no meio do CPF ou do telefone joga o cursor para o fim.** A máscara remonta o valor
+   inteiro a cada tecla sem restaurar a posição do cursor
+4. **A validade do cartão é o único campo sem máscara.** Digitar `0826` sem a barra volta `422`, e a
+   tela mostra o erro sobre o formulário inteiro sem destacar o campo culpado
+5. **Sessão expirada no stepper e no checkout não oferece caminho de volta** — mostra a frase de
+   erro sem link para relogar, embora o padrão já exista na tela de publicar
+6. **O chip de cidade ignora o filtro de período.** Único show em BH daqui a 60 dias, com o filtro
+   de 7 dias ligado: o chip aparece e devolve lista vazia
+7. **No Safari, a arte quebrada da Ticketmaster reaparece.** O pseudo-elemento que a cobre não é
+   desenhado sobre `<img>` naquele motor, e o ícone de imagem quebrada volta ao meio da capa
+
+Os **24 achados adiados**, cada um com onde está e o que fecharia, estão em
+[`deferred-work.md`](_bmad-output/implementation-artifacts/deferred-work.md).
+
+---
 
 ## Uso de IA
 
-O enunciado pede que eu conte quais ferramentas usei, em que partes, e o que foi feito sem IA.
+O enunciado pede que eu conte quais ferramentas usei, em que partes, e o que foi feito sem IA. A
+resposta completa está em **[docs/uso_de_ia.md](docs/uso_de_ia.md)**.
 
-**Ferramentas:** Claude Code, com o **BMAD Method v6.10.0** instalado e configurado em português.
-Opus para planejamento e specs, Sonnet para implementação de código.
-
-**Onde entrou:** o fluxo BMAD produziu, nesta ordem, a sessão de brainstorming, a espinha de
-arquitetura (AD-1 a AD-14), o design de UX com protótipo navegável, as 6 epics com 38 stories, e o
-plano de sprint. Depois, story a story, o `bmad-dev-story` implementou o código a partir da spec, e o
-`bmad-code-review` revisou ao fim de cada epic. Todos esses artefatos estão versionados em
-[`_bmad-output/`](_bmad-output/) — inclusive os `.memlog.md`, que registram a sessão completa, com o
-que foi considerado e recusado no caminho.
-
-**O que foi meu, sem IA:** as decisões. Stack, modelo de venda, identidade visual, recorte de escopo,
-o que entra e o que fica de fora — cada item desta seção de decisões foi escolha minha, e a seção
-existe para mostrar o raciocínio por trás delas. Também são meus o versionamento (todo commit foi
-escrito e feito à mão, um por story) e a condução: os agentes produziram spec e código a partir de
-direção minha, e o que eles propuseram sem eu ter escolhido foi recusado.
-
-Esta seção é fechada na Story 6.3, com o detalhamento por camada.
+O resumo: usei **Claude Code**, com o BMAD Method instalado, para **quebrar o projeto em epics e
+stories** e para **escrever o código** a partir de specs que eu redigi. **As decisões foram minhas**
+— arquitetura, identidade visual, modelo de venda, recorte de escopo, o que entra e o que fica de
+fora. Cada uma delas está na seção acima, com a alternativa que eu descartei e o motivo. Os
+artefatos do processo estão versionados em [`_bmad-output/`](_bmad-output/), inclusive os `.memlog.md`
+com as sessões completas.
