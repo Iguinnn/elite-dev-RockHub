@@ -146,7 +146,9 @@ export default async function PaginaDoEvento({
             </div>
 
             <div>
-              <dt className={estilos.fichaRotulo}>Casa</dt>
+              {/* `Local`, e não `Casa`, desde 13/08/2026 — o motivo está na
+                  ficha da capa, em `(site)/page.tsx`. */}
+              <dt className={estilos.fichaRotulo}>Local</dt>
               <dd className={estilos.fichaValor}>{evento.local}</dd>
             </div>
 

@@ -25,13 +25,20 @@ const CHIPS_DE_PERIODO: ReadonlyArray<{
   rotulo: string;
 }> = [
   { valor: "todos", rotulo: "Todos" },
-  // ⚠️ `7 DIAS` e `30 DIAS`, e não "Esta semana" e "Este mês" (decisão do
-  // Igor). As janelas são corridas a partir de agora: "esta semana" numa
-  // sexta-feira significaria dois dias, e o filtro pareceria quebrado
-  // justamente no dia em que mais gente procura show. O rótulo diz exatamente
-  // o que o filtro faz.
-  { valor: "semana", rotulo: "7 dias" },
-  { valor: "mes", rotulo: "30 dias" },
+  // ⚠️ `PRÓXIMOS 7 DIAS` e `PRÓXIMOS 30 DIAS`, e não "Esta semana" e "Este mês"
+  // (decisão do Igor). As janelas são corridas a partir de agora: "esta semana"
+  // numa sexta-feira significaria dois dias, e o filtro pareceria quebrado
+  // justamente no dia em que mais gente procura show.
+  //
+  // ⚠️ **O `PRÓXIMOS` entrou em 13/08/2026, e o rótulo era só `7 DIAS`.** Ele
+  // parecia dizer o que o filtro faz e não dizia: `7 DIAS` se lê tanto como
+  // "daqui a 7 dias" — um ponto no tempo — quanto como "nos próximos 7 dias",
+  // que é o que a consulta realmente faz (`data_hora < agora + 7 dias`, com o
+  // piso em `agora`). Quem escreveu o filtro leu do jeito certo; quem chegou na
+  // tela depois leu do jeito errado, e foi essa a pergunta que abriu a mudança.
+  // Uma palavra desfaz a ambiguidade sem tocar no backend.
+  { valor: "semana", rotulo: "Próximos 7 dias" },
+  { valor: "mes", rotulo: "Próximos 30 dias" },
 ];
 
 /**
@@ -199,14 +206,14 @@ export default async function Programacao({ searchParams }: PageProps<"/">) {
               rótulo visível — aqui ele quebraria a faixa de uma linha só, então a
               regra é cumprida pelo `<label>` escondido. */}
           <label htmlFor="q" className={estilos.rotuloOculto}>
-            Buscar artista, casa de show ou cidade
+            Buscar artista, local ou cidade
           </label>
           <input
             id="q"
             name="q"
             type="search"
             className={estilos.campoBusca}
-            placeholder="Buscar artista, casa de show ou cidade"
+            placeholder="Buscar artista, local ou cidade"
             defaultValue={termo}
             // O mesmo teto do `Query(max_length=120)` da rota: sem ele, colar um
             // texto longo devolve `422` e a tela acusa o backend por um erro do
@@ -468,16 +475,29 @@ function ChamadaPrincipal({
           className={estilos.imagemDaArte}
         />
 
-        {/* Sobre a arte, canto superior esquerdo — a anatomia do `.lead-selo`
-            do protótipo. A informação **não é dada só por cor** (UX-DR9): a
-            palavra está escrita, e o bloco não responde ao hover porque não é
-            link. */}
-        {evento.esgotado && (
-          <span className={estilos.seloDaArte}>Esgotado</span>
-        )}
       </div>
 
       <div className={estilos.textoDaChamada}>
+        {/* ⚠️ **O selo saiu de cima da arte e subiu para o topo da coluna de
+            texto** (decisão do Igor, 13/08/2026). Ele era o `.lead-selo` do
+            protótipo — vazado, no canto superior esquerdo da foto —, e ali
+            disputava com a imagem: pequeno, sobre uma arte de contraste
+            imprevisível, e longe da coluna onde a pessoa está lendo o que o show
+            é. Aqui ele abre o bloco de texto, acima da data, e é a primeira
+            coisa lida.
+
+            **É o mesmo `.selo` da fila**, preenchido e chanfrado — e não uma
+            terceira variante: o produto passa a dizer "esgotado" de um jeito só,
+            na listagem e na capa.
+
+            A informação **não é dada só por cor** (UX-DR9): a palavra está
+            escrita, e o bloco não responde ao hover porque não é link. */}
+        {evento.esgotado && (
+          <span className={`${estilos.selo} ${estilos.seloDaChamada}`}>
+            Esgotado
+          </span>
+        )}
+
         {/* O dia da semana vem junto — `SEXTA, 15 DE AGOSTO DE 2026, 22H30`.
             Numa capa de show, "sexta" é a informação que situa antes do número,
             e é assim que o protótipo escreve. Não é a `dataPorExtenso`, que não
@@ -501,13 +521,20 @@ function ChamadaPrincipal({
           <h2 className={estilos.manchete}>{evento.nome}</h2>
         )}
 
-        {/* `CASA · CIDADE · SETORES` (decisão do Igor), e **nenhuma contagem de
+        {/* `LOCAL · CIDADE · SETORES` (decisão do Igor), e **nenhuma contagem de
             ingresso em lugar nenhum** (UX-DR7). `<dl>` porque é literalmente uma
             lista de pares rótulo/valor — o `<div>` do protótipo desenha igual e
-            não diz isso a quem usa leitor de tela. */}
+            não diz isso a quem usa leitor de tela.
+
+            ⚠️ **O rótulo era `CASA` até 13/08/2026** (decisão do Igor). "Casa de
+            show" é como quem trabalha com música chama o lugar, e é o vocabulário
+            do protótipo; "local" é o que quem compra ingresso entende sem
+            traduzir. A coluna do banco continua `local` — o rótulo da tela e o
+            nome do campo passam a dizer a mesma palavra, o que era uma pequena
+            dívida desde a Story 2.3. */}
         <dl className={estilos.ficha}>
           <div>
-            <dt className={estilos.fichaRotulo}>Casa</dt>
+            <dt className={estilos.fichaRotulo}>Local</dt>
             <dd className={estilos.fichaValor}>{evento.local}</dd>
           </div>
 

@@ -474,10 +474,10 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
               origem logo abaixo. Faltando a casa, o que aparece é a falta, dita
               antes de a pessoa preencher setor nenhum; o campo para resolvê-la
               abre logo abaixo, na coluna da data. */}
-          <div className={item.local ? estilos.ondeAcontece : estilos.semCasa}>
+          <div className={item.local ? estilos.ondeAcontece : estilos.semLocal}>
             {item.local
               ? [item.local, item.cidade].filter(Boolean).join(" · ")
-              : "O catálogo da Ticketmaster não trouxe a casa de show."}
+              : "O catálogo da Ticketmaster não trouxe o local do show."}
           </div>
           <div className={estilos.origem}>Ticketmaster · {item.id_externo}</div>
         </div>
@@ -523,7 +523,7 @@ export default function FormularioPublicacao({ item, portarias }: Props) {
             <Campo
               id="local"
               name="local"
-              rotulo="Casa de show"
+              rotulo="Local do show"
               type="text"
               maxLength={200}
               placeholder={LOCAL_EM_CONFIRMACAO}

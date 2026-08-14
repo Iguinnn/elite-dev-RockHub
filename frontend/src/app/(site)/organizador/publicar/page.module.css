@@ -174,9 +174,9 @@
   font: 19px/1.4 var(--serif);
 }
 
-/* O mesmo lugar, quando a Discovery não mandou a casa. Fumaça em vez de cal:
+/* O mesmo lugar, quando a Discovery não mandou o local. Fumaça em vez de cal:
    é uma pendência declarada, não um dado. */
-.semCasa {
+.semLocal {
   margin-top: 6px;
   font: italic 19px/1.4 var(--serif);
   color: var(--fumaca);

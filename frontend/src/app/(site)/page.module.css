@@ -333,22 +333,23 @@
   background: var(--breu2) url("/disco-rockhub.jpg") center / cover;
 }
 
-/* Vazado em `--brasa` como o `.selo` da fila, e sobre a arte. `background` é o
-   breu e não `transparent`: o selo cai em cima de uma foto qualquer, e um
-   contorno sem fundo ficaria ilegível justamente nas artes claras — que são a
-   maioria. `z-index` porque ele precisa ficar acima do degradê. */
-.seloDaArte {
-  position: absolute;
-  z-index: 2;
-  top: 16px;
-  left: 0;
-  padding: 6px 13px;
-  border: 1px solid var(--brasa);
-  background: var(--breu);
-  color: var(--brasa);
-  font: 700 12px/1 var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+/* ⚠️ **O `.seloDaArte` foi removido em 13/08/2026** (decisão do Igor). Ele era o
+   selo vazado no canto superior esquerdo da foto — o `.lead-selo` do protótipo —,
+   e tinha dois problemas que só apareceram com a tela montada: sobre uma arte de
+   contraste imprevisível, o contorno de 1px sumia nas fotos claras (o
+   `background: var(--breu)` estava lá justamente para remendar isso), e ele
+   ficava fora da coluna onde a pessoa lê o que o show é.
+
+   Agora ele é o mesmo `.selo` da fila — preenchido e chanfrado —, no topo da
+   coluna de texto, acima da data. Uma forma só de dizer "esgotado" no produto
+   inteiro, e a primeira coisa que se lê no bloco.
+
+   Esta classe ajusta só o que muda de contexto. `align-self` porque o
+   `.textoDaChamada` é um flex de coluna: sem ele o selo estica na largura toda e
+   deixa de ser um bloco de tinta do tamanho da palavra. */
+.seloDaChamada {
+  align-self: flex-start;
+  margin-bottom: 14px;
 }
 
 /* Centrado verticalmente contra a arte: com a coluna alinhada ao topo, a ficha
